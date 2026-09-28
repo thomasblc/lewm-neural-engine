@@ -98,15 +98,28 @@ def test_bout_en_bout(tmp):
     for Kx, cle in ((K, None), (Ks, "sensibilite_44_46")):
         p = [inv.p(Kx[v] - Kx[ref]) for _, v, ref, _ in PREENREGISTREES]
         adj = A.holm(p)
-        for (nom, v, ref, _), pv, pa in zip(PREENREGISTREES, p, adj):
+        for (nom, v, ref, sens), pv, pa in zip(PREENREGISTREES, p, adj):
             t = r["tests"][nom] if cle is None else r["tests"][nom][cle]
             assert t["somme"] == int((Kx[v] - Kx[ref]).sum()) and t["p"] == pv and abs(t["p_holm"] - pa) < 1e-15, (nom, cle)
+            assert t["verdict"] == A.verdict(pa, (Kx[v] - Kx[ref]).sum(), sens), (nom, cle)
+            if cle is not None:
+                assert abs(t["delta_reussite"] - (Kx[v] - Kx[ref]).mean() / 3) < 1e-12
+    for nom, t in r["tests"].items():
+        assert t["concordance"] == (t["verdict"] == t["sensibilite_44_46"]["verdict"])
+        assert t["verdict_retenu"] == (t["verdict"] if nom.startswith("Q5") or t["concordance"] else "non concordant (exploratoire)")
     i_main = ((K["all:4"] - K["encoder:4"] - K["predictor:4"] - K["autres:4"] + 2 * K["fp32"]) / 5).mean()
     cle = next(k for k in r["additivite"] if k.startswith("I"))
     assert abs(r["additivite"][cle]["moyenne"] - i_main) < 1e-12
     part = (K["encpred:4"] - K["all:4"]).sum() / (K["fp32"] - K["all:4"]).sum()
     pe = r["part_expliquee_autres_4_bits"]
     assert abs(pe["moyenne"] - part) < 1e-12 and pe["bas"] <= part <= pe["haut"]
+    idx = A.Bootstrap().idx
+    num, den = (K["encpred:4"] - K["all:4"]).astype(float), (K["fp32"] - K["all:4"]).astype(float)
+    rr = num[idx].sum(axis=1) / np.maximum(den[idx].sum(axis=1), 1e-12)
+    assert abs(pe["bas"] - np.percentile(rr, 2.5)) < 1e-12 and abs(pe["haut"] - np.percentile(rr, 97.5)) < 1e-12
+    # d) part non définie quand tout le modèle ne perd rien
+    assert A4.part_expliquee(A.Bootstrap(), np.ones(A.N), np.zeros(A.N)) is None
+    assert "non définie" in A4.rapport(dict(r, part_expliquee_autres_4_bits=None))
     assert r["controles"]["divergences"] == {v: 0 for v in A4.NOUVELLES}
     txt = A4.rapport(r)
     assert "Sensibilité" in txt and "Part de la chute" in txt and not re.search(r"\bnan\b|\binf\b", txt.lower())
@@ -118,6 +131,20 @@ def test_bout_en_bout(tmp):
     assert json.dumps(A.pur(r2["tests"]), sort_keys=True) == json.dumps(A.pur(r["tests"]), sort_keys=True)
     assert json.dumps(A.pur(r2["additivite"]), sort_keys=True) == json.dumps(A.pur(r["additivite"]), sort_keys=True)
     print("ok chemin réel (analyse_exp003.charger puis tables) : mêmes résultats que le chemin de test")
+
+    # b) non concordant : fort effet d'autres:4 aux graines 42 et 43, aucun aux graines 44 à 46
+    effets_nc = dict(effets, **{"autres:4": (2.5, 1.0)})
+    d3c, d4c, sanc, finc = grilles(tmp, "nonconc", effets=effets_nc, graine=7, divergents=())
+    for g in A4.GRAINES_SENSIBILITE:
+        x = dict(np.load(d3c / f"fp32_s{g}.npz"))
+        x.update(spec="autres:4", n_couches=6)
+        np.savez_compressed(d4c / f"autres-4_s{g}.npz", **x)
+    r_nc = sans_verif_code(lambda: A4.analyser(d3c, d4c, sanc, finc, effectifs=None, verifier_exp003=False))
+    t = r_nc["tests"]["Q3a"]
+    assert t["verdict"] == "soutenue" and t["sensibilite_44_46"]["somme"] == 0, t
+    assert not t["concordance"] and t["verdict_retenu"] == "non concordant (exploratoire)", t
+    assert "non concordant (exploratoire)" in A4.rapport(r_nc)
+    print("ok règle 2 : un effet présent aux graines 42 et 43 seulement donne « non concordant (exploratoire) »")
 
     iden = ("autres:4", "encpred:4", "all:4:g64", "all:4", "autres:3", "all:3:g64", "all:3")
     nul = {"all:4": (1.0, 1.0), "encpred:4": (1.0, 1.0), "all:4:g64": (1.0, 1.0), "all:3": (2.0, 1.0),
@@ -174,8 +201,11 @@ def test_refus(tmp, d3, d4, san, fin):
     doit_echouer("sanité d'entrée", lambda e3, e4, es, ef: inverser(es, "all-4_s42.npz"), "sanité d'entrée : success diffère")
     doit_echouer("sanité de clôture", lambda e3, e4, es, ef: inverser(ef, "autres-4_s42.npz"), "sanité de clôture : success diffère")
     doit_echouer("protocole", lambda e3, e4, es, ef: meta(e4, device="cpu"), "protocole différent")
+    doit_echouer("clôture sur une autre version",
+                 lambda e3, e4, es, ef: shutil.copy(e4 / "encpred-4_s42.npz", ef / "autres-4_s42.npz"),
+                 "sanité de clôture : pas la même version")
     doit_echouer("torch", lambda e3, e4, es, ef: meta(ef, torch="2.15.0"), "version de torch différente")
-    print("ok contrôles bloquants d'EXP-004 (8 refus, chacun avec son motif)")
+    print("ok contrôles bloquants d'EXP-004 (9 refus, chacun avec son motif)")
 
 
 if __name__ == "__main__":

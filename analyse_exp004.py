@@ -183,6 +183,9 @@ def analyser(grille3, grille4, sanite, sanite_fin, effectifs=A.EFFECTIFS, verifi
         tests[nom]["sensibilite_44_46"] = {"somme": int(x.sum()), "delta_reussite": float(x.mean() / 3), "p": pv,
                                            "p_holm": float(pa), "verdict": verdict}
         tests[nom]["concordance"] = verdict == tests[nom]["verdict"]
+        # règle 2 : Q3 (née du coup d'œil) n'est retenue que si la sensibilité concorde
+        tests[nom]["verdict_retenu"] = (tests[nom]["verdict"] if nom.startswith("Q5") or tests[nom]["concordance"]
+                                        else "non concordant (exploratoire)")
 
     f = D["fp32"]
     desc = {}
@@ -219,11 +222,11 @@ def rapport(r):
          f"EXP-004 ({', '.join(s[:7] for s in r['controles']['commits_exp004'])}), sanité identique à EXP-003 "
          f"({r['controles']['commit_sanite'][:7]}). Courses divergentes : "
          + (", ".join(f"{v} : {n}" for v, n in r["controles"]["divergences"].items() if n) or "aucune") + ".", "",
-         "## Tests (Holm sur 4)", "", "| Test | Comparaison | Écart (points) | p | p Holm | Verdict |",
-         "| --- | --- | --- | --- | --- | --- |"]
+         "## Tests (Holm sur 4)", "", "| Test | Comparaison | Écart (points) | p | p Holm | Verdict du test | Verdict retenu (règle 2) |",
+         "| --- | --- | --- | --- | --- | --- | --- |"]
     for nom, t in r["tests"].items():
         L.append(f"| {nom} | {t['version']} contre {t['reference']} | {100 * t['delta_reussite']:+.2f} | {t['p']:.4f} | "
-                 f"{t['p_holm']:.4f} | {t['verdict']} |")
+                 f"{t['p_holm']:.4f} | {t['verdict']} | {t['verdict_retenu']} |")
     L += ["", "## Sensibilité : graines 44 à 46 seulement (Holm sur 4)", "",
           "| Test | Écart (points) | p | p Holm | Verdict | Même verdict que le test principal |", "| --- | --- | --- | --- | --- | --- |"]
     for nom, t in r["tests"].items():

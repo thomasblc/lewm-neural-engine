@@ -1,15 +1,18 @@
 # Pré-enregistrement d'EXP-004 : couches restantes et quantification par groupes (LeWM, PushT)
 
 Rédigé par Claude le 28 septembre 2026 au soir, avant tout lancement d'EXP-004 et avant l'analyse
-complète d'EXP-003. Figé par le dernier commit de la branche `exp004` antérieur à la première exécution
-d'`analyse_exp003.py` sur les 55 fichiers d'EXP-003 : les références de tous les tests sont des données
-d'EXP-003, elles ne doivent pas être vues avant le gel. Ce commit et son heure sont notés dans la fiche
-EXP-004 ; tout changement ultérieur est un amendement déclaré « après lecture d'EXP-003 ». Décision de
+complète d'EXP-003. Figé par le commit enregistré dans les fichiers d'EXP-004 : le lanceur vérifie avant
+chaque étape que l'arbre est propre et que HEAD n'a pas bougé depuis son démarrage, qui précède la fin
+d'EXP-003 et donc toute lecture complète de ses fichiers (les références de tous les tests sont des données
+d'EXP-003). Ce commit et son heure sont notés dans la fiche EXP-004 ; tout changement ultérieur est un
+amendement déclaré. Décision de
 Thomas : plan d'expériences (`experiences/PLAN-EXPERIENCES.md`, questions Q3 et Q5), accepté le 28 septembre
 à 23 h 25 (« ok on fait ça »). Écarts au plan accepté, décidés par Claude et à confirmer par Thomas : une
 version de plus (`encpred:4`, pour mesurer la part des autres couches en contexte) ; les groupes de 64 avec
 5 graines au lieu de 3 (appariement avec les 5 graines d'EXP-003) ; 26 lancements, environ 4 h, au lieu de
-16 et 2 h 30 ; plus une sanité de clôture (9 min).
+16 et 2 h 30 ; plus une sanité de clôture (9 min). Exécutés la nuit du 28 au 29 septembre sans confirmation
+préalable, à valider par Thomas au réveil ; ils n'ajoutent que des données, les questions restent celles du
+plan.
 
 ## D'où viennent les questions
 
@@ -71,8 +74,8 @@ non soutenue sinon.
 
 Règle 2, sensibilité : les quatre tests sont refaits sur les seules graines 44 à 46 (sommes sur 3 graines,
 mêmes vecteurs de signes, Holm sur les quatre, famille séparée) et rapportés à côté. Q3a et Q3b ne sont
-affirmées que si le verdict principal et celui de la sensibilité concordent ; sinon on écrit « non
-concordant » et on les rapporte comme exploratoires.
+affirmées que si le verdict principal et celui de la sensibilité concordent ; sinon leur verdict retenu
+est « non concordant (exploratoire) ». Q5a et Q5b gardent le verdict du test principal.
 
 ## Descriptif, sans test
 
