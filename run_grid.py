@@ -1,20 +1,25 @@
 """EXP-003 : grille de quantification de LeWM sur PushT, avec plusieurs graines du planificateur.
 
 Pour chaque version du modèle (pleine précision ou quantifiée) et chaque graine de la CEM, fait
-planifier LeWM sur les mêmes N épisodes et enregistre, pour chaque épisode et chaque pas, la distance
-exacte au but donnée par le simulateur, la pose du T, la position de l'agent et les contacts.
-Un fichier .npz par (version, graine) ; un lancement interrompu reprend là où il s'est arrêté.
+planifier LeWM sur les mêmes N épisodes et enregistre, pour chaque épisode et chaque pas, l'état
+exact du simulateur (7 nombres : agent x, y, T x, y, angle, vitesse de l'agent x, y), la pose du T,
+la position de l'agent et les contacts. Un fichier .npz par (version, graine) ; un lancement
+interrompu reprend là où il s'est arrêté, après avoir vérifié que la config n'a pas changé.
 
-Le tirage des épisodes reproduit celui de le-wm/eval.py (graine 42 de la config) : avec N = 50 et des
-paquets de 50, la pleine précision à la graine 42 doit redonner exactement EXP-002 (test de sanité).
+Hasard du planificateur (amendement 1 du pré-enregistrement) : chaque épisode a son propre tirage,
+fixé par (graine, position de l'épisode dans l'échantillon, numéro du plan). Le hasard reçu par un
+épisode ne dépend donc ni des autres épisodes du paquet ni de la version du modèle. La config
+officielle (un générateur partagé, tiré épisode après épisode) couplait les épisodes d'un même paquet.
+
+Le tirage des épisodes reproduit celui de le-wm/eval.py (graine 42 de la config).
 
 Usage :
-    python run_grid.py --out ../resultats/exp003 --n 200 --chunk 50 \
-        --specs fp32 all:4 encoder:4 --seeds 42 43
+    python run_grid.py --out ../resultats/exp003 --n 500 --chunk 50 --specs fp32 all:4 --seeds 42 43
 """
 import argparse
 import json
 import os
+import subprocess
 import sys
 import time
 from copy import deepcopy
@@ -33,10 +38,55 @@ import torch  # noqa: E402
 from hydra import compose, initialize_config_dir  # noqa: E402
 from omegaconf import OmegaConf  # noqa: E402
 from sklearn import preprocessing  # noqa: E402
+from stable_worldmodel.solver.cem import CEMSolver  # noqa: E402
 from stable_worldmodel.world.world import _apply_callables, _extract_init_goal  # noqa: E402
 from torchvision.transforms import v2 as transforms  # noqa: E402
 
 from quant import quantifier  # noqa: E402
+
+CLE = "ep_key"  # position de l'épisode dans l'échantillon, glissée dans les infos du monde
+
+
+class CEMParEpisode(CEMSolver):
+    """CEM de stable-worldmodel, mais avec un tirage propre à chaque épisode.
+
+    Chaque appel est découpé épisode par épisode (comme batch_size = 1). Avant chaque épisode, le
+    générateur est réinitialisé à partir de (graine, position de l'épisode, numéro du plan).
+    """
+
+    def __init__(self, *args, graine=0, **kwargs):
+        super().__init__(*args, seed=graine, **kwargs)
+        self.graine = int(graine)
+        self._compte = {}
+
+    def solve(self, info_dict, init_action=None):
+        cles = info_dict.pop(CLE, None)
+        if cles is None:
+            raise RuntimeError("clé d'épisode absente : le hasard ne serait plus apparié")
+        cles = np.asarray(cles.cpu() if torch.is_tensor(cles) else cles).reshape(len(cles), -1)[:, -1]
+        sorties = []
+        for i, k in enumerate(cles.tolist()):
+            k = int(k)
+            c = self._compte.get(k, 0)
+            self._compte[k] = c + 1
+            s = int(np.random.SeedSequence([self.graine, k, c]).generate_state(1)[0])
+            self.torch_gen.manual_seed(s)
+            sub = {}
+            for kk, v in info_dict.items():
+                if torch.is_tensor(v) or isinstance(v, np.ndarray):
+                    sub[kk] = v[i:i + 1]
+                elif isinstance(v, list):
+                    sub[kk] = v[i:i + 1]
+                else:
+                    sub[kk] = v
+            init = init_action[i:i + 1] if init_action is not None else None
+            sorties.append(super().solve(sub, init))
+        return {
+            "actions": torch.cat([o["actions"] for o in sorties]),
+            "costs": sum((list(o["costs"]) for o in sorties), []),
+            "mean": [torch.cat([o["mean"][0] for o in sorties])],
+            "var": [torch.cat([o["var"][0] for o in sorties])],
+        }
 
 
 def img_transform(cfg):
@@ -57,7 +107,7 @@ def charger_config(chunk, device):
 
 
 def preparer_donnees(cfg):
-    """Jeu de données, normalisations et tirage des épisodes, exactement comme le-wm/eval.py."""
+    """Jeu de données, normalisations et épisodes valides, exactement comme le-wm/eval.py."""
     dataset = swm.data.HDF5Dataset(cfg.eval.dataset_name, keys_to_cache=cfg.dataset.keys_to_cache,
                                    cache_dir=swm.data.utils.get_cache_dir())
     col = "episode_idx" if "episode_idx" in dataset.column_names else "ep_idx"
@@ -87,12 +137,17 @@ def tirer_episodes(cfg, dataset, col, valid, n):
     return np.asarray(rows[col]).tolist(), np.asarray(rows["step_idx"]).tolist()
 
 
-def evaluer_paquet(world, dataset, episodes_idx, start_steps, cfg):
+def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg):
     """Copie de World._evaluate_from_dataset (stable-worldmodel 0.1.1) qui enregistre chaque pas."""
     n = len(episodes_idx)
     assert n == world.num_envs
     init_state, goal_state, _ = _extract_init_goal(dataset, episodes_idx, start_steps, cfg.eval.goal_offset_steps)
-    world.reset(seed=init_state.get("seed"))
+    # Le jeu PushT n'a pas de colonne « seed » : sans graine, la réinitialisation tire une position au hasard
+    # avant _set_state, et pymunk garde la trace des contacts de cette position. Graine fixe par épisode.
+    graines_env = init_state.get("seed")
+    if graines_env is None:
+        graines_env = [int(np.random.SeedSequence([7, int(p)]).generate_state(1)[0]) for p in positions]
+    world.reset(seed=list(graines_env))
     callables = OmegaConf.to_container(cfg.eval.callables, resolve=True)
     merged = {**init_state, **goal_state}
     for i in range(n):
@@ -102,31 +157,33 @@ def evaluer_paquet(world, dataset, episodes_idx, start_steps, cfg):
         for k, v in src.items():
             if k in world.infos or k in goal_state:
                 world.infos[k] = np.broadcast_to(v[:, None, ...], prefix + v.shape[1:]).copy()
-    goal_snapshot = {k: world.infos[k].copy() for k in goal_state}
+    snapshot = {k: world.infos[k].copy() for k in goal_state}
+    snapshot[CLE] = np.asarray(positions, dtype=np.int64)[:, None]
+    world.infos.update(deepcopy(snapshot))
 
     T = cfg.eval.eval_budget
-    rec = {"dist": np.full((T, n), np.nan), "block_pose": np.full((T, n, 3), np.nan),
-           "agent_pos": np.full((T, n, 2), np.nan), "contacts": np.full((T, n), -1, dtype=np.int32)}
+    rec = {"state": np.full((T, n, 7), np.nan), "block_pose": np.full((T, n, 3), np.nan),
+           "agent_pos": np.full((T, n, 2), np.nan), "contacts": np.full((T, n), -1, dtype=np.int32),
+           "env_state_dist": np.full((T, n), np.nan)}
     success = np.zeros(n, dtype=bool)
     first = np.full(n, -1, dtype=np.int32)
     t = [0]
 
     def on_step(w):
-        vivant = ~success  # épisodes pas encore réussis avant ce pas
+        vivant = ~success  # épisodes pas encore réussis avant ce pas : les autres sont gelés
         k = t[0]
-        rec["dist"][k, vivant] = -np.asarray(w.rewards, dtype=np.float64)[vivant]
         info = w.infos
-        bp = np.asarray(info["block_pose"]).reshape(n, -1)[:, -3:]
-        ap = np.asarray(info["pos_agent"]).reshape(n, -1)[:, -2:]
-        nc = np.asarray(info["n_contacts"]).reshape(n, -1)[:, -1]
-        rec["block_pose"][k, vivant] = bp[vivant]
-        rec["agent_pos"][k, vivant] = ap[vivant]
-        rec["contacts"][k, vivant] = nc[vivant]
+        # norme de l'écart d'état 7-D renvoyée par l'env (mélange pixels, radians, vitesses) : ne pas rapporter
+        rec["env_state_dist"][k, vivant] = -np.asarray(w.rewards, dtype=np.float64)[vivant]
+        if "state" in info:
+            rec["state"][k, vivant] = np.asarray(info["state"]).reshape(n, -1)[:, -7:][vivant]
+        rec["block_pose"][k, vivant] = np.asarray(info["block_pose"]).reshape(n, -1)[:, -3:][vivant]
+        rec["agent_pos"][k, vivant] = np.asarray(info["pos_agent"]).reshape(n, -1)[:, -2:][vivant]
+        rec["contacts"][k, vivant] = np.asarray(info["n_contacts"]).reshape(n, -1)[:, -1][vivant]
         term = np.asarray(w.terminateds, dtype=bool)
-        nouveaux = term & vivant
-        first[nouveaux] = k
+        first[term & vivant] = k
         success[:] |= term
-        w.infos.update(deepcopy(goal_snapshot))
+        w.infos.update(deepcopy(snapshot))
         t[0] += 1
 
     world._run(max_steps=T, mode="wait", on_step=on_step)
@@ -135,10 +192,18 @@ def evaluer_paquet(world, dataset, episodes_idx, start_steps, cfg):
     return rec
 
 
+def git_info():
+    ici = Path(__file__).resolve().parent
+    sha = subprocess.run(["git", "-C", str(ici), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    sale = subprocess.run(["git", "-C", str(ici), "status", "--porcelain", "--untracked-files=no"],
+                          capture_output=True, text=True).stdout.strip() != ""
+    return sha, sale
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", required=True)
-    ap.add_argument("--n", type=int, default=200)
+    ap.add_argument("--n", type=int, default=500)
     ap.add_argument("--chunk", type=int, default=50)
     ap.add_argument("--specs", nargs="+", required=True)
     ap.add_argument("--seeds", nargs="+", type=int, required=True)
@@ -151,12 +216,24 @@ def main():
     cfg = charger_config(args.chunk, args.device)
     dataset, process, col, valid = preparer_donnees(cfg)
     ep_all, st_all = tirer_episodes(cfg, dataset, col, valid, args.n)
-    meta = {"n": args.n, "chunk": args.chunk, "episodes_idx": ep_all, "start_steps": st_all,
-            "episode_seed": int(cfg.seed), "torch": torch.__version__, "device": args.device,
-            "config": OmegaConf.to_container(cfg, resolve=False)}
-    (out / "meta.json").write_text(json.dumps(meta, indent=1, default=str))
+    sha, sale = git_info()
+    protocole = {"n": args.n, "chunk": args.chunk, "episodes_idx": ep_all, "start_steps": st_all,
+                 "episode_seed": int(cfg.seed), "device": args.device, "hasard": "par episode (amendement 1)",
+                 "config": OmegaConf.to_container(cfg, resolve=False)}
+    f_meta = out / "meta.json"
+    if f_meta.exists():
+        ancien = json.loads(f_meta.read_text())
+        if json.dumps(ancien["protocole"], sort_keys=True, default=str) != json.dumps(protocole, sort_keys=True, default=str):
+            sys.exit(f"{f_meta} décrit un autre protocole : choisir un autre dossier --out")
+    else:
+        f_meta.write_text(json.dumps({"protocole": protocole, "git": sha, "git_sale": sale,
+                                      "torch": torch.__version__}, indent=1, default=str))
+    print(f"[info] commit {sha[:7]}{' (modifié)' if sale else ''}, {args.n} épisodes", flush=True)
+
     world = swm.World(**cfg.world, image_shape=(224, 224))
     transform = {"pixels": img_transform(cfg), "goal": img_transform(cfg)}
+    solver_kw = {k: v for k, v in OmegaConf.to_container(cfg.solver, resolve=True).items()
+                 if k not in ("_target_", "model", "seed")}
 
     for seed in args.seeds:
         for spec in args.specs:
@@ -173,15 +250,22 @@ def main():
             recs = []
             for c in range(args.n // args.chunk):
                 sl = slice(c * args.chunk, (c + 1) * args.chunk)
-                solver = hydra.utils.instantiate(cfg.solver, model=model, seed=seed)
+                solver = CEMParEpisode(model=model, graine=seed, **solver_kw)
                 policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
                                                      process=process, transform=transform)
                 world.set_policy(policy)
-                recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], cfg))
-            data = {k: (np.concatenate([r[k] for r in recs], axis=1) if recs[0][k].ndim >= 2 and k not in ("init_state", "goal_state")
-                        else np.concatenate([np.atleast_1d(r[k]) for r in recs], axis=0))
-                    for k in recs[0]}
-            np.savez_compressed(f, spec=spec, seed=seed, n_couches=len(touches), **data)
+                recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg))
+            data = {}
+            for k in recs[0]:
+                if k in ("init_state", "goal_state") or recs[0][k].ndim < 2:
+                    data[k] = np.concatenate([np.atleast_1d(r[k]) for r in recs], axis=0)
+                else:
+                    data[k] = np.concatenate([r[k] for r in recs], axis=1)
+            tmp = f.with_suffix(".tmp.npz")
+            np.savez_compressed(tmp, spec=spec, seed=seed, n_couches=len(touches), git=sha, git_sale=sale,
+                                positions=np.arange(args.n), episodes_idx=np.array(ep_all), start_steps=np.array(st_all),
+                                chunk=args.chunk, **data)
+            os.replace(tmp, f)
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "
                   f"({time.time() - t0:.0f} s)", flush=True)
 
