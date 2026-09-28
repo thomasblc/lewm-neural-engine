@@ -224,6 +224,37 @@ def test_part_planificateur():
 
 # ---------------------------------------------------------------- contrôles bloquants
 
+def marge_depart(d, i):
+    x = {"state": d["init_state"][None, i:i + 1].astype(np.float64), "goal_state": d["goal_state"][i:i + 1]}
+    return [float(v[0]) for v in A.marges(x)[:2]]
+
+
+def verifier_divergences(d, tab, g):
+    """Marges des deux courses divergentes injectées (pas 20 et 0) : pas finis seulement, ou état de départ."""
+    i20, i0 = np.where(~d["success"])[0][:2]
+    avant = A.marges({"state": d["state"][:20, i20:i20 + 1], "goal_state": d["goal_state"][i20:i20 + 1]})
+    assert np.isclose(tab["M2"][g, i20], avant[0][0]) and np.isclose(tab["M3"][g, i20], avant[1][0])
+    m0, mT0 = marge_depart(d, i0)
+    assert np.isclose(tab["M2"][g, i0], m0) and np.isclose(tab["M3"][g, i0], mT0)
+
+
+def test_divergence_fichier_reel():
+    """Motif de divergence de PushT injecté dans un vrai fichier de test fp32 déjà vu (sauté s'il manque)."""
+    f = Path(__file__).resolve().parent.parent / "resultats" / "test-c5703db-c10" / "fp32_s42.npz"
+    if not f.exists():
+        print("saut : fichier de test réel absent")
+        return
+    d = dict(np.load(f))
+    i20, i0 = np.where(~d["success"])[0][:2]
+    for i, j in ((i20, 20), (i0, 0)):
+        d["state"][j:, i][:, [0, 1, 5, 6]] = np.nan
+    m, mT, lim, div = A.controler_course(d, "réel injecté")
+    assert div == 2 and lim == 0
+    tab = {"M2": m[None], "M3": mT[None]}
+    verifier_divergences(d, tab, 0)
+    print("ok divergence de PushT sur un vrai fichier de test (2 courses, marges sur les pas finis)")
+
+
 def test_controles(tmp):
     d = Path(tmp) / "propre"
     simuler(d, graine=1)
@@ -234,6 +265,7 @@ def test_controles(tmp):
     assert res[("all:6", 43)]["n_steps"][0] < A.T                   # paquet arrêté tôt, accepté
     assert (D[("fp32", "A")]["M3"] == 0).any()                       # T parti au but et intact, accepté
     assert (res[("fp32", 42)]["first_success"] == 0).any()
+    verifier_divergences(res[("encoder:3", 45)], D[("encoder:3", "A")], A.GA.index(45))
 
     def doit_echouer(nom, alterer, motif):
         e = Path(tmp) / nom
@@ -402,6 +434,7 @@ if __name__ == "__main__":
     test_mcnemar()
     test_tost()
     test_part_planificateur()
+    test_divergence_fichier_reel()
     if not rapide:
         test_niveau()
     with tempfile.TemporaryDirectory() as tmp:
