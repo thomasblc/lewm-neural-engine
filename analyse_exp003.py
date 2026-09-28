@@ -41,6 +41,7 @@ SEUIL_CASSE = 3                    # baisse d'au moins 3 succès sur 5
 TOL_ARRONDI = 1e-4                 # état enregistré en float32 : |M2 - 1| sous ce seuil n'est pas bloquant
 PLANCHER_LOG = 0.05                # log(max(M, 0,05)) : 1 px ou 1 degré, sous l'arrondi physique utile
 COUCHES = {"fp32": 0, "all": 109, "encoder": 73, "predictor": 30}
+EFFECTIFS = (328, 70)              # épisodes où le T doit bouger, où il part au but (données de protocole)
 LIM = np.pi / 9
 CLASSES = ("reussite", "T place sans reussite", "T jamais place")
 
@@ -119,8 +120,9 @@ def controler_course(d, nom):
     """Contrôles bloquants d'une (version, graine).
 
     Renvoie M2, M3, le nombre de cas limites d'arrondi et le nombre de courses divergentes. Une course
-    divergente (amendement 3) est un échec dont l'état devient NaN sur ses 7 colonnes à un pas j et le reste
-    jusqu'au pas 50 ; ses marges sont prises sur les pas finis, ou sur l'état de départ si j = 0.
+    divergente (amendement 4) est un échec dont l'état a au moins un NaN à chaque pas à partir d'un pas j,
+    et aucun avant (PushT met en NaN la position et la vitesse de l'agent, le T reste fini) ; ses marges
+    sont prises sur les pas entièrement finis, ou sur l'état de départ si j = 0.
     """
     s = d["success"].astype(bool)
     k = d["first_success"].astype(np.int64)
@@ -129,13 +131,17 @@ def controler_course(d, nom):
     nan_pas = np.isnan(etat).any(axis=2)                          # (T, N)
     j = np.where(nan_pas.any(axis=0), nan_pas.argmax(axis=0), T)  # premier pas avec un NaN
     t = np.arange(T)[:, None]
-    suffixe = np.isnan(etat).all(axis=2) == (t >= j[None, :])     # NaN complets exactement à partir de j
-    exiger(suffixe.all(), f"{nom} : NaN isolés dans l'état")
+    apres = t >= j[None, :]
+    exiger((nan_pas == apres).all(), f"{nom} : NaN isolés dans l'état")
+    gele = np.isnan(etat).all(axis=2)
+    exiger((gele[:, s] == apres[:, s]).all(), f"{nom} : état d'un succès incomplètement gelé")
     exiger(np.all(j[s] == k[s] + 1), f"{nom} : état gelé ailleurs qu'au pas suivant le succès")
     diverge = ~s & (j < T)
-    if (diverge & (j == 0)).any():
+    if diverge.any():
         etat = etat.copy()
-        etat[0, diverge & (j == 0)] = d["init_state"][diverge & (j == 0)]
+        etat[apres & diverge[None, :]] = np.nan                  # marges sur les pas entièrement finis
+        zero = diverge & (j == 0)
+        etat[0, zero] = d["init_state"][zero]
     m, mT, _ = marges({"state": etat, "goal_state": d["goal_state"]})
     exiger(np.isfinite(m).all() and np.isfinite(mT).all(), f"{nom} : marge non finie")
     au_but = (d["init_state"][:, 2:5] == d["goal_state"][:, 2:5]).all(axis=1)
@@ -284,7 +290,7 @@ def verdict(p_adj, somme, sens_attendu):
 # ---------------------------------------------------------------- analyses de l'amendement 2
 
 def tests_preenregistres(D, dep, inv):
-    """Points 4 à 6 : P1, P2, P3' et la correction de Holm ; P3'(b) dans la strate « bouge » (amendement 3)."""
+    """Points 4 à 6 : P1, P2, P3' (M3, strate « bouge », amendement 3), P3' (M2, amendement 4), Holm sur 4."""
     f = D[("fp32", "A")]
     x1 = D[("all:4", "A")]["K"] - f["K"]
     x2 = D[("predictor:4", "A")]["K"] - D[("encoder:4", "A")]["K"]
@@ -296,7 +302,10 @@ def tests_preenregistres(D, dep, inv):
     p_haut = inv.p(10 * xa - 1, "moins")     # H0 : delta >= +0,02
     p_b = inv.p(w, "plus")                    # H0 : log M3 non dégradée
     p3 = max(p_bas, p_haut, p_b)
-    adj = holm([p1, p2, p3])
+    w2 = lg(D[("all:5", "A")]["M2"]).mean(axis=0) - lg(f["M2"]).mean(axis=0)
+    p_b2 = inv.p(w2, "plus")                  # H0 : log M2 non dégradée (500 épisodes)
+    p3m2 = max(p_bas, p_haut, p_b2)
+    adj = holm([p1, p2, p3, p3m2])
     return {
         "P1": {"statistique": "somme K(all:4) - K(fp32)", "somme": int(x1.sum()),
                "delta_reussite": float(x1.mean() / 5), "p": p1, "p_holm": float(adj[0]),
@@ -308,6 +317,9 @@ def tests_preenregistres(D, dep, inv):
                 "delta_log_M3_bouge": float(w.mean()), "episodes_bouge": int(w.size), "p_b": p_b, "p": p3, "p_holm": float(adj[2]),
                 "verdict": "établie" if adj[2] < ALPHA else "non établie",
                 "controle_tost_t": tost_t(xa / 5)},
+        "P3' (M2)": {"delta_reussite": float(xa.mean() / 5), "p_bas": p_bas, "p_haut": p_haut,
+                     "delta_log_M2": float(w2.mean()), "p_b": p_b2, "p": p3m2, "p_holm": float(adj[3]),
+                     "verdict": "établie" if adj[3] < ALPHA else "non établie"},
     }
 
 
@@ -523,10 +535,13 @@ def episodes_casses(D, dep, inv):
     return out
 
 
-def analyser(dossier):
+def analyser(dossier, effectifs=EFFECTIFS):
     res, shas = charger(dossier)
     D, limites, divergences = tables(res)
     dep = depart(res)
+    if effectifs is not None:                                  # None seulement pour les grilles simulées
+        exiger((int(dep["bouge"].sum()), int(dep["au_but"].sum())) == effectifs,
+               f"strates de départ inattendues : {int(dep['bouge'].sum())}, {int(dep['au_but'].sum())}")
     inv = Inversion()
     boot = Bootstrap()
     exiger(dep["bouge"].sum() > 0, "strate « le T doit bouger » vide")
@@ -558,14 +573,15 @@ def ic_txt(e, facteur=100, d=1, signe="+"):
 
 
 def rapport(r):
-    L = ["# EXP-003 : analyse pré-enregistrée (amendement 2)", "",
+    L = ["# EXP-003 : analyse pré-enregistrée (amendements 2 à 4)", "",
          f"Contrôles bloquants passés : {r['controles']['fichiers']} fichiers, commits "
          f"{', '.join(s[:7] for s in r['controles']['commits'])}, "
          f"{r['controles']['cas_limites_arrondi']} cas limites d'arrondi, "
          f"{r['controles']['episodes_bouge']} épisodes où le T doit bouger, "
          f"{r['controles']['episodes_T_au_but']} où il part au but, courses divergentes : "
-         f"{r['controles']['courses_divergentes'] or 'aucune'}.", "",
-         "## Tests pré-enregistrés (Holm sur P1, P2, P3')", "",
+         + (", ".join(f"{k} : {v}" for k, v in r['controles']['courses_divergentes'].items()) or "aucune")
+         + ".", "",
+         "## Tests pré-enregistrés (Holm sur P1, P2, P3' sur M3, P3' sur M2)", "",
          "| Test | Effet | p | p Holm | Verdict |", "| --- | --- | --- | --- | --- |"]
     t = r["tests"]
     L.append(f"| P1 : all:4 contre fp32 | {100 * t['P1']['delta_reussite']:+.2f} points | {t['P1']['p']:.4f} | "
@@ -576,6 +592,10 @@ def rapport(r):
     L.append(f"| P3' : all:5, réussite à ± 2 points et log M3 dégradée | {100 * p3['delta_reussite']:+.2f} points, "
              f"log M3 {p3['delta_log_M3_bouge']:+.3f} ({p3['episodes_bouge']} épisodes où le T doit bouger) | {p3['p']:.4f} (bas {p3['p_bas']:.4f}, haut {p3['p_haut']:.4f}, "
              f"M3 {p3['p_b']:.4f}) | {p3['p_holm']:.4f} | {p3['verdict']} |")
+    q = t["P3' (M2)"]
+    L.append(f"| P3' sur M2 : all:5, réussite à ± 2 points et log M2 dégradée (500 épisodes) | "
+             f"{100 * q['delta_reussite']:+.2f} points, log M2 {q['delta_log_M2']:+.3f} | {q['p']:.4f} "
+             f"(M2 {q['p_b']:.4f}) | {q['p_holm']:.4f} | {q['verdict']} |")
     c = p3["controle_tost_t"]
     L += ["", f"Contrôle de P3'(a) par TOST t : p = {c['p']:.4f}, intervalle à 90 % "
               f"[{100 * c['ic90'][0]:+.2f}, {100 * c['ic90'][1]:+.2f}] points.", "",
@@ -599,7 +619,7 @@ def rapport(r):
     L += ["", "## Plancher de bruit", "",
           f"Entre deux graines de fp32 : {ic_txt(pl['discordants_par_50'], 1, 2, '')} épisodes discordants sur 50 "
           f"(contre la réplique : {ic_txt(pl['discordants_par_50_contre_replique'], 1, 2, '')}).", "",
-          "| Version | Perdus par 50 (graines différentes) | Gagnés par 50 | Part des pertes que le bruit seul produit |",
+          "| Version | Perdus par 50 (graines différentes) | Gagnés par 50 | Ratio pertes du bruit / pertes de la version |",
           "| --- | --- | --- | --- |"]
     L.append(f"| fp32 | {pl['perdus_par_50']['moyenne']:.2f} | {pl['gagnes_par_50']['moyenne']:.2f} | |")
     for v in QUANTIFIEES:

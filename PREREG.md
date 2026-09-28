@@ -250,3 +250,31 @@ graine 42 déjà déclarés vus et sur les données de protocole (états de dép
    planificateur sur des composantes de variance connues, sens « moins » contre l'énumération exacte ;
    refus d'un nombre de couches faux, d'un commit inconnu, d'un paquet arrêté tôt sans succès complet,
    d'une M3 nulle hors départ au but.
+
+## Amendement 4 (28 septembre 2026, avant toute analyse)
+
+Heure de référence : celle du commit qui l'introduit. Motif : revue des corrections de l'amendement 3
+par deux relecteurs (0 P0 ; un P1 dans les contrôles, un P1 dans les tests) et décision de Thomas.
+Aucun fichier de la grille n'a été lu.
+
+1. **Courses divergentes, règle corrigée.** Sur PushT, une action NaN met en NaN la position et la
+   vitesse de l'agent ; le T reste fini (vérifié sur CPU par le relecteur). Une course divergente est
+   un échec dont l'état a au moins un NaN à chaque pas à partir d'un pas j, et aucun avant ; ses marges
+   sont prises sur les pas entièrement finis (sur l'état de départ si j = 0). Un succès doit avoir ses
+   7 colonnes NaN à partir du pas qui suit le succès, et aucun NaN avant. Tout autre motif reste
+   bloquant. Remplace le point 3 de l'amendement 3.
+2. **Deux tests de P3', à la demande de Thomas** (28 septembre, soir : « avoir les deux, M2 et M3 »).
+   P3' sur M3 (point 2 de l'amendement 3, strate « le T doit bouger ») reste le test principal du
+   texte. P3' sur M2 s'y ajoute : w2(e) = moyenne sur g de log(max(M2(e, all:5, g), 0,05)) moins la
+   même quantité pour fp32, moyenne sur les 500 épisodes, unilatérale « plus grand » ;
+   p = max(p_bas, p_haut, p_b2), avec les mêmes p_bas et p_haut que P3'(a). Correction de Holm sur
+   quatre tests : P1, P2, P3' sur M3, P3' sur M2. M2 reste aussi rapportée en descriptif.
+3. **Effectifs de protocole vérifiés.** 328 épisodes où le T doit bouger et 70 où il part au but
+   (calculés sur les états de départ et les buts, sans résultat) : un autre compte arrête l'analyse.
+4. **Rapport.** Titre, liste des courses divergentes lisible, colonne du plancher de bruit renommée
+   « ratio pertes du bruit / pertes de la version » (ce ratio peut dépasser 1).
+5. **Tests.** Chaque refus vérifie son motif ; chemin « commit descendant mais code différent »
+   testé ; succès incomplètement gelé refusé ; motif de divergence de PushT accepté (aussi sur un
+   vrai fichier de test, deux courses injectées) ; strate de P3' vérifiée ; sorties du scénario nul
+   toutes finies. Les protocoles simulés ont été recodés indépendamment par le relecteur à partir de
+   l'amendement 3 : écart maximal 0,0 sur toutes les parts.

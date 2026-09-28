@@ -101,11 +101,11 @@ def ecrire(dossier, v, g, succes, mfin, goal, init, ep_idx, st_idx, rr, au_but, 
     etat[..., 4] = np.mod(goal[None, :, 4] + LIM * m * r_ang[None, :], 2 * np.pi)
     etat[..., 5:] = rr.normal(size=(T, n, 2))
     gele = succes[None, :] & (t > premier[None, :])
-    if diverge:                                               # deux échecs dont l'état devient NaN (pas 20 et 0)
-        echecs = np.where(~succes)[0]
-        gele[20:, echecs[0]] = True
-        gele[:, echecs[1]] = True
     etat[gele] = np.nan
+    if diverge:                                               # deux échecs divergents (pas 20 et 0), comme PushT :
+        echecs = np.where(~succes)[0]                         # NaN sur la position et la vitesse de l'agent
+        for i, j in ((echecs[0], 20), (echecs[1], 0)):
+            etat[j:, i][:, [0, 1, 5, 6]] = np.nan
     contacts = np.where(gele, -1, rr.integers(0, 3, (T, n))).astype(np.int32)
     n_steps = np.array([premier[c * 50:(c + 1) * 50].max() + 1 if succes[c * 50:(c + 1) * 50].all() else T
                         for c in range(n // 50)], dtype=np.int32)
@@ -235,13 +235,14 @@ def test_controles(tmp):
     assert (D[("fp32", "A")]["M3"] == 0).any()                       # T parti au but et intact, accepté
     assert (res[("fp32", 42)]["first_success"] == 0).any()
 
-    def doit_echouer(nom, alterer):
+    def doit_echouer(nom, alterer, motif):
         e = Path(tmp) / nom
         shutil.copytree(d, e)
         alterer(e)
         try:
             A.tables(A.charger(e)[0])
         except A.ControleEchoue as err:
+            assert motif in str(err), (nom, str(err))
             print(f"   refusé comme attendu ({nom}) : {err}")
             return
         raise AssertionError(f"{nom} : contrôle non déclenché")
@@ -264,16 +265,34 @@ def test_controles(tmp):
         x["first_success"][i] = 49
         np.savez_compressed(e / "all-3_s44.npz", **x)
 
-    doit_echouer("fichier manquant", lambda e: (e / "encoder-3_s45.npz").unlink())
-    doit_echouer("arbre modifié", lambda e: modifier(e, "fp32_s49.npz", git_sale=True))
-    doit_echouer("autre code", lambda e: modifier(e, "fp32_s50.npz", git=SHA_AUTRE_CODE))
-    doit_echouer("NaN avant le succès", nan_avant)
-    doit_echouer("succès sans marge", succes_faux)
-    doit_echouer("autres épisodes", lambda e: modifier(e, "all-8_s42.npz", episodes_idx=np.arange(A.N)))
-    doit_echouer("couches", lambda e: modifier(e, "all-4_s42.npz", n_couches=108))
-    doit_echouer("commit inconnu", lambda e: modifier(e, "fp32_s51.npz", git="0" * 40))
+    doit_echouer("fichier manquant", lambda e: (e / "encoder-3_s45.npz").unlink(), "fichiers manquants")
+    doit_echouer("arbre modifié", lambda e: modifier(e, "fp32_s49.npz", git_sale=True), "arbre git modifié")
+    doit_echouer("hors de la lignée", lambda e: modifier(e, "fp32_s50.npz", git=SHA_AUTRE_CODE), "ne descend pas")
+    doit_echouer("NaN avant le succès", nan_avant, "NaN isolés")
+    doit_echouer("succès sans marge", succes_faux, "M2 < 1 et succès diffèrent")
+    doit_echouer("autres épisodes", lambda e: modifier(e, "all-8_s42.npz", episodes_idx=np.arange(A.N)),
+                 "épisodes différents")
+    doit_echouer("couches", lambda e: modifier(e, "all-4_s42.npz", n_couches=108), "108 couches")
+    doit_echouer("commit inconnu", lambda e: modifier(e, "fp32_s51.npz", git="0" * 40), "inconnu du dépôt")
     doit_echouer("paquet arrêté tôt sans succès complet",
-                 lambda e: modifier(e, "all-6_s44.npz", n_steps=np.r_[30, np.full(9, A.T)].astype(np.int32)))
+                 lambda e: modifier(e, "all-6_s44.npz", n_steps=np.r_[30, np.full(9, A.T)].astype(np.int32)),
+                 "paquet 0 arrêté à 30 pas")
+
+    def succes_mal_gele(e):
+        x = dict(np.load(e / "all-5_s43.npz"))
+        i = int(np.where(x["success"] & (x["first_success"] < 40))[0][0])
+        x["state"][int(x["first_success"][i]) + 1:, i, 2:5] = 1.0
+        np.savez_compressed(e / "all-5_s43.npz", **x)
+
+    doit_echouer("succès mal gelé", succes_mal_gele, "incomplètement gelé")
+
+    # commit descendant de c5703db mais avec un autre run_grid.py : refusé par la comparaison du code
+    vrai_git = A.git
+    A.git = lambda *args: 1 if args[0] == "diff" else 0
+    try:
+        doit_echouer("code modifié plus tard", lambda e: None, "n'a pas le code")
+    finally:
+        A.git = vrai_git
 
     def t_au_but_hors_depart(e):
         x = dict(np.load(e / "all-5_s45.npz"))
@@ -282,7 +301,7 @@ def test_controles(tmp):
         x["state"][30, i, 2:5] = x["goal_state"][i, 2:5]
         np.savez_compressed(e / "all-5_s45.npz", **x)
 
-    doit_echouer("M3 nulle hors départ au but", t_au_but_hors_depart)
+    doit_echouer("M3 nulle hors départ au but", t_au_but_hors_depart, "marge du T nulle")
 
     # cas limite d'arrondi : un échec dont la marge minimale vaut 1 - 5e-5 passe, et il est compté
     e = Path(tmp) / "limite"
@@ -295,7 +314,7 @@ def test_controles(tmp):
     x["state"][:, i, 4] = x["goal_state"][i, 4]            # angle au but : la marge vaut celle de la position
     np.savez_compressed(e / "all-6_s46.npz", **x)
     assert A.tables(A.charger(e)[0])[1] >= 1
-    print("ok contrôles bloquants (10 refus ; cas limite, divergences, paquet arrêté tôt, T au but acceptés)")
+    print("ok contrôles bloquants (12 refus ; cas limite, divergences, paquet arrêté tôt, T au but acceptés)")
 
 
 # ---------------------------------------------------------------- bout en bout
@@ -304,12 +323,15 @@ def test_bout_en_bout(tmp):
     effets = {"all:3": (3.0, 1.0), "all:4": (1.0, 1.0), "encoder:4": (1.5, 1.0), "predictor:4": (0.2, 1.0),
               "encoder:3": (3.0, 1.0), "predictor:3": (1.0, 1.0), "all:5": (0.0, 1.5)}
     d = Path(tmp) / "effets"
-    simuler(d, effets=effets, graine=2, part_au_but=0.0, identiques=("all:8",))   # sans M3 nulle : décomposition exacte
-    r = A.analyser(d)
+    simuler(d, effets=effets, graine=2, part_au_but=0.0, identiques=("all:8",))   # sans T au but : effet FF exact
+    r = A.analyser(d, effectifs=None)
     t = r["tests"]
+    assert t["P3'"]["episodes_bouge"] == r["controles"]["episodes_bouge"] < A.N
     assert t["P1"]["verdict"] == "soutenue" and t["P1"]["somme"] < 0, t["P1"]
     assert t["P2"]["verdict"] == "soutenue" and t["P2"]["somme"] > 0, t["P2"]
     assert t["P3'"]["verdict"] == "établie", t["P3'"]
+    assert t["P3' (M2)"]["verdict"] == "établie" and t["P3' (M2)"]["delta_log_M2"] > 0, t["P3' (M2)"]
+    assert all(t[k]["p_holm"] >= t[k]["p"] for k in t)             # Holm n'abaisse aucune p-valeur
     # la dégradation de M3 injectée sur les échecs de all:5 (facteur 1,5) se retrouve dans la classe FF
     dec = r["decomposition"]["all:5"]
     somme = sum(dec[c]["contribution_log_M3"] for c in ("SS", "SF", "FS", "FF"))
@@ -344,11 +366,31 @@ def test_bout_en_bout(tmp):
 
     d = Path(tmp) / "nul"
     simuler(d, graine=3)
-    r = A.analyser(d)
+    r = A.analyser(d, effectifs=None)
+    assert r["controles"]["episodes_T_au_but"] > 0
+
+    def finis(x, chemin=""):                                   # aucun NaN ni infini dans les sorties
+        if isinstance(x, dict):
+            for k, v in x.items():
+                finis(v, f"{chemin}/{k}")
+        elif isinstance(x, (list, tuple)):
+            for v in x:
+                finis(v, chemin)
+        elif isinstance(x, float):
+            assert np.isfinite(x), chemin
+
+    finis(A.pur(r))
+    assert not re.search(r"\bnan\b|\binf\b", A.rapport(r).lower())
+    try:
+        A.analyser(d)
+        raise AssertionError("effectifs de protocole non vérifiés")
+    except A.ControleEchoue as err:
+        assert "strates de départ" in str(err)
     couvrent = sum(r["descriptifs"][v]["delta_reussite"]["bas"] <= 0 <= r["descriptifs"][v]["delta_reussite"]["haut"]
                    for v in A.QUANTIFIEES)
     assert couvrent >= 7, couvrent
     assert r["tests"]["P3'"]["verdict"] == "non établie"
+    assert r["tests"]["P3' (M2)"]["verdict"] == "non établie"
     print(f"ok bout en bout, sans effet : {couvrent} intervalles sur 9 couvrent 0, P3' non établie")
     return r
 
