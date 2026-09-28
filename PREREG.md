@@ -113,3 +113,93 @@ Aucune version quantifiée n'avait tourné.
    contre les autres.
 10. **Limite connue de P2** : l'encodeur a 5,42 M poids quantifiés, le prédicteur 10,76 M. On rapporte
     l'erreur relative des poids par composant (exploratoire).
+
+## Amendement 2 (28 septembre 2026, avant toute analyse)
+
+Heure de référence : celle du commit qui introduit cet amendement. Les commits de revue qui le suivent
+et précèdent la première lecture des fichiers de la grille en font partie ; la fiche EXP-003 donne le
+commit final, celui qui fige l'analyse.
+
+Motif : revue du pré-enregistrement amendé (`revues/2026-09-28_revue-prereg-amendement1.md`, 2 P0 et
+7 P1), qui porte sur l'analyse et non sur le code qui tourne. Déjà vu à cette date : fp32 graine 42 sur
+les 500 épisodes, 82,2 % (nouveau protocole, seule ligne du journal de la grille lue, à 19 h 54) ; fp32
+graine 42 sous l'ancien protocole, 84,6 % (`resultats/exp003-bs1/`) ; les lancements de test fp32
+graine 42 sur 4 à 50 épisodes (`sanite-*`, `couplage-*`, `mps-*`, `test-c5703db-*`) ; le pilote EXP-002
+(50 autres épisodes, 6 versions). Aucune version quantifiée de la grille n'a été vue ; l'avancement est
+suivi au nombre de fichiers. L'amendement 1 dit 19 h 40, son commit `c5703db` est de 19 h 36 (heure de la
+machine) : c'est le commit qui fait foi. Les sections initiales « Métriques », « Hypothèses et tests » et
+le seuil exploratoire de 0,6 sont remplacés ; les points 5, 6 et 7 de l'amendement 1 sont remplacés ou
+précisés par les points 9, 10 et 11 ci-dessous.
+
+1. **Code.** `analyse_exp003.py` applique exactement cet amendement ; `test_analyse_exp003.py` le teste
+   sur des grilles simulées (effet nul, effets connus, fichiers corrompus). Tout calcul ajouté après la
+   première lecture des fichiers de la grille est exploratoire et vit dans un autre script.
+2. **Contrôles bloquants.** 55 fichiers (10 versions × graines 42 à 46, fp32 × graines 47 à 51), sans
+   doublon. Pour chaque fichier : arbre git propre au lancement ; commit `c5703db`, ou un commit
+   postérieur où `run_grid.py`, `quant.py` et `lancer_grille.sh` sont identiques à `c5703db` (la réplique
+   démarre après le commit de cet amendement) ; positions, épisodes, pas de départ et taille des paquets
+   identiques à `meta.json` ; 50 pas ; état de départ et but identiques entre fichiers. Pour chaque course
+   (épisode, version, graine) : succès si et seulement si un pas de premier succès est noté ; aucun NaN
+   dans l'état jusqu'au premier succès, NaN ensuite ; M2 et M3 finies et strictement positives ;
+   M2 < 1 si et seulement si succès, sauf les courses où |M2 - 1| ≤ 1e-4 (état enregistré en float32,
+   écart jusqu'à 1,5e-5 avec l'état interne de l'environnement), comptées et rapportées. Minima sur les
+   50 pas enregistrés, état initial exclu.
+3. **Arithmétique.** K(e, v) = succès sur les graines 42 à 46 ; x(e) = K(e, v) - K(e, réf), entier de
+   -5 à 5. Inversion de signe : 10 000 vecteurs de signes tirés une fois par
+   `numpy.random.default_rng(0)` (forme 10 000 × 500), réutilisés partout ; un sous-échantillon de n
+   épisodes prend les n premières colonnes. p bilatérale = (1 + nombre de |Σ s x| ≥ |Σ x|) / 10 001 ;
+   unilatérale, même forme dans le sens de l'alternative ; égalités comprises. Calcul en float64 sur des
+   entiers, vérifié identique au calcul en entiers. Une différence non finie arrête l'analyse.
+4. **P1 et P2**, bilatérales. P1 soutenue si p ajustée (Holm) < 0,05 et Σ x < 0 ; P2 soutenue si p
+   ajustée < 0,05 et Σ [K(e, predictor:4) - K(e, encoder:4)] > 0. Un effet significatif de sens
+   contraire contredit l'hypothèse.
+5. **P3'(a)**, marge 0,02, soit un épisode sur 50, la résolution du protocole officiel de LeWM (50
+   épisodes, une graine) : y(e) = 10 x(e) + 1, p_bas = (1 + nombre de Σ s y ≥ Σ y) / 10 001 ;
+   z(e) = 10 x(e) - 1, p_haut = (1 + nombre de Σ s z ≤ Σ z) / 10 001. Contrôle rapporté, sans valeur de
+   décision : TOST t apparié et intervalle à 90 %.
+6. **P3'(b) porte sur M3**, la marge du T seul, en log : w(e) = moyenne sur g de log M3(e, all:5, g)
+   moins moyenne sur g de log M3(e, fp32, g), unilatérale « plus grand ». Motif : la question
+   pré-enregistrée porte sur l'erreur de pose du T, et M2 contient le retour de l'agent. Choix de Claude,
+   à confirmer par Thomas avant la lecture des résultats. p(P3') = max(p_bas, p_haut, p_b). P3' établie si
+   sa p ajustée (Holm) < 0,05, non établie sinon. M2 devient descriptive, même transformation.
+7. **Descriptifs.** Par version : taux de réussite ; écart à fp32 avec intervalle bootstrap à 95 %
+   (percentile, 10 000 rééchantillons des 500 positions tirés par `default_rng(2)`, sur les différences
+   appariées par épisode) ; de même pour log M3 et log M2. Décomposition par graine en classes SS, SF,
+   FS, FF (fp32 d'abord, la version ensuite) : nombre de courses et part de chaque classe dans l'écart
+   moyen de log M3 et de log M2 ; pour SS, écart moyen du pas du premier succès.
+8. **M4 remplacée.** Chaque course est classée : réussite ; T placé sans réussite (M3 < 1) ; T jamais
+   placé (M3 ≥ 1). Parts par version, aussi dans la strate « le T doit bouger » (marge du T à l'état de
+   départ, copie du jeu de données, au moins 1), où l'écart de réussite et l'écart de log M3 ont leur
+   propre bootstrap (`default_rng(3)`). Les affirmations sur la physique du T se limitent à cette strate.
+9. **Point 5 remplacé : protocoles simulés.** Réglages (n épisodes, m graines) : (30, 1), (50, 1),
+   (500, 1), (30, 5), (50, 5). (50, 1) est le protocole officiel de LeWM (`le-wm/config/eval/pusht.yaml` :
+   50 épisodes, graine 42) ; n = 30 est l'effectif apparié de Where Bits Matter (2602.11882 : 10 épisodes
+   × 3 graines au budget bA) ; Fu et al. (2602.02110) suivent le protocole de DINO-WM sans donner le
+   nombre d'épisodes dans leur PDF : pas de réglage tiré d'eux. (500, 1) isole le bruit du planificateur,
+   (50, 5) isole le tirage des épisodes. 1 000 tirages par `default_rng(1)` : par tirage, n positions
+   sans remise, puis un indice de graine côté version et un côté réplique (tirés même si m = 5).
+   Variante appariée : fp32 et la version aux mêmes graines (42 à 46). Variante non appariée : fp32 dans
+   47 à 51, la version dans 42 à 46. Comparaisons : fp32 contre chacune des 9 versions ; encoder:b contre
+   predictor:b (b = 4, 3), appariée seulement ; nul vrai, fp32 (47 à 51) contre fp32 (42 à 46). Signe de
+   référence : celui du plan complet. Parts de même signe, de différence nulle, de signe contraire ;
+   test à 0,05 (McNemar exact bilatéral si m = 1, inversion de signe sur K si m = 5) : conclut au même
+   sens, ne conclut pas, conclut au sens contraire. Le message ne s'appuie que sur les versions dont
+   l'intervalle du plan complet exclut 0 ; les autres sont rapportées. Part du planificateur :
+   σ²_plan = moyenne sur e de la variance entre graines des différences par graine ; σ²_ep = variance
+   entre épisodes de la différence moyenne, moins σ²_plan / 5 ; on rapporte
+   σ²_plan / (σ²_plan + max(σ²_ep, 0)).
+10. **Point 6 précisé : plancher de bruit.** 20 paires ordonnées a ≠ b parmi 42 à 46 ; perdus (succès de
+    fp32 à la graine a, échec de v à la graine b) et gagnés séparés, par 50 épisodes ; attribution =
+    pertes moyennes fp32 contre fp32 / pertes moyennes fp32 contre v. Aux mêmes graines (a = b) :
+    descriptif. Épisodes discordants par 50 entre deux graines de fp32, avec intervalle bootstrap : ce
+    chiffre remplace A-01 ; de même contre la réplique.
+11. **Point 7 remplacé : épisodes cassés.** D_v(e) = K(e, fp32, 47 à 51) - K(e, v, 42 à 46) ;
+    D_0(e) = K(e, fp32, 47 à 51) - K(e, fp32, 42 à 46) ; cassé si D ≥ 3. Strates de la réplique :
+    K = 5, 1 à 4, 0. Nombres observés et nuls, au total et par strate ; test descriptif par inversion de
+    signe de 1[D_v ≥ 3] - 1[D_0 ≥ 3], unilatéral (plus de cassés que le nul). Les baisses aux mêmes
+    graines restent descriptives. Épisodes cassés, robustes (réplique 5/5, non cassés) et fragiles
+    (réplique 1 à 4) décrits par les médianes de la distance et de l'angle initiaux au but, de la marge
+    du T au départ, des contacts et du pas du premier succès en fp32.
+12. La réplique n'entre jamais dans P1, P2, P3'.
+13. Recouvrement avec les 50 épisodes d'EXP-002 : aucun (calculé sur les `meta.json`, avant tout
+    résultat). Six épisodes du jeu figurent deux fois parmi les 500, à des pas de départ différents.

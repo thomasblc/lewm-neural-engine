@@ -28,25 +28,6 @@ def charger(dossier):
     return res
 
 
-def metriques_episode(d):
-    """M2 et M3 par épisode pour une (version, graine) : minimum sur les pas enregistrés."""
-    goal = d["goal_state"]                     # (n, 7)
-    bp = d["block_pose"]                       # (T, n, 3)
-    pos = np.linalg.norm(bp[..., :2] - goal[None, :, 2:4], axis=-1)   # (T, n)
-    ang = ecart_angle(bp[..., 2], goal[None, :, 4])
-    m2 = np.nanmin(pos, axis=0)
-    m3 = np.nanmin(ang, axis=0)
-    return m2, m3
-
-
-def tableau(res, spec):
-    """success (graines, n), M2 (graines, n), M3 (graines, n) pour une version."""
-    graines = sorted(res[spec])
-    s = np.stack([res[spec][g]["success"] for g in graines]).astype(float)
-    m = [metriques_episode(res[spec][g]) for g in graines]
-    return graines, s, np.stack([x[0] for x in m]), np.stack([x[1] for x in m])
-
-
 def verifier_succes(d, tol=1e-6):
     """Test de sanité : au pas du premier succès, les seuils de l'environnement doivent être tenus.
 
