@@ -203,3 +203,50 @@ précisés par les points 9, 10 et 11 ci-dessous.
 12. La réplique n'entre jamais dans P1, P2, P3'.
 13. Recouvrement avec les 50 épisodes d'EXP-002 : aucun (calculé sur les `meta.json`, avant tout
     résultat). Six épisodes du jeu figurent deux fois parmi les 500, à des pas de départ différents.
+
+## Amendement 3 (28 septembre 2026, avant toute analyse)
+
+Heure de référence : celle du commit qui l'introduit. Motif : revue du script d'analyse par deux
+relecteurs indépendants (justesse statistique : 0 P0, 5 P1 ; intégration aux vrais fichiers : 1 P0,
+2 P1). Aucun fichier de la grille n'a été lu ; les défauts ont été trouvés sur les fichiers de test fp32
+graine 42 déjà déclarés vus et sur les données de protocole (états de départ et buts).
+
+1. **M3 nulle.** Dans 70 des 500 épisodes, le T part exactement à sa pose cible (copie du jeu de
+   données) ; s'il n'est pas touché, M3 vaut exactement 0 et log M3 n'existe pas. M3 = 0 est admise
+   seulement pour ces épisodes, bloquante ailleurs ; M2 = 0 reste bloquante. Tous les logs de marge
+   deviennent log(max(M, 0,05)) : 0,05 correspond à 1 px ou 1 degré, sous toute précision physique utile.
+2. **P3'(b) dans la strate « le T doit bouger »** (marge du T au départ au moins 1 ; 328 épisodes,
+   disjoints des 70 ci-dessus) : w(e) défini au point 6 de l'amendement 2, avec le plancher, moyenne sur
+   ces 328 épisodes ; inversion de signe sur les 328 premières colonnes. Motif : hors de la strate, le T
+   n'a pas à bouger et log M3 mesure surtout si l'agent l'effleure ; le point 8 limitait déjà les
+   affirmations sur la physique du T à cette strate. P3'(a) reste sur les 500 épisodes. L'écart de
+   log M3 sur les 500 épisodes reste rapporté, en descriptif.
+3. **Courses divergentes.** Un échec dont l'état devient NaN sur ses 7 colonnes à un pas j, et le reste
+   jusqu'au pas 50, compte comme échec ; ses marges sont prises sur les pas finis (sur l'état de départ si
+   j = 0) ; leur nombre est rapporté par fichier. Tout autre motif de NaN reste bloquant.
+4. **Contrôles précisés.** Un paquet peut s'arrêter avant 50 pas quand tous ses épisodes ont réussi
+   (mode « wait » de stable-worldmodel) : admis si son nombre de pas vaut le dernier pas de premier
+   succès plus 1. Le nombre de couches quantifiées doit valoir 0 (fp32), 109 (all), 73 (encoder) ou
+   30 (predictor). Le commit de chaque fichier doit exister et descendre de `c5703db`. Le produit en
+   float64 est comparé à chaque test au produit en entiers sur les 100 premiers vecteurs de signes.
+5. **Protocoles simulés (point 9) : réglages remplacés par (50, 1), (500, 1), (10, 3), (50, 5).** (10, 3)
+   est le protocole de Where Bits Matter (10 épisodes × 3 graines, test du signe sur les unités (graine,
+   épisode)), à la place de (30, 1) qui ne l'était pas ; (30, 5) est retiré. Un seul flux
+   `default_rng(1)`, réglages dans cet ordre ; par tirage : n positions sans remise, puis, si m = 3,
+   3 graines sur 5 sans remise côté version et 3 côté réplique. Si m = 1, les graines ne sont pas tirées
+   mais énumérées : 5 couples appariés, 25 non appariés, moyennés à poids égaux (le réglage (500, 1)
+   devient un calcul exact). Test : McNemar exact bilatéral sur les courses (épisode, graine) si m = 1
+   ou 3 ; inversion de signe sur K si m = 5. Chaque comparaison porte deux indicateurs calculés par le
+   script : « retenue » (intervalle bootstrap à 95 % du plan complet qui exclut 0 ; seules ces lignes
+   portent le message) et « stable » (le signe du plan complet ne change pas quand on retire l'une des
+   5 graines).
+6. **Part du planificateur** rapportée deux fois : appariée (mêmes graines, borne basse, puisque le
+   hasard est partagé) et non appariée (version aux graines 42 à 46 contre la réplique 47 à 51, rang à
+   rang).
+7. **Recouvrement avec EXP-002 (point 13), précisé** : aucun couple (épisode, pas de départ) commun ;
+   9 épisodes du jeu figurent dans les deux échantillons, à d'autres pas de départ.
+8. **Tests ajoutés** (`test_analyse_exp003.py`) : T au but au départ, succès au pas 0, paquet arrêté
+   tôt, courses divergentes, version identique à fp32 (différence toujours nulle en apparié), part du
+   planificateur sur des composantes de variance connues, sens « moins » contre l'énumération exacte ;
+   refus d'un nombre de couches faux, d'un commit inconnu, d'un paquet arrêté tôt sans succès complet,
+   d'une M3 nulle hors départ au but.

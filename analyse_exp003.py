@@ -34,11 +34,13 @@ FICHIERS_CODE = ("run_grid.py", "quant.py", "lancer_grille.sh")
 B = 10_000                         # vecteurs d'inversion de signe, default_rng(0)
 B_BOOT = 10_000                    # rééchantillons bootstrap, default_rng(2) (strate : default_rng(3))
 N_SIM = 1_000                      # tirages des protocoles simulés, default_rng(1)
-REGLAGES_SIM = ((30, 1), (50, 1), (500, 1), (30, 5), (50, 5))   # (épisodes, graines)
+REGLAGES_SIM = ((50, 1), (500, 1), (10, 3), (50, 5))   # (épisodes, graines), amendement 3
 ALPHA = 0.05
 MARGE_TOST = 0.02                  # ± 2 points de réussite, un épisode sur 50 du protocole officiel
 SEUIL_CASSE = 3                    # baisse d'au moins 3 succès sur 5
 TOL_ARRONDI = 1e-4                 # état enregistré en float32 : |M2 - 1| sous ce seuil n'est pas bloquant
+PLANCHER_LOG = 0.05                # log(max(M, 0,05)) : 1 px ou 1 degré, sous l'arrondi physique utile
+COUCHES = {"fp32": 0, "all": 109, "encoder": 73, "predictor": 30}
 LIM = np.pi / 9
 CLASSES = ("reussite", "T place sans reussite", "T jamais place")
 
@@ -54,11 +56,21 @@ def exiger(cond, message):
 
 # ---------------------------------------------------------------- chargement et contrôles bloquants
 
-def code_identique(sha):
-    """Vrai si le commit `sha` a run_grid.py, quant.py et lancer_grille.sh identiques à c5703db."""
-    r = subprocess.run(["git", "-C", str(ICI), "diff", "--quiet", COMMIT_CODE, sha, "--", *FICHIERS_CODE],
-                       capture_output=True, text=True)
-    return r.returncode == 0
+def git(*args):
+    return subprocess.run(["git", "-C", str(ICI), *args], capture_output=True, text=True).returncode
+
+
+def verifier_code(sha):
+    """Le commit `sha` existe, descend de c5703db et a run_grid.py, quant.py, lancer_grille.sh identiques."""
+    exiger(git("cat-file", "-e", f"{sha}^{{commit}}") == 0, f"commit {sha[:7]} inconnu du dépôt")
+    exiger(git("merge-base", "--is-ancestor", COMMIT_CODE, sha) == 0, f"le commit {sha[:7]} ne descend pas de {COMMIT_CODE}")
+    exiger(git("diff", "--quiet", COMMIT_CODE, sha, "--", *FICHIERS_CODE) == 0,
+           f"le commit {sha[:7]} n'a pas le code de {COMMIT_CODE}")
+
+
+def lg(M):
+    """Log des marges avec plancher fixe (amendement 3) : M3 vaut exactement 0 quand le T part au but."""
+    return np.log(np.maximum(M, PLANCHER_LOG))
 
 
 def charger(dossier):
@@ -88,38 +100,57 @@ def charger(dossier):
         exiger(np.array_equal(d["episodes_idx"], ep_ref) and np.array_equal(d["start_steps"], st_ref),
                f"{nom} : épisodes différents de meta.json")
         exiger(int(d["chunk"]) == proto["chunk"], f"{nom} : taille des paquets")
-        exiger(np.all(d["n_steps"] == T), f"{nom} : nombre de pas")
+        exiger(int(d["n_couches"]) == COUCHES[v.split(":")[0]], f"{nom} : {int(d['n_couches'])} couches quantifiées")
+        # un paquet s'arrête avant 50 pas si tous ses épisodes ont réussi (mode « wait » de stable-worldmodel)
+        ch = int(d["chunk"])
+        for c, pas in enumerate(np.asarray(d["n_steps"]).tolist()):
+            sl = slice(c * ch, (c + 1) * ch)
+            exiger(pas == T or (d["success"][sl].all() and int(d["first_success"][sl].max()) == pas - 1),
+                   f"{nom} : paquet {c} arrêté à {pas} pas")
         exiger(d["state"].shape == (T, N, 7), f"{nom} : forme de l'état {d['state'].shape}")
         for k in ("init_state", "goal_state"):
             exiger(np.array_equal(d[k], ref[k]), f"{nom} : {k} différent")
     for sha in sorted(shas):
-        exiger(code_identique(sha), f"le commit {sha[:7]} n'a pas le code de {COMMIT_CODE}")
+        verifier_code(sha)
     return res, sorted(shas)
 
 
 def controler_course(d, nom):
-    """Contrôles bloquants d'une (version, graine). Renvoie M2, M3 et le nombre de cas limites d'arrondi."""
+    """Contrôles bloquants d'une (version, graine).
+
+    Renvoie M2, M3, le nombre de cas limites d'arrondi et le nombre de courses divergentes. Une course
+    divergente (amendement 3) est un échec dont l'état devient NaN sur ses 7 colonnes à un pas j et le reste
+    jusqu'au pas 50 ; ses marges sont prises sur les pas finis, ou sur l'état de départ si j = 0.
+    """
     s = d["success"].astype(bool)
     k = d["first_success"].astype(np.int64)
     exiger(np.array_equal(s, k >= 0) and np.all(k < T), f"{nom} : succès et pas du premier succès incohérents")
-    fin = np.where(s, k, T - 1)
-    vivant = np.arange(T)[:, None] <= fin[None, :]                # (T, N) : pas enregistrés
     etat = d["state"]
-    exiger(not np.isnan(etat[vivant]).any(), f"{nom} : NaN dans l'état avant le premier succès")
-    exiger(np.isnan(etat[~vivant]).all(), f"{nom} : état enregistré après le premier succès")
-    m, mT, _ = marges(d)
+    nan_pas = np.isnan(etat).any(axis=2)                          # (T, N)
+    j = np.where(nan_pas.any(axis=0), nan_pas.argmax(axis=0), T)  # premier pas avec un NaN
+    t = np.arange(T)[:, None]
+    suffixe = np.isnan(etat).all(axis=2) == (t >= j[None, :])     # NaN complets exactement à partir de j
+    exiger(suffixe.all(), f"{nom} : NaN isolés dans l'état")
+    exiger(np.all(j[s] == k[s] + 1), f"{nom} : état gelé ailleurs qu'au pas suivant le succès")
+    diverge = ~s & (j < T)
+    if (diverge & (j == 0)).any():
+        etat = etat.copy()
+        etat[0, diverge & (j == 0)] = d["init_state"][diverge & (j == 0)]
+    m, mT, _ = marges({"state": etat, "goal_state": d["goal_state"]})
     exiger(np.isfinite(m).all() and np.isfinite(mT).all(), f"{nom} : marge non finie")
-    exiger((m > 0).all() and (mT > 0).all(), f"{nom} : marge nulle, log impossible")
+    au_but = (d["init_state"][:, 2:5] == d["goal_state"][:, 2:5]).all(axis=1)
+    exiger((m > 0).all(), f"{nom} : marge de succès nulle")
+    exiger(((mT > 0) | au_but).all(), f"{nom} : marge du T nulle alors que le T ne partait pas au but")
     desaccord = (m < 1) != s
     limites = desaccord & (np.abs(m - 1) <= TOL_ARRONDI)
     exiger(not (desaccord & ~limites).any(),
            f"{nom} : M2 < 1 et succès diffèrent sur {int((desaccord & ~limites).sum())} courses")
-    return m, mT, int(limites.sum())
+    return m, mT, int(limites.sum()), int(diverge.sum())
 
 
 def tables(res):
     """Par (version, groupe de graines) : succès, K, M2, M3, classes, pas du premier succès, contacts."""
-    D, limites = {}, 0
+    D, limites, divergences = {}, 0, {}
     for v in VERSIONS:
         for groupe, graines in (("A", GA), ("B", GB)):
             if groupe == "B" and v != "fp32":
@@ -127,8 +158,9 @@ def tables(res):
             S, M2, M3, P, C = [], [], [], [], []
             for g in graines:
                 d = res[(v, g)]
-                m, mT, lim = controler_course(d, f"{v} graine {g}")
+                m, mT, lim, div = controler_course(d, f"{v} graine {g}")
                 limites += lim
+                divergences[f"{v} graine {g}"] = div
                 S.append(d["success"].astype(np.int64))
                 M2.append(m)
                 M3.append(mT)
@@ -139,7 +171,7 @@ def tables(res):
             D[(v, groupe)] = {"S": S, "K": S.sum(axis=0), "M2": np.stack(M2), "M3": M3,
                               "classe": np.where(S == 1, 0, np.where(M3 < 1, 1, 2)),
                               "premier": np.stack(P), "contacts": np.stack(C)}
-    return D, limites
+    return D, limites, divergences
 
 
 def depart(res):
@@ -150,7 +182,8 @@ def depart(res):
     dA = np.linalg.norm(i[:, :2] - g[:, :2], axis=1)
     dth = ecart_angle(i[:, 4], g[:, 4])
     mT0 = np.maximum(dT / 20, dth / LIM)
-    return {"dT0": dT, "dA0": dA, "dth0": dth, "mT0": mT0, "bouge": mT0 >= 1}
+    au_but = (d["init_state"][:, 2:5] == d["goal_state"][:, 2:5]).all(axis=1)
+    return {"dT0": dT, "dA0": dA, "dth0": dth, "mT0": mT0, "bouge": mT0 >= 1, "au_but": au_but}
 
 
 # ---------------------------------------------------------------- outils statistiques
@@ -181,6 +214,10 @@ class Inversion:
         with np.errstate(all="ignore"):
             t = X @ self.s[:, :X.shape[1]].T
         exiger(np.isfinite(t).all(), "sommes permutées non finies")
+        if np.array_equal(X, np.round(X)):                     # différences entières : exactitude vérifiée
+            Xi = X.astype(np.int64)
+            exiger(np.array_equal(t[:, :100], Xi @ self.s[:100, :X.shape[1]].astype(np.int64).T),
+                   "produit float64 différent du produit en entiers")
         if sens == "bilateral":
             compte = np.count_nonzero(np.abs(t) >= np.abs(t_obs), axis=1)
         elif sens == "plus":
@@ -246,13 +283,13 @@ def verdict(p_adj, somme, sens_attendu):
 
 # ---------------------------------------------------------------- analyses de l'amendement 2
 
-def tests_preenregistres(D, inv):
-    """Points 4 à 6 : P1, P2, P3' et la correction de Holm."""
+def tests_preenregistres(D, dep, inv):
+    """Points 4 à 6 : P1, P2, P3' et la correction de Holm ; P3'(b) dans la strate « bouge » (amendement 3)."""
     f = D[("fp32", "A")]
     x1 = D[("all:4", "A")]["K"] - f["K"]
     x2 = D[("predictor:4", "A")]["K"] - D[("encoder:4", "A")]["K"]
     xa = D[("all:5", "A")]["K"] - f["K"]
-    w = np.log(D[("all:5", "A")]["M3"]).mean(axis=0) - np.log(f["M3"]).mean(axis=0)
+    w = (lg(D[("all:5", "A")]["M3"]).mean(axis=0) - lg(f["M3"]).mean(axis=0))[dep["bouge"]]
     p1 = inv.p(x1, "bilateral")
     p2 = inv.p(x2, "bilateral")
     p_bas = inv.p(10 * xa + 1, "plus")       # H0 : delta <= -0,02 ; 10 x + 1 = 50 (x / 5 + 0,02)
@@ -268,7 +305,7 @@ def tests_preenregistres(D, inv):
                "delta_reussite": float(x2.mean() / 5), "p": p2, "p_holm": float(adj[1]),
                "verdict": verdict(adj[1], x2.sum(), +1)},
         "P3'": {"delta_reussite": float(xa.mean() / 5), "p_bas": p_bas, "p_haut": p_haut,
-                "delta_log_M3": float(w.mean()), "p_b": p_b, "p": p3, "p_holm": float(adj[2]),
+                "delta_log_M3_bouge": float(w.mean()), "episodes_bouge": int(w.size), "p_b": p_b, "p": p3, "p_holm": float(adj[2]),
                 "verdict": "établie" if adj[2] < ALPHA else "non établie",
                 "controle_tost_t": tost_t(xa / 5)},
     }
@@ -290,8 +327,8 @@ def descriptifs(D, dep, boot, boot_strate):
              "classes": parts(d["classe"]), "classes_bouge": parts(d["classe"][:, bouge])}
         if v != "fp32":
             dr = (d["K"] - f["K"]) / 5
-            d3 = np.log(d["M3"]).mean(axis=0) - np.log(f["M3"]).mean(axis=0)
-            d2 = np.log(d["M2"]).mean(axis=0) - np.log(f["M2"]).mean(axis=0)
+            d3 = lg(d["M3"]).mean(axis=0) - lg(f["M3"]).mean(axis=0)
+            d2 = lg(d["M2"]).mean(axis=0) - lg(f["M2"]).mean(axis=0)
             e["delta_reussite"] = boot.ic(dr)
             e["delta_log_M3"] = boot.ic(d3)
             e["delta_log_M2"] = boot.ic(d2)
@@ -311,7 +348,7 @@ def decomposition(D):
             masque = (f["S"] == sf) & (d["S"] == sv)
             e = {"courses": int(masque.sum())}
             for M in ("M3", "M2"):
-                diff = np.log(d[M]) - np.log(f[M])
+                diff = lg(d[M]) - lg(f[M])
                 e[f"contribution_log_{M}"] = float(diff[masque].sum() / f["S"].size)
             if nom == "SS":
                 e["delta_pas_premier_succes"] = (float((d["premier"] - f["premier"])[masque].mean())
@@ -350,64 +387,105 @@ def plancher(D, boot):
     return out
 
 
-def protocoles_simules(D, inv, signe_plein):
-    """Point 9 : ce que concluraient des études à peu d'épisodes et peu de graines."""
+def protocoles_simules(D, inv, reference):
+    """Point 9 (amendement 3) : ce que concluraient des études à peu d'épisodes et peu de graines.
+
+    m = 1 : toutes les graines sont énumérées (5 couples appariés, 25 non appariés) pour chaque tirage
+    d'épisodes ; m = 3 : 3 graines sur 5 tirées de chaque côté ; m = 5 : toutes. Test : McNemar exact sur
+    les courses (épisode, graine) si m = 1 ou 3, inversion de signe sur K si m = 5.
+    """
     rng = np.random.default_rng(1)
     comps = [("fp32", v, True) for v in QUANTIFIEES] + [("encoder:4", "predictor:4", False),
                                                           ("encoder:3", "predictor:3", False)]
     out = {}
     for n, m in REGLAGES_SIM:
         pos = np.empty((N_SIM, n), dtype=np.int64)
-        ia = np.empty(N_SIM, dtype=np.int64)
-        ib = np.empty(N_SIM, dtype=np.int64)
+        ca = np.zeros((N_SIM, 3), dtype=np.int64)
+        cb = np.zeros((N_SIM, 3), dtype=np.int64)
         for t in range(N_SIM):
             pos[t] = rng.choice(N, n, replace=False)
-            ia[t] = rng.integers(5)
-            ib[t] = rng.integers(5)
+            if m == 3:
+                ca[t] = rng.choice(5, 3, replace=False)
+                cb[t] = rng.choice(5, 3, replace=False)
 
-        def extraire(v, groupe, idx):
+        def courses(v, groupe, graines):
+            """(tirages, unités) : issues 0/1 si m = 1 ou 3 (unités = courses), K si m = 5 (unités = épisodes)."""
             S = D[(v, groupe)]["S"]
+            if m == 5:
+                return S[:, pos].sum(axis=0)
             if m == 1:
-                return S[idx[:, None], pos]              # (tirages, n), 0 ou 1
-            return S[:, pos].sum(axis=0)                 # (tirages, n), K de 0 à 5
+                return S[graines][pos]
+            return S[graines[:, :, None], pos[:, None, :]].reshape(N_SIM, 3 * n)
 
         def evaluer(R, A, signe):
-            delta = (A - R).mean(axis=1) / (1 if m == 1 else 5)
-            p = mcnemar_exact(R, A) if m == 1 else inv.p_lot(A - R, "bilateral")
+            delta = (A - R).mean(axis=1)
+            p = inv.p_lot(A - R, "bilateral") if m == 5 else mcnemar_exact(R, A)
             sig, sg = p < ALPHA, np.sign(delta)
-            e = {"part_significatif": float(sig.mean()), "part_difference_nulle": float(np.mean(delta == 0))}
+            e = {"part_significatif": sig.mean(), "part_difference_nulle": np.mean(delta == 0)}
             if signe != 0:
-                e.update({"part_meme_signe": float(np.mean(sg == signe)),
-                          "part_signe_contraire": float(np.mean(sg == -signe)),
-                          "part_conclut_meme_sens": float(np.mean(sig & (sg == signe))),
-                          "part_ne_conclut_pas": float(np.mean(~sig)),
-                          "part_conclut_sens_contraire": float(np.mean(sig & (sg == -signe)))})
+                e.update({"part_meme_signe": np.mean(sg == signe), "part_signe_contraire": np.mean(sg == -signe),
+                          "part_conclut_meme_sens": np.mean(sig & (sg == signe)), "part_ne_conclut_pas": np.mean(~sig),
+                          "part_conclut_sens_contraire": np.mean(sig & (sg == -signe))})
             return e
+
+        def moyenne(liste):
+            return {k: float(np.mean([e[k] for e in liste])) for k in liste[0]}
+
+        def variante(ref, gref, alt, apparie, signe):
+            if m == 1:
+                couples = [(a, a) for a in range(5)] if apparie else [(a, b) for a in range(5) for b in range(5)]
+                return moyenne([evaluer(courses(ref, gref, b), courses(alt, "A", a), signe) for a, b in couples])
+            return moyenne([evaluer(courses(ref, gref, ca if apparie else cb), courses(alt, "A", ca), signe)])
 
         cle = f"n{n}_graines{m}"
         out[cle] = {}
         for ref, alt, a_une_replique in comps:
-            signe = signe_plein[(ref, alt)]
-            e = {"apparie": evaluer(extraire(ref, "A", ia), extraire(alt, "A", ia), signe)}
+            r = reference[(ref, alt)]
+            var = {"apparie": variante(ref, "A", alt, True, r["signe"])}
             if a_une_replique:
-                e["non_apparie"] = evaluer(extraire("fp32", "B", ib), extraire(alt, "A", ia), signe)
-            out[cle][f"{ref} -> {alt}"] = e
+                var["non_apparie"] = variante("fp32", "B", alt, False, r["signe"])
+            out[cle][f"{ref} -> {alt}"] = {"reference": r, "variantes": var}
         out[cle]["nul vrai : fp32 replique -> fp32"] = {
-            "non_apparie": evaluer(extraire("fp32", "B", ib), extraire("fp32", "A", ia), 0)}
+            "reference": {"signe": 0, "retenue": False, "signe_stable_sans_une_graine": None},
+            "variantes": {"non_apparie": variante("fp32", "B", "fp32", False, 0)}}
     return out
 
 
+def references(D, desc):
+    """Signe du plan complet, intervalle qui exclut 0 (retenue pour le message) et stabilité du signe
+    quand on retire une graine (contre la circularité des études simulées à une graine)."""
+    ref = {}
+    paires = [("fp32", v, desc[v]["delta_reussite"]) for v in QUANTIFIEES] + \
+             [(f"encoder:{b}", f"predictor:{b}", desc[f"predictor:{b} - encoder:{b}"]["delta_reussite"]) for b in (4, 3)]
+    for a, b, ic in paires:
+        d = D[(b, "A")]["S"] - D[(a, "A")]["S"]                 # (5, N)
+        signe = int(np.sign(d.sum()))
+        stable = all(int(np.sign(np.delete(d, g, axis=0).sum())) == signe for g in range(5))
+        ref[(a, b)] = {"signe": signe, "retenue": bool(ic["bas"] > 0 or ic["haut"] < 0),
+                       "signe_stable_sans_une_graine": stable}
+    return ref
+
+
 def part_planificateur(D):
-    """Point 9 : part de la variance d'une étude à une graine qui vient du planificateur."""
-    f = D[("fp32", "A")]["S"]
-    out = {}
-    for v in QUANTIFIEES + ("fp32 replique",):
-        X = D[("fp32", "B")]["S"] if v == "fp32 replique" else D[(v, "A")]["S"]
-        dg = (X - f).astype(np.float64)                        # (5, N)
+    """Point 9 : part de la variance d'une étude à une graine qui vient du planificateur.
+
+    Appariée (mêmes graines, hasard partagé) : borne basse ; non appariée (version contre la réplique,
+    graines 42 à 46 contre 47 à 51, rang à rang) : plus proche des études qui ne partagent pas le hasard.
+    """
+    f, fB = D[("fp32", "A")]["S"], D[("fp32", "B")]["S"]
+
+    def parts_var(dg):
+        dg = dg.astype(np.float64)                             # (5, N)
         s2_plan = float(dg.var(axis=0, ddof=1).mean())
         s2_ep = float(dg.mean(axis=0).var(ddof=1) - s2_plan / 5)
         tot = s2_plan + max(s2_ep, 0.0)
-        out[v] = {"sigma2_plan": s2_plan, "sigma2_ep": s2_ep, "part_planificateur": s2_plan / tot if tot > 0 else None}
+        return {"sigma2_plan": s2_plan, "sigma2_ep": s2_ep, "part_planificateur": s2_plan / tot if tot > 0 else None}
+
+    out = {}
+    for v in QUANTIFIEES:
+        X = D[(v, "A")]["S"]
+        out[v] = {"apparie_borne_basse": parts_var(X - f), "non_apparie": parts_var(X - fB)}
+    out["fp32 replique"] = {"non_apparie": parts_var(fB - f)}
     return out
 
 
@@ -447,25 +525,26 @@ def episodes_casses(D, dep, inv):
 
 def analyser(dossier):
     res, shas = charger(dossier)
-    D, limites = tables(res)
+    D, limites, divergences = tables(res)
     dep = depart(res)
     inv = Inversion()
     boot = Bootstrap()
+    exiger(dep["bouge"].sum() > 0, "strate « le T doit bouger » vide")
     boot_strate = Bootstrap(n=int(dep["bouge"].sum()), graine=3)
     desc = descriptifs(D, dep, boot, boot_strate)
-    signe_plein = {("fp32", v): int(np.sign((D[(v, "A")]["K"] - D[("fp32", "A")]["K"]).sum())) for v in QUANTIFIEES}
     for b in (4, 3):
         x = D[(f"predictor:{b}", "A")]["K"] - D[(f"encoder:{b}", "A")]["K"]
-        signe_plein[(f"encoder:{b}", f"predictor:{b}")] = int(np.sign(x.sum()))
         desc[f"predictor:{b} - encoder:{b}"] = {"delta_reussite": boot.ic(x / 5)}
     return {
         "controles": {"fichiers": len(res), "commits": shas, "cas_limites_arrondi": limites,
-                      "episodes_bouge": int(dep["bouge"].sum())},
-        "tests": tests_preenregistres(D, inv),
+                      "episodes_bouge": int(dep["bouge"].sum()),
+                      "episodes_T_au_but": int(dep["au_but"].sum()),
+                      "courses_divergentes": {k: v for k, v in divergences.items() if v}},
+        "tests": tests_preenregistres(D, dep, inv),
         "descriptifs": desc,
         "decomposition": decomposition(D),
         "plancher": plancher(D, boot),
-        "protocoles_simules": protocoles_simules(D, inv, signe_plein),
+        "protocoles_simules": protocoles_simules(D, inv, references(D, desc)),
         "part_planificateur": part_planificateur(D),
         "episodes_casses": episodes_casses(D, dep, inv),
     }
@@ -483,7 +562,9 @@ def rapport(r):
          f"Contrôles bloquants passés : {r['controles']['fichiers']} fichiers, commits "
          f"{', '.join(s[:7] for s in r['controles']['commits'])}, "
          f"{r['controles']['cas_limites_arrondi']} cas limites d'arrondi, "
-         f"{r['controles']['episodes_bouge']} épisodes où le T doit bouger.", "",
+         f"{r['controles']['episodes_bouge']} épisodes où le T doit bouger, "
+         f"{r['controles']['episodes_T_au_but']} où il part au but, courses divergentes : "
+         f"{r['controles']['courses_divergentes'] or 'aucune'}.", "",
          "## Tests pré-enregistrés (Holm sur P1, P2, P3')", "",
          "| Test | Effet | p | p Holm | Verdict |", "| --- | --- | --- | --- | --- |"]
     t = r["tests"]
@@ -493,7 +574,7 @@ def rapport(r):
              f"{t['P2']['p_holm']:.4f} | {t['P2']['verdict']} |")
     p3 = t["P3'"]
     L.append(f"| P3' : all:5, réussite à ± 2 points et log M3 dégradée | {100 * p3['delta_reussite']:+.2f} points, "
-             f"log M3 {p3['delta_log_M3']:+.3f} | {p3['p']:.4f} (bas {p3['p_bas']:.4f}, haut {p3['p_haut']:.4f}, "
+             f"log M3 {p3['delta_log_M3_bouge']:+.3f} ({p3['episodes_bouge']} épisodes où le T doit bouger) | {p3['p']:.4f} (bas {p3['p_bas']:.4f}, haut {p3['p_haut']:.4f}, "
              f"M3 {p3['p_b']:.4f}) | {p3['p_holm']:.4f} | {p3['verdict']} |")
     c = p3["controle_tost_t"]
     L += ["", f"Contrôle de P3'(a) par TOST t : p = {c['p']:.4f}, intervalle à 90 % "
@@ -525,23 +606,31 @@ def rapport(r):
         e = r["plancher"][v]
         a = "" if e["attribution_au_bruit"] is None else f"{100 * e['attribution_au_bruit']:.0f} %"
         L.append(f"| {v} | {e['perdus_par_50']['moyenne']:.2f} | {e['gagnes_par_50']['moyenne']:.2f} | {a} |")
-    L += ["", "## Protocoles simulés (1 000 tirages ; part des tirages)", ""]
+    L += ["", "## Protocoles simulés (1 000 tirages d'épisodes ; m = 1 : toutes les graines énumérées)", "",
+          "Retenue : l'intervalle du plan complet exclut 0 (seules ces lignes portent le message). Stable : le signe "
+          "du plan complet ne change pas quand on retire une graine.", ""]
     for cle, bloc in r["protocoles_simules"].items():
-        L += [f"### {cle}", "", "| Comparaison | Variante | Même signe | Nul | Signe contraire | "
+        L += [f"### {cle}", "", "| Comparaison | Retenue | Stable | Variante | Même signe | Nul | Signe contraire | "
               "Conclut même sens | Ne conclut pas | Conclut sens contraire | Significatif |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
-        for comp, variantes in bloc.items():
-            for var, e in variantes.items():
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+        for comp, x in bloc.items():
+            ref = x["reference"]
+            ret = "oui" if ref["retenue"] else "non"
+            stab = {True: "oui", False: "non", None: ""}[ref["signe_stable_sans_une_graine"]]
+            for var, e in x["variantes"].items():
                 g = lambda k: f"{100 * e[k]:.1f}" if k in e else ""
-                L.append(f"| {comp} | {var} | {g('part_meme_signe')} | {g('part_difference_nulle')} | "
+                L.append(f"| {comp} | {ret} | {stab} | {var} | {g('part_meme_signe')} | {g('part_difference_nulle')} | "
                          f"{g('part_signe_contraire')} | {g('part_conclut_meme_sens')} | {g('part_ne_conclut_pas')} | "
                          f"{g('part_conclut_sens_contraire')} | {g('part_significatif')} |")
         L.append("")
     L += ["## Part du planificateur dans la variance d'une étude à une graine", "",
-          "| Version | Part |", "| --- | --- |"]
+          "| Version | Appariée (borne basse) | Non appariée |", "| --- | --- | --- |"]
+
+    def pct(e):
+        return "" if e is None or e["part_planificateur"] is None else f"{100 * e['part_planificateur']:.0f} %"
+
     for v, e in r["part_planificateur"].items():
-        part = e["part_planificateur"]
-        L.append(f"| {v} | {'' if part is None else f'{100 * part:.0f} %'} |")
+        L.append(f"| {v} | {pct(e.get('apparie_borne_basse'))} | {pct(e.get('non_apparie'))} |")
     ec = r["episodes_casses"]
     L += ["", f"## Épisodes cassés (baisse d'au moins {SEUIL_CASSE} succès sur 5 contre la réplique)", "",
           f"Nul (fp32 contre sa réplique) : {ec['nuls']} épisodes. Strates de la réplique : "

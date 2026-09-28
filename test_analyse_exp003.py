@@ -29,8 +29,13 @@ def sigmoide(x):
     return 1 / (1 + np.exp(-x))
 
 
-def simuler(dossier, effets=None, rho=0.7, graine=0):
-    """Écrit une grille simulée. effets : {version: (baisse de logit, facteur des marges des échecs)}."""
+def simuler(dossier, effets=None, rho=0.7, graine=0, part_au_but=0.14, paquet_reussi=("all:6", 43),
+            divergents=(("encoder:3", 45),), identiques=()):
+    """Écrit une grille simulée. effets : {version: (baisse de logit, facteur des marges des échecs)}.
+
+    Comme la vraie grille : une part des épisodes part avec le T exactement au but (M3 = 0 si l'agent ne le
+    touche pas) ; un paquet dont tous les épisodes réussissent s'arrête tôt ; deux échecs divergent (NaN).
+    """
     effets = effets or {}
     rng = np.random.default_rng(graine)
     n = A.N
@@ -45,6 +50,8 @@ def simuler(dossier, effets=None, rho=0.7, graine=0):
     init = goal.copy()
     init[:, :4] += (20 * m0[:, None] * u0 / np.maximum(np.linalg.norm(u0[:, 2:4], axis=1), 1e-3)[:, None])
     init[:, 4] = np.mod(goal[:, 4] + LIM * m0 * 0.8, 2 * np.pi)
+    au_but = rng.uniform(size=n) < part_au_but
+    init[au_but, 2:5] = goal[au_but, 2:5]
     eta = rng.normal(2.0, 2.0, n)                             # logit de réussite en pleine précision
     h = rng.exponential(1.0, n)                               # sensibilité de l'épisode à la compression
     U = {"A": rng.uniform(size=(5, n)), "B": rng.uniform(size=(5, n))}
@@ -63,39 +70,50 @@ def simuler(dossier, effets=None, rho=0.7, graine=0):
             for j, g in enumerate(graines):
                 u = U[groupe][j].copy()
                 if v != "fp32":                               # hasard partagé en partie avec fp32
-                    frais = rv.uniform(size=n) > rho
+                    frais = rv.uniform(size=n) > (1.0 if v in identiques else rho)
                     u[frais] = rv.uniform(size=frais.sum())
                 succes = u < p
+                if (v, g) == paquet_reussi:
+                    succes[:50] = True
                 rr = np.random.default_rng([graine, g])       # géométrie partagée entre versions à la même graine
                 ecrire(dossier, v, g, succes, base[groupe][j] * np.where(succes, 1.0, facteur), goal, init,
-                       ep_idx, st_idx, rr)
+                       ep_idx, st_idx, rr, au_but, diverge=(v, g) in divergents)
 
 
-def ecrire(dossier, v, g, succes, mfin, goal, init, ep_idx, st_idx, rr, sha=SHA_BON, sale=False):
+def ecrire(dossier, v, g, succes, mfin, goal, init, ep_idx, st_idx, rr, au_but, diverge=False, sha=SHA_BON,
+           sale=False):
     n, T = A.N, A.T
-    premier = np.where(succes, rr.integers(3, T, n), -1).astype(np.int32)
+    premier = np.where(succes, rr.integers(0, T, n), -1).astype(np.int32)
     r_ang = rr.uniform(0.2, 0.95, n)                          # terme d'angle sous le terme de position
     u = rr.normal(size=(n, 4))
+    intact = au_but & (rr.uniform(size=n) < 0.6)              # T parti au but et jamais touché : M3 = 0
+    u[intact, 2:4] = 0
+    r_ang[intact] = 0
     u /= np.linalg.norm(u, axis=1, keepdims=True)
     t = np.arange(T)[:, None]
     m_ech = mfin[None, :] + 3 * (1 - t / (T - 1))            # échecs : décroît jusqu'à mfin >= 1,05
-    k = np.maximum(premier, 1)[None, :]
+    k = premier[None, :]
     eps = rr.uniform(0.01, 0.3, n)[None, :]
-    m_suc = np.where(t < k, 1 + 3 * (1 - t / k), 1 - eps)     # succès : franchit 1 au pas du succès
+    m_suc = np.where(t < k, 1 + 3 * (1 - t / np.maximum(k, 1)), 1 - eps)   # franchit 1 au pas du succès
     m = np.where(succes[None, :], m_suc, m_ech)
     etat = np.empty((T, n, 7))
     etat[..., :4] = goal[None, :, :4] + 20 * m[..., None] * u[None]
     etat[..., 4] = np.mod(goal[None, :, 4] + LIM * m * r_ang[None, :], 2 * np.pi)
     etat[..., 5:] = rr.normal(size=(T, n, 2))
     gele = succes[None, :] & (t > premier[None, :])
+    if diverge:                                               # deux échecs dont l'état devient NaN (pas 20 et 0)
+        echecs = np.where(~succes)[0]
+        gele[20:, echecs[0]] = True
+        gele[:, echecs[1]] = True
     etat[gele] = np.nan
     contacts = np.where(gele, -1, rr.integers(0, 3, (T, n))).astype(np.int32)
-    np.savez_compressed(Path(dossier) / f"{v.replace(':', '-')}_s{g}.npz", spec=v, seed=g, n_couches=0,
-                        git=sha, git_sale=sale, positions=np.arange(n), episodes_idx=ep_idx, start_steps=st_idx,
-                        chunk=50, state=etat, block_pose=etat[..., 2:5], agent_pos=etat[..., :2],
-                        contacts=contacts, env_state_dist=np.where(gele, np.nan, 1.0), success=succes,
-                        first_success=premier, n_steps=np.full(10, T, dtype=np.int32),
-                        init_state=init, goal_state=goal)
+    n_steps = np.array([premier[c * 50:(c + 1) * 50].max() + 1 if succes[c * 50:(c + 1) * 50].all() else T
+                        for c in range(n // 50)], dtype=np.int32)
+    np.savez_compressed(Path(dossier) / f"{v.replace(':', '-')}_s{g}.npz", spec=v, seed=g,
+                        n_couches=A.COUCHES[v.split(":")[0]], git=sha, git_sale=sale, positions=np.arange(n),
+                        episodes_idx=ep_idx, start_steps=st_idx, chunk=50, state=etat, block_pose=etat[..., 2:5],
+                        agent_pos=etat[..., :2], contacts=contacts, env_state_dist=np.where(gele, np.nan, 1.0),
+                        success=succes, first_success=premier, n_steps=n_steps, init_state=init, goal_state=goal)
 
 
 # ---------------------------------------------------------------- tests unitaires
@@ -113,6 +131,8 @@ def test_inversion_exacte():
         assert abs(inv.p(x) - exact) < 0.01, (inv.p(x), exact)
         exact_plus = np.mean(t >= x.sum())
         assert abs(inv.p(x, "plus") - exact_plus) < 0.01
+        exact_moins = np.mean(t <= x.sum())
+        assert abs(inv.p(x, "moins") - exact_moins) < 0.01
     inv = A.Inversion(n=60, b=1000)
     assert inv.p(np.zeros(60)) == 1.0                         # égalités comprises : somme nulle, p = 1
     assert inv.p(np.full(60, 5)) == 1 / 1001                  # 2^-60 : aucun tirage n'atteint la somme maximale
@@ -189,14 +209,31 @@ def test_niveau():
     print(f"ok niveau sous le nul : P1 {a:.3f}, épisodes cassés {b:.3f} (attendu 0,05 ou moins)")
 
 
+def test_part_planificateur():
+    """Épisodes à p = 0,2 ou 0,8, graines indépendantes : sigma2_plan = 0,16, sigma2_ep = 0,09, part 0,64."""
+    rng = np.random.default_rng(4)
+    p = np.where(np.arange(A.N) % 2 == 0, 0.2, 0.8)
+    D = {("fp32", "A"): {"S": np.zeros((5, A.N), dtype=np.int64)}, ("fp32", "B"): {"S": np.zeros((5, A.N), dtype=np.int64)}}
+    for v in A.QUANTIFIEES:
+        D[(v, "A")] = {"S": (rng.uniform(size=(5, A.N)) < p).astype(np.int64)}
+    r = A.part_planificateur(D)
+    parts = [r[v]["apparie_borne_basse"]["part_planificateur"] for v in A.QUANTIFIEES]
+    assert abs(np.mean(parts) - 0.64) < 0.03, parts
+    print(f"ok part du planificateur (moyenne {np.mean(parts):.3f}, attendu 0,64)")
+
+
 # ---------------------------------------------------------------- contrôles bloquants
 
 def test_controles(tmp):
     d = Path(tmp) / "propre"
     simuler(d, graine=1)
     res, shas = A.charger(d)
-    D, lim = A.tables(res)
+    D, lim, div = A.tables(res)
     assert lim == 0 and shas == [SHA_BON]
+    assert div["encoder:3 graine 45"] == 2 and sum(div.values()) == 2, div
+    assert res[("all:6", 43)]["n_steps"][0] < A.T                   # paquet arrêté tôt, accepté
+    assert (D[("fp32", "A")]["M3"] == 0).any()                       # T parti au but et intact, accepté
+    assert (res[("fp32", 42)]["first_success"] == 0).any()
 
     def doit_echouer(nom, alterer):
         e = Path(tmp) / nom
@@ -233,6 +270,19 @@ def test_controles(tmp):
     doit_echouer("NaN avant le succès", nan_avant)
     doit_echouer("succès sans marge", succes_faux)
     doit_echouer("autres épisodes", lambda e: modifier(e, "all-8_s42.npz", episodes_idx=np.arange(A.N)))
+    doit_echouer("couches", lambda e: modifier(e, "all-4_s42.npz", n_couches=108))
+    doit_echouer("commit inconnu", lambda e: modifier(e, "fp32_s51.npz", git="0" * 40))
+    doit_echouer("paquet arrêté tôt sans succès complet",
+                 lambda e: modifier(e, "all-6_s44.npz", n_steps=np.r_[30, np.full(9, A.T)].astype(np.int32)))
+
+    def t_au_but_hors_depart(e):
+        x = dict(np.load(e / "all-5_s45.npz"))
+        bouge = ~(x["init_state"][:, 2:5] == x["goal_state"][:, 2:5]).all(1)
+        i = int(np.where(~x["success"] & bouge)[0][0])
+        x["state"][30, i, 2:5] = x["goal_state"][i, 2:5]
+        np.savez_compressed(e / "all-5_s45.npz", **x)
+
+    doit_echouer("M3 nulle hors départ au but", t_au_but_hors_depart)
 
     # cas limite d'arrondi : un échec dont la marge minimale vaut 1 - 5e-5 passe, et il est compté
     e = Path(tmp) / "limite"
@@ -245,7 +295,7 @@ def test_controles(tmp):
     x["state"][:, i, 4] = x["goal_state"][i, 4]            # angle au but : la marge vaut celle de la position
     np.savez_compressed(e / "all-6_s46.npz", **x)
     assert A.tables(A.charger(e)[0])[1] >= 1
-    print("ok contrôles bloquants (6 refus, 1 cas limite accepté et compté)")
+    print("ok contrôles bloquants (10 refus ; cas limite, divergences, paquet arrêté tôt, T au but acceptés)")
 
 
 # ---------------------------------------------------------------- bout en bout
@@ -254,7 +304,7 @@ def test_bout_en_bout(tmp):
     effets = {"all:3": (3.0, 1.0), "all:4": (1.0, 1.0), "encoder:4": (1.5, 1.0), "predictor:4": (0.2, 1.0),
               "encoder:3": (3.0, 1.0), "predictor:3": (1.0, 1.0), "all:5": (0.0, 1.5)}
     d = Path(tmp) / "effets"
-    simuler(d, effets=effets, graine=2)
+    simuler(d, effets=effets, graine=2, part_au_but=0.0, identiques=("all:8",))   # sans M3 nulle : décomposition exacte
     r = A.analyser(d)
     t = r["tests"]
     assert t["P1"]["verdict"] == "soutenue" and t["P1"]["somme"] < 0, t["P1"]
@@ -269,11 +319,22 @@ def test_bout_en_bout(tmp):
     assert abs(dec["SS"]["contribution_log_M3"]) < 0.02
     ec = r["episodes_casses"]
     assert ec["all:3"]["observes"] > 3 * max(ec["nuls"], 1) and ec["all:3"]["p_plus"] < 0.01
-    assert ec["all:8"]["p_plus"] > 0.01
+    assert ec["all:8"]["observes"] == ec["nuls"]                  # identique à fp32 : autant de cassés que le nul
     ps = r["protocoles_simules"]
-    assert ps["n500_graines1"]["fp32 -> all:3"]["apparie"]["part_conclut_meme_sens"] > 0.99
-    nul = ps["n50_graines1"]["nul vrai : fp32 replique -> fp32"]["non_apparie"]["part_significatif"]
-    assert nul <= 0.08, nul
+    assert ps["n500_graines1"]["fp32 -> all:3"]["variantes"]["apparie"]["part_conclut_meme_sens"] > 0.99
+    assert ps["n500_graines1"]["fp32 -> all:3"]["reference"] == {"signe": -1, "retenue": True,
+                                                                  "signe_stable_sans_une_graine": True}
+    assert not ps["n50_graines1"]["fp32 -> all:6"]["reference"]["retenue"]
+    for cle in ("n50_graines1", "n10_graines3", "n50_graines5"):
+        nul = ps[cle]["nul vrai : fp32 replique -> fp32"]["variantes"]["non_apparie"]["part_significatif"]
+        assert nul <= 0.08, (cle, nul)
+    # all:8 est identique à fp32 aux mêmes graines : différence toujours nulle en apparié, pas en non apparié
+    for cle in ("n50_graines1", "n500_graines1", "n10_graines3", "n50_graines5"):
+        var = ps[cle]["fp32 -> all:8"]["variantes"]
+        assert var["apparie"]["part_difference_nulle"] == 1.0, (cle, var["apparie"])
+        assert var["non_apparie"]["part_difference_nulle"] < 1.0, cle
+    pp = r["part_planificateur"]["all:8"]
+    assert pp["apparie_borne_basse"]["sigma2_plan"] == 0 and pp["non_apparie"]["part_planificateur"] > 0.3
     assert r["descriptifs"]["all:3"]["delta_reussite"]["haut"] < 0
     assert r["plancher"]["all:3"]["attribution_au_bruit"] < 0.5
     txt = A.rapport(r)
@@ -298,6 +359,7 @@ if __name__ == "__main__":
     test_holm()
     test_mcnemar()
     test_tost()
+    test_part_planificateur()
     if not rapide:
         test_niveau()
     with tempfile.TemporaryDirectory() as tmp:
