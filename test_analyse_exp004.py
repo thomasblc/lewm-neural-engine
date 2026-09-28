@@ -1,11 +1,14 @@
 """Tests de analyse_exp004.py sur des grilles simulées (EXP-003 et EXP-004 avec le même hasard par épisode).
 
 Le simulateur d'EXP-003 est réutilisé tel quel, les versions d'EXP-004 ajoutées à la fin de sa liste : les
-fichiers simulés d'EXP-003 restent les mêmes, ceux d'EXP-004 partagent la géométrie et le hasard.
+fichiers simulés d'EXP-003 restent les mêmes, ceux d'EXP-004 partagent la géométrie et le hasard. Les
+statistiques sont recalculées à la main depuis les fichiers, ce qui fixe aussi l'appariement des épisodes.
 
 Usage :
     python test_analyse_exp004.py
 """
+import hashlib
+import json
 import re
 import shutil
 import subprocess
@@ -19,9 +22,14 @@ import analyse_exp004 as A4
 import test_analyse_exp003 as T
 
 
+# les comparaisons de PREREG-EXP004.md, recopiées ici indépendamment du script : nom, version, référence, sens
+PREENREGISTREES = (("Q3a", "autres:4", "fp32", -1), ("Q3b", "encpred:4", "all:4", +1),
+                   ("Q5a", "all:4:g64", "all:4", +1), ("Q5b", "all:3:g64", "all:3", +1))
+
+
 def grilles(tmp, nom, **kw):
-    """Écrit une grille simulée complète, puis la répartit en EXP-003, EXP-004 et sanité."""
-    tout, d3, d4, san = (Path(tmp) / f"{nom}-{x}" for x in ("tout", "exp003", "exp004", "sanite"))
+    """Écrit une grille simulée complète, puis la répartit en EXP-003, EXP-004 et les deux sanités."""
+    tout, d3, d4, san, fin = (Path(tmp) / f"{nom}-{x}" for x in ("tout", "exp003", "exp004", "sanite", "sanite-fin"))
     versions, couches = A.VERSIONS, dict(A.COUCHES)
     A.VERSIONS = versions + A4.NOUVELLES
     A.COUCHES.update({"autres": 6, "encpred": 103})
@@ -31,15 +39,15 @@ def grilles(tmp, nom, **kw):
         A.VERSIONS = versions
         A.COUCHES.clear()
         A.COUCHES.update(couches)
-    for d in (d3, d4, san):
+    for d in (d3, d4, san, fin):
         d.mkdir()
+        shutil.copy(tout / "meta.json", d / "meta.json")
     for f in tout.glob("*.npz"):
         spec = str(np.load(f)["spec"])
         shutil.copy(f, (d4 if spec in A4.NOUVELLES else d3) / f.name)
-    for d in (d3, d4):
-        shutil.copy(tout / "meta.json", d / "meta.json")
     shutil.copy(d3 / "all-4_s42.npz", san / "all-4_s42.npz")
-    return d3, d4, san
+    shutil.copy(d4 / "autres-4_s42.npz", fin / "autres-4_s42.npz")
+    return d3, d4, san, fin
 
 
 def sans_verif_code(fonction):
@@ -52,7 +60,14 @@ def sans_verif_code(fonction):
         A4.verifier_code4 = vrai
 
 
+def K_fichiers(d3, d4, v, graines=A.GA):
+    d = d4 if v in A4.NOUVELLES else d3
+    return sum(np.load(d / f"{v.replace(':', '-')}_s{g}.npz")["success"].astype(np.int64) for g in graines)
+
+
 def test_verifier_code4():
+    empreinte = hashlib.sha256((A.ICI / "quant.py").read_bytes()).hexdigest()
+    assert empreinte == A4.QUANT_SHA256, "quant.py a changé : l'empreinte figée ne correspond plus"
     try:
         A4.verifier_code4("c5703dbbacb1537be9cc03377a3a922f4a81c1ed")
         raise AssertionError("c5703db accepté")
@@ -64,55 +79,68 @@ def test_verifier_code4():
     except A.ControleEchoue as err:
         assert "inconnu" in str(err)
     tete = subprocess.run(["git", "-C", str(A.ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    try:
-        A4.verifier_code4(tete)
-        print(f"ok vérification du code : c5703db et commit inconnu refusés, {tete[:7]} accepté")
-    except A.ControleEchoue:
-        print(f"ok vérification du code : c5703db et commit inconnu refusés ({tete[:7]} n'a pas encore le quant.py figé)")
+    A4.verifier_code4(tete)
+    print(f"ok vérification du code : empreinte de quant.py, c5703db et commit inconnu refusés, {tete[:7]} accepté")
 
 
 def test_bout_en_bout(tmp):
     effets = {"all:4": (1.2, 1.0), "encoder:4": (0.5, 1.0), "autres:4": (0.6, 1.0), "encpred:4": (0.5, 1.0),
               "all:4:g64": (0.6, 1.0), "all:3": (3.0, 1.0), "all:3:g64": (2.0, 1.0), "autres:3": (1.5, 1.0)}
-    d3, d4, san = grilles(tmp, "effets", effets=effets, graine=5)
-    r = sans_verif_code(lambda: A4.analyser(d3, d4, san, effectifs=None, verifier_exp003=False))
+    d3, d4, san, fin = grilles(tmp, "effets", effets=effets, graine=5, divergents=())
+    r = sans_verif_code(lambda: A4.analyser(d3, d4, san, fin, effectifs=None, verifier_exp003=False))
     for nom in ("Q3a", "Q3b", "Q5a", "Q5b"):
         assert r["tests"][nom]["verdict"] == "soutenue", (nom, r["tests"][nom])
-    assert r["tests"]["Q3a"]["somme"] < 0 < r["tests"]["Q3b"]["somme"]
-    # additivité recalculée à la main depuis les fichiers
-    K = {}
-    for v in ("fp32", "all:4", "encoder:4", "predictor:4"):
-        K[v] = sum(np.load(d3 / f"{v.replace(':', '-')}_s{g}.npz")["success"].astype(int) for g in A.GA)
-    for v in ("autres:4", "encpred:4"):
-        K[v] = sum(np.load(d4 / f"{v.replace(':', '-')}_s{g}.npz")["success"].astype(int) for g in A.GA)
+    # tout recalculer à la main depuis les fichiers : sommes, p, Holm, sensibilité (fixe références et appariement)
+    inv = A.Inversion()
+    K = {v: K_fichiers(d3, d4, v) for v in A4.REFERENCES + A4.NOUVELLES}
+    Ks = {v: K_fichiers(d3, d4, v, A4.GRAINES_SENSIBILITE) for v in A4.REFERENCES + A4.NOUVELLES}
+    assert tuple(A4.COMPARAISONS) == PREENREGISTREES
+    for Kx, cle in ((K, None), (Ks, "sensibilite_44_46")):
+        p = [inv.p(Kx[v] - Kx[ref]) for _, v, ref, _ in PREENREGISTREES]
+        adj = A.holm(p)
+        for (nom, v, ref, _), pv, pa in zip(PREENREGISTREES, p, adj):
+            t = r["tests"][nom] if cle is None else r["tests"][nom][cle]
+            assert t["somme"] == int((Kx[v] - Kx[ref]).sum()) and t["p"] == pv and abs(t["p_holm"] - pa) < 1e-15, (nom, cle)
     i_main = ((K["all:4"] - K["encoder:4"] - K["predictor:4"] - K["autres:4"] + 2 * K["fp32"]) / 5).mean()
     cle = next(k for k in r["additivite"] if k.startswith("I"))
     assert abs(r["additivite"][cle]["moyenne"] - i_main) < 1e-12
+    part = (K["encpred:4"] - K["all:4"]).sum() / (K["fp32"] - K["all:4"]).sum()
+    pe = r["part_expliquee_autres_4_bits"]
+    assert abs(pe["moyenne"] - part) < 1e-12 and pe["bas"] <= part <= pe["haut"]
     assert r["controles"]["divergences"] == {v: 0 for v in A4.NOUVELLES}
     txt = A4.rapport(r)
-    assert "Q5b" in txt and not re.search(r"\bnan\b|\binf\b", txt.lower())
-    print("ok bout en bout, effets connus : Q3a, Q3b, Q5a, Q5b retrouvés dans le bon sens, additivité exacte")
+    assert "Sensibilité" in txt and "Part de la chute" in txt and not re.search(r"\bnan\b|\binf\b", txt.lower())
+    print("ok bout en bout, effets connus : 4 hypothèses soutenues ; sommes, p, Holm, sensibilité, additivité et part "
+          "expliquée recalculées à la main")
+
+    # le vrai chemin : contrôles bloquants d'EXP-003 sur ses 55 fichiers simulés, puis réutilisation de ses tables
+    r2 = sans_verif_code(lambda: A4.analyser(d3, d4, san, fin, effectifs=None, verifier_exp003=True))
+    assert json.dumps(A.pur(r2["tests"]), sort_keys=True) == json.dumps(A.pur(r["tests"]), sort_keys=True)
+    assert json.dumps(A.pur(r2["additivite"]), sort_keys=True) == json.dumps(A.pur(r["additivite"]), sort_keys=True)
+    print("ok chemin réel (analyse_exp003.charger puis tables) : mêmes résultats que le chemin de test")
 
     iden = ("autres:4", "encpred:4", "all:4:g64", "all:4", "autres:3", "all:3:g64", "all:3")
     nul = {"all:4": (1.0, 1.0), "encpred:4": (1.0, 1.0), "all:4:g64": (1.0, 1.0), "all:3": (2.0, 1.0),
            "all:3:g64": (2.0, 1.0)}
-    d3n, d4n, sann = grilles(tmp, "nul", effets=nul, graine=6, identiques=iden)
-    r = sans_verif_code(lambda: A4.analyser(d3n, d4n, sann, effectifs=None, verifier_exp003=False))
+    d3n, d4n, sann, finn = grilles(tmp, "nul", effets=nul, graine=6, identiques=iden)
+    for v, ref in (("autres:4", "fp32"), ("encpred:4", "all:4"), ("all:4:g64", "all:4"), ("all:3:g64", "all:3")):
+        assert np.array_equal(K_fichiers(d3n, d4n, v), K_fichiers(d3n, d4n, ref)), v   # épisode par épisode
+    r = sans_verif_code(lambda: A4.analyser(d3n, d4n, sann, finn, effectifs=None, verifier_exp003=False))
     for nom in ("Q3a", "Q3b", "Q5a", "Q5b"):
         t = r["tests"][nom]
-        assert t["somme"] == 0 and t["p"] == 1.0 and t["verdict"] == "non soutenue", (nom, t)
-    print("ok bout en bout, sans effet : les 4 différences sont nulles, p = 1, rien n'est soutenu")
-    return d3, d4, san
+        assert t["somme"] == 0 and t["p"] == 1.0 and t["verdict"] == "non soutenue" and t["concordance"], (nom, t)
+    print("ok bout en bout, sans effet : issues identiques épisode par épisode, p = 1, rien n'est soutenu")
+    return d3, d4, san, fin
 
 
-def test_refus(tmp, d3, d4, san):
+def test_refus(tmp, d3, d4, san, fin):
     def doit_echouer(nom, alterer, motif):
-        e3, e4, es = (Path(tmp) / f"{nom}-{x}" for x in ("3", "4", "s"))
-        for src, dst in ((d3, e3), (d4, e4), (san, es)):
+        e = [Path(tmp) / f"{nom}-{x}" for x in ("3", "4", "s", "f")]
+        for src, dst in zip((d3, d4, san, fin), e):
             shutil.copytree(src, dst)
-        alterer(e3, e4, es)
+        alterer(*e)
         try:
-            sans_verif_code(lambda: A4.analyser(e3, e4, es, effectifs=None, verifier_exp003=False))
+            sans_verif_code(lambda: A4.analyser(*e, effectifs=None, verifier_exp003=False))
         except A.ControleEchoue as err:
             assert motif in str(err), (nom, str(err))
             print(f"   refusé comme attendu ({nom}) : {err}")
@@ -124,23 +152,35 @@ def test_refus(tmp, d3, d4, san):
         x.update(champs)
         np.savez_compressed(dossier / f, **x)
 
-    def sanite_differente(e3, e4, es):
-        x = dict(np.load(es / "all-4_s42.npz"))
-        x["success"][0] = ~x["success"][0]
-        np.savez_compressed(es / "all-4_s42.npz", **x)
+    def meta(dossier, **champs):
+        m = json.loads((dossier / "meta.json").read_text())
+        for k, v in champs.items():
+            if k == "torch":
+                m["torch"] = v
+            else:
+                m["protocole"][k] = v
+        (dossier / "meta.json").write_text(json.dumps(m))
 
-    doit_echouer("fichier manquant", lambda e3, e4, es: (e4 / "all-3-g64_s44.npz").unlink(), "fichiers manquants")
-    doit_echouer("couches", lambda e3, e4, es: modifier(e4, "autres-4_s43.npz", n_couches=109), "109 couches")
-    doit_echouer("autres épisodes", lambda e3, e4, es: modifier(e4, "encpred-4_s45.npz", start_steps=np.zeros(A.N, int)),
+    def inverser(dossier, f):
+        x = dict(np.load(dossier / f))
+        x["success"][0] = ~x["success"][0]
+        np.savez_compressed(dossier / f, **x)
+
+    doit_echouer("fichier manquant", lambda e3, e4, es, ef: (e4 / "all-3-g64_s44.npz").unlink(), "fichiers manquants")
+    doit_echouer("couches", lambda e3, e4, es, ef: modifier(e4, "autres-4_s43.npz", n_couches=109), "109 couches")
+    doit_echouer("autres épisodes", lambda e3, e4, es, ef: modifier(e4, "encpred-4_s45.npz", start_steps=np.zeros(A.N, int)),
                  "start_steps différent")
-    doit_echouer("arbre modifié", lambda e3, e4, es: modifier(e4, "all-4-g64_s46.npz", git_sale=True), "arbre git modifié")
-    doit_echouer("sanité", sanite_differente, "sanité : success diffère")
-    print("ok contrôles bloquants d'EXP-004 (5 refus)")
+    doit_echouer("arbre modifié", lambda e3, e4, es, ef: modifier(e4, "all-4-g64_s46.npz", git_sale=True), "arbre git modifié")
+    doit_echouer("sanité d'entrée", lambda e3, e4, es, ef: inverser(es, "all-4_s42.npz"), "sanité d'entrée : success diffère")
+    doit_echouer("sanité de clôture", lambda e3, e4, es, ef: inverser(ef, "autres-4_s42.npz"), "sanité de clôture : success diffère")
+    doit_echouer("protocole", lambda e3, e4, es, ef: meta(e4, device="cpu"), "protocole différent")
+    doit_echouer("torch", lambda e3, e4, es, ef: meta(ef, torch="2.15.0"), "version de torch différente")
+    print("ok contrôles bloquants d'EXP-004 (8 refus, chacun avec son motif)")
 
 
 if __name__ == "__main__":
     test_verifier_code4()
     with tempfile.TemporaryDirectory() as tmp:
-        d3, d4, san = test_bout_en_bout(tmp)
-        test_refus(tmp, d3, d4, san)
+        d3, d4, san, fin = test_bout_en_bout(tmp)
+        test_refus(tmp, d3, d4, san, fin)
     print("tous les tests passent")

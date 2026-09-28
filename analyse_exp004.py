@@ -1,13 +1,16 @@
 """EXP-004 : analyse pré-enregistrée (PREREG-EXP004.md), figée avec lui.
 
 Reprend les références d'EXP-003 (fp32, all:4, all:3, encoder:4, predictor:4, graines 42 à 46) après
-leurs propres contrôles bloquants, contrôle les 25 fichiers d'EXP-004 et la sanité (all:4 graine 42
-recalculé, identique à EXP-003), puis calcule Q3a, Q3b, Q5a, Q5b (inversion de signe, Holm) et les
-descriptifs. Les outils statistiques et les contrôles par course sont ceux d'analyse_exp003.py.
+leurs propres contrôles bloquants, contrôle les 25 fichiers d'EXP-004, les protocoles, la sanité d'entrée
+(all:4 graine 42 recalculé, identique à EXP-003) et la sanité de clôture (autres:4 graine 42 recalculé,
+identique au fichier de la grille), puis calcule Q3a, Q3b, Q5a, Q5b (inversion de signe, Holm), leur
+analyse de sensibilité sur les graines 44 à 46 et les descriptifs. Les outils statistiques et les
+contrôles par course sont ceux d'analyse_exp003.py.
 
 Usage :
     python analyse_exp004.py --grille3 ../resultats/exp003 --grille4 ../resultats/exp004 \\
-        --sanite ../resultats/exp004-sanite --sortie ../resultats/analyse-exp004
+        --sanite ../resultats/exp004-sanite --sanite-fin ../resultats/exp004-sanite-fin \\
+        --sortie ../resultats/analyse-exp004
 """
 import argparse
 import hashlib
@@ -22,6 +25,10 @@ import analyse_exp003 as A
 NOUVELLES = ("autres:4", "encpred:4", "all:4:g64", "autres:3", "all:3:g64")
 REFERENCES = ("fp32", "all:4", "all:3", "encoder:4", "predictor:4")
 GRAINES = A.GA
+GRAINES_SENSIBILITE = (44, 45, 46)  # graines qu'aucun coup d'œil n'a vues (le coup d'œil : 42, et 43 en fp32)
+RANGS_SENSIBILITE = [GRAINES.index(g) for g in GRAINES_SENSIBILITE]
+BITS_PAR_POIDS = {"all:4": 4.059, "all:4:g64": 4.249, "all:3": 3.059, "all:3:g64": 3.249,
+                  "autres:4": 4.050, "autres:3": 3.050, "encpred:4": 4.060}   # échelles en 16 bits
 QUANT_SHA256 = "2c450c5b06ebd6753e77ff9c189fffc339b655070efaf32e103f13ad5e29c65d"
 COUCHES = {"autres": 6, "encpred": 103, "all": 109}
 COMPARAISONS = (                    # nom, version, référence, signe attendu de la somme
@@ -84,14 +91,34 @@ def charger4(dossier, ref):
     return res, sorted(shas)
 
 
-def verifier_sanite(dossier_sanite, f_ref):
-    """all:4 graine 42 recalculé avec le code d'EXP-004 : identique au fichier d'EXP-003."""
-    a, b = dict(np.load(Path(dossier_sanite) / "all-4_s42.npz")), dict(np.load(f_ref))
-    A.exiger(not bool(a["git_sale"]), "sanité : arbre git modifié au lancement")
+def verifier_sanite(f_sanite, f_ref, etiquette="sanité"):
+    """Un lancement recalculé avec le code d'EXP-004 doit redonner le fichier de référence, octet pour octet."""
+    a, b = dict(np.load(f_sanite)), dict(np.load(f_ref))
+    A.exiger(not bool(a["git_sale"]), f"{etiquette} : arbre git modifié au lancement")
+    A.exiger((str(a["spec"]), int(a["seed"]), int(a["n_couches"])) == (str(b["spec"]), int(b["seed"]), int(b["n_couches"])),
+             f"{etiquette} : pas la même version")
     verifier_code4(str(a["git"]))
     for k in CLES_SANITE:
-        A.exiger(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f"), f"sanité : {k} diffère d'EXP-003")
+        A.exiger(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f"), f"{etiquette} : {k} diffère")
     return str(a["git"])
+
+
+def verifier_protocoles(*dossiers):
+    """Même protocole (config, appareil, épisodes) et même torch dans tous les dossiers."""
+    metas = [json.loads((Path(d) / "meta.json").read_text()) for d in dossiers]
+    ref = json.dumps(metas[0]["protocole"], sort_keys=True, default=str)
+    for d, m in zip(dossiers, metas):
+        A.exiger(json.dumps(m["protocole"], sort_keys=True, default=str) == ref, f"{d} : protocole différent d'EXP-003")
+        A.exiger(m.get("torch") == metas[0].get("torch"), f"{d} : version de torch différente")
+
+
+def part_expliquee(boot, num, den):
+    """Rapport de sommes Σ num / Σ den, intervalle bootstrap percentile sur les mêmes rééchantillons."""
+    if den.sum() <= 0:
+        return None
+    r = num[boot.idx].sum(axis=1) / np.maximum(den[boot.idx].sum(axis=1), 1e-12)
+    return {"moyenne": float(num.sum() / den.sum()), "bas": float(np.percentile(r, 2.5)),
+            "haut": float(np.percentile(r, 97.5))}
 
 
 def table(res, v):
@@ -112,7 +139,7 @@ def table(res, v):
             "divergences": divergences, "limites": limites}
 
 
-def analyser(grille3, grille4, sanite, effectifs=A.EFFECTIFS, verifier_exp003=True):
+def analyser(grille3, grille4, sanite, sanite_fin, effectifs=A.EFFECTIFS, verifier_exp003=True):
     res3, shas3 = A.charger(grille3) if verifier_exp003 else (None, [])
     if res3 is not None:
         D3, _, _ = A.tables(res3)
@@ -124,8 +151,10 @@ def analyser(grille3, grille4, sanite, effectifs=A.EFFECTIFS, verifier_exp003=Tr
             res3[(str(d["spec"]), int(d["seed"]))] = d
         ref = res3[("fp32", GRAINES[0])]
         D3 = None
-    sha_sanite = verifier_sanite(sanite, Path(grille3) / "all-4_s42.npz")
+    verifier_protocoles(grille3, grille4, sanite, sanite_fin)
+    sha_sanite = verifier_sanite(Path(sanite) / "all-4_s42.npz", Path(grille3) / "all-4_s42.npz", "sanité d'entrée")
     res4, shas4 = charger4(grille4, ref)
+    verifier_sanite(Path(sanite_fin) / "autres-4_s42.npz", Path(grille4) / "autres-4_s42.npz", "sanité de clôture")
     dep = A.depart(res3)
     if effectifs is not None:
         A.exiger((int(dep["bouge"].sum()), int(dep["au_but"].sum())) == effectifs, "strates de départ inattendues")
@@ -144,6 +173,16 @@ def analyser(grille3, grille4, sanite, effectifs=A.EFFECTIFS, verifier_exp003=Tr
         x = D[v]["K"] - D[r]["K"]
         tests[nom] = {"version": v, "reference": r, "somme": int(x.sum()), "delta_reussite": float(x.mean() / 5),
                       "p": pv, "p_holm": float(pa), "verdict": A.verdict(pa, x.sum(), sens)}
+    # sensibilité : les mêmes tests sur les graines 44 à 46 seulement (famille de Holm séparée)
+    ps = [inv.p(D[v]["S"][RANGS_SENSIBILITE].sum(axis=0) - D[r]["S"][RANGS_SENSIBILITE].sum(axis=0), "bilateral")
+          for _, v, r, _ in COMPARAISONS]
+    adj_s = A.holm(ps)
+    for (nom, v, r, sens), pv, pa in zip(COMPARAISONS, ps, adj_s):
+        x = D[v]["S"][RANGS_SENSIBILITE].sum(axis=0) - D[r]["S"][RANGS_SENSIBILITE].sum(axis=0)
+        verdict = A.verdict(pa, x.sum(), sens)
+        tests[nom]["sensibilite_44_46"] = {"somme": int(x.sum()), "delta_reussite": float(x.mean() / 3), "p": pv,
+                                           "p_holm": float(pa), "verdict": verdict}
+        tests[nom]["concordance"] = verdict == tests[nom]["verdict"]
 
     f = D["fp32"]
     desc = {}
@@ -165,10 +204,13 @@ def analyser(grille3, grille4, sanite, effectifs=A.EFFECTIFS, verifier_exp003=Tr
         "autres:3 contre fp32": boot.ic((K["autres:3"] - K["fp32"]) / 5),
         "autres:3 contre all:3": boot.ic((K["autres:3"] - K["all:3"]) / 5),
     }
+    # part de la chute de tout le modèle à 4 bits que les autres couches portent, en contexte
+    part = part_expliquee(boot, K["encpred:4"] - K["all:4"], K["fp32"] - K["all:4"])
     return {"controles": {"commits_exp003": shas3, "commits_exp004": shas4, "commit_sanite": sha_sanite,
                           "divergences": {v: D[v]["divergences"] for v in NOUVELLES},
                           "cas_limites_arrondi": {v: D[v]["limites"] for v in NOUVELLES}},
-            "tests": tests, "descriptifs": desc, "additivite": additivite}
+            "tests": tests, "descriptifs": desc, "additivite": additivite, "part_expliquee_autres_4_bits": part,
+            "bits_par_poids": BITS_PAR_POIDS}
 
 
 def rapport(r):
@@ -182,6 +224,13 @@ def rapport(r):
     for nom, t in r["tests"].items():
         L.append(f"| {nom} | {t['version']} contre {t['reference']} | {100 * t['delta_reussite']:+.2f} | {t['p']:.4f} | "
                  f"{t['p_holm']:.4f} | {t['verdict']} |")
+    L += ["", "## Sensibilité : graines 44 à 46 seulement (Holm sur 4)", "",
+          "| Test | Écart (points) | p | p Holm | Verdict | Même verdict que le test principal |", "| --- | --- | --- | --- | --- | --- |"]
+    for nom, t in r["tests"].items():
+        s = t["sensibilite_44_46"]
+        L.append(f"| {nom} | {100 * s['delta_reussite']:+.2f} | {s['p']:.4f} | {s['p_holm']:.4f} | {s['verdict']} | "
+                 f"{'oui' if t['concordance'] else 'non'} |")
+    L.append("\nQ3 n'est affirmée que si le test principal et la sensibilité concordent (PREREG-EXP004, règle 2).")
     L += ["", "## Par version (5 graines, 500 épisodes ; écarts à fp32, intervalle bootstrap à 95 %)", "",
           "| Version | Réussite | Écart (points) | Écart log M3, strate où le T doit bouger |", "| --- | --- | --- | --- |"]
     for v, e in r["descriptifs"].items():
@@ -193,6 +242,12 @@ def rapport(r):
     L += ["", "## Additivité et 3 bits (points, intervalle bootstrap à 95 %)", ""]
     for nom, e in r["additivite"].items():
         L.append(f"- {nom} : {A.ic_txt(e)}")
+    pe = r["part_expliquee_autres_4_bits"]
+    L += ["", "Part de la chute de tout le modèle à 4 bits que les autres couches portent en contexte, "
+              "Σ [K(encpred:4) - K(all:4)] / Σ [K(fp32) - K(all:4)] : "
+          + ("non définie (pas de chute)" if pe is None else A.ic_txt(pe, 100, 0).replace("+", "") + " %") + ".",
+          "", "Coût en bits par poids (échelles en 16 bits) : "
+          + ", ".join(f"{v} {b:.2f}".replace(".", ",") for v, b in r["bits_par_poids"].items()) + "."]
     return "\n".join(L) + "\n"
 
 
@@ -201,9 +256,10 @@ def main():
     ap.add_argument("--grille3", required=True)
     ap.add_argument("--grille4", required=True)
     ap.add_argument("--sanite", required=True)
+    ap.add_argument("--sanite-fin", required=True)
     ap.add_argument("--sortie", required=True)
     a = ap.parse_args()
-    r = analyser(a.grille3, a.grille4, a.sanite)
+    r = analyser(a.grille3, a.grille4, a.sanite, a.sanite_fin)
     out = Path(a.sortie)
     out.mkdir(parents=True, exist_ok=True)
     (out / "resultats.json").write_text(json.dumps(A.pur(r), indent=1, ensure_ascii=False))
