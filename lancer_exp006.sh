@@ -10,7 +10,7 @@ main() {
   caffeinate -i -w $$ &!         # pas de veille pendant l'attente ni entre les étapes, jusqu'à la sortie du lanceur
   local PY=/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python
   local R=../resultats
-  local TIRAGE=(--tache tworoom --chunk 50)
+  local TIRAGE=(--tache tworoom --chunk 50 --graine-episodes 42)   # une position par trajectoire, comme EXP-005
   local GARDE=/Users/thomasblanc/Documents/PRO/these-ia-thomas/outils/garde_batterie.sh
 
   # 0. code figé, arbre propre ; revérifié avant chaque étape, HEAD compris
@@ -38,6 +38,7 @@ main() {
 
   # 3. test de fonctionnement, bloquant : 50 épisodes sur GPU, fp32 et all:4, contrôlés comme dans l'analyse
   verifier $PY
+  rm -rf $R/exp006-test                     # jamais les fichiers d'un ancien commit
   caffeinate -i $PY run_grid.py --out $R/exp006-test $TIRAGE --n 50 --specs fp32 all:4 --seeds 42
   $PY -B -c 'import sys, numpy as np, analyse_exp006 as A6
 A6.N6 = 50

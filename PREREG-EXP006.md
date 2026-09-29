@@ -11,7 +11,8 @@ sur CPU a été joué (fichiers hors du dossier de résultats).
   (`checkpoints/tworoom/lewm`, même architecture que celui de PushT). Protocole officiel de `le-wm/config/eval/
   tworoom.yaml` : but à 25 pas, budget de 50 pas, CEM 300 × 30, horizon 5.
 - Code : `run_grid.py` avec l'option `--tache tworoom` ; sans elle, calcul identique à PushT (`test_run_grid.py`).
-- Épisodes : 500, tirés comme dans EXP-003 (graine 42). Graines de la CEM : 42 à 46 ; réplique de la pleine
+- Épisodes : 500, graine de tirage 42, au plus une position par trajectoire (règle d'EXP-005) : épisodes
+  indépendants. Graines de la CEM : 42 à 46 ; réplique de la pleine
   précision : 47 à 51.
 - Versions (RTN par canal sauf mention) : fp32, all:8, all:6, all:4, all:3, encoder:4, predictor:4, autres:4 (les
   6 couches d'EXP-004), all:4:g64 (groupes de 64). 50 fichiers de 500 épisodes, plus une sanité de clôture (all:4
