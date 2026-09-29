@@ -97,10 +97,11 @@ normale) : environ 94 % pour une différence réelle de 0,025, environ 29 % pour
 - Pas de décomposition de l'écart de pose selon l'issue des courses (réussites, échecs). Deux versions ont été
   écartées avant le lancement : la répartition par paires d'issues à la même graine (SS, SF, FS, FF) dépend de
   l'appariement des graines ; la décomposition de Kitagawa, sans appariement, mélange la précision et la
-  sélection des courses qui réussissent. Vérifié sur la pleine précision d'EXP-003 : basculer 1 % des courses
-  de la strate de la réussite à l'échec, sans toucher à aucune pose, donne une part « dans les réussites » de
-  -0,010 [-0,017 ; -0,004], le tiers de l'effet cherché. H6 dit déjà ce que ces lectures visaient : la pose se
-  dégrade alors que la réussite ne bouge pas.
+  sélection des courses qui réussissent. Vérifié sur la pleine précision d'EXP-003 : basculer à l'échec les 16
+  réussites les moins précises de la strate (M3 le plus haut, 1 % des 1 640 courses), celles qu'une petite
+  perturbation fait basculer d'abord, sans toucher à aucune pose, donne une part « dans les réussites » de
+  -0,010 [-0,017 ; -0,004], le tiers de l'effet cherché (16 réussites tirées au hasard : 0,000 en moyenne).
+  H6 dit déjà ce que ces lectures visaient : la pose se dégrade alors que la réussite ne bouge pas.
 - Traduction physique : écart moyen, dans la strate, de la distance minimale du T à son but (pixels) et de
   l'écart d'angle minimal (degrés), moyennés sur les graines, avec intervalle bootstrap ; minima pris sur les
   mêmes pas que M3 (amendement 4 d'EXP-003 pour les courses divergentes). Repères : la marge du T seul passe

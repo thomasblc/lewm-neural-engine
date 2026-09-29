@@ -25,21 +25,16 @@ main() {
   fi
 
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite (une grille, ou le lanceur d'une autre expérience
-  #    entre deux de ses étapes), 24 h au plus
-  local debut=$(date +%s) vides=0
-  while [ $vides -lt 3 ]; do
-    if autre_calcul; then
-      vides=0
-    else
-      vides=$((vides + 1))
-    fi
-    [ $(( $(date +%s) - debut )) -lt 86400 ] || { echo "[arrêt] une autre grille tourne encore après 24 h"; exit 1; }
-    [ $vides -ge 3 ] || sleep 60
+  #    entre deux de ses étapes), 24 h au plus ; 2. garde de batterie (chargeur de 70 W trop faible en plein
+  #    calcul), après la sortie de celle du calcul précédent. Si un autre calcul démarre pendant ce temps, on recommence.
+  local debut=$(date +%s)
+  while true; do
+    attendre_gpu
+    garde exp005 15
+    autre_calcul || break
+    echo "[info] un autre calcul a démarré pendant l'attente de la garde, nouvelle attente à $(date '+%H:%M')"
   done
   echo "[info] GPU libre, lancement à $(date '+%H:%M')"
-
-  # 2. garde de batterie (chargeur de 70 W trop faible en plein calcul), si aucune ne tourne
-  garde exp005 15
 
   # 3. la grille : 3 versions × 5 graines × 2 000 épisodes, graine par graine
   verifier $PY
@@ -52,6 +47,19 @@ main() {
   caffeinate -i $PY run_grid.py --out $R/exp005-sanite-fin $TIRAGE --specs all:6 --seeds 52
   comparer $PY $R/exp005-sanite-fin/all-6_s52.npz $R/exp005/all-6_s52.npz "sanité de clôture"
   echo "[info] EXP-005 finie à $(date '+%H:%M')"
+}
+
+attendre_gpu() {
+  local vides=0
+  while [ $vides -lt 3 ]; do
+    if autre_calcul; then
+      vides=0
+    else
+      vides=$((vides + 1))
+    fi
+    [ $(( $(date +%s) - debut )) -lt 86400 ] || { echo "[arrêt] une autre grille tourne encore après 24 h"; exit 1; }
+    [ $vides -ge 3 ] || sleep 60
+  done
 }
 
 # motifs ancrés sur l'exécutable : une commande qui cite seulement ces noms (un appel de shell, un test) ne compte pas

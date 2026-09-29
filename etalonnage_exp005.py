@@ -5,7 +5,8 @@ Mesure les fausses alertes (sans effet sur la pose ; réussite exactement à -2 
 pour H6 entière) et la puissance (écart de pose égal à celui d'EXP-003, puis à la moitié). Les chiffres sont ceux
 cités dans PREREG-EXP005.md. La puissance de la progression selon les bits (intervalle à 95 % au-dessus de 0) est
 calculée par approximation normale. Enfin, la raison d'écarter la décomposition de Kitagawa : sur la pleine
-précision d'EXP-003, basculer 1 % des courses de la strate de la réussite à l'échec, sans toucher aux poses.
+précision d'EXP-003, basculer à l'échec les réussites les moins précises de la strate (M3 le plus haut, 1 % des
+courses), sans toucher aux poses, puis, pour comparer, autant de réussites tirées au hasard (200 tirages).
 
 Usage :
     python etalonnage_exp005.py        # environ 20 s sur CPU
@@ -72,8 +73,17 @@ def selection():
     for g, e in reussies[np.argsort(-M3[S == 1], kind="stable")[:k]]:   # réussites les moins précises
         q["S"][g, cols[e]] = 0
     t = kitagawa(f, q, bouge, A.Bootstrap(n=int(bouge.sum()), graine=3).idx)
-    print(f"décomposition de Kitagawa, {k} réussites basculées en échecs sans toucher aux poses : "
-          + " ; ".join(f"{n} {m:+.3f} [{b:+.3f}, {h:+.3f}]" for n, (m, b, h) in t.items()))
+    print(f"décomposition de Kitagawa, les {k} réussites les moins précises sur {S.size} courses basculées en échecs, "
+          f"sans toucher aux poses : " + " ; ".join(f"{n} {m:+.3f} [{b:+.3f}, {h:+.3f}]" for n, (m, b, h) in t.items()))
+    rng, part = np.random.default_rng(11), []
+    seul = np.arange(int(bouge.sum()))[None]                  # estimation ponctuelle seulement
+    for _ in range(200):
+        q = dict(f, S=f["S"].copy())
+        for g, e in reussies[rng.choice(len(reussies), size=k, replace=False)]:
+            q["S"][g, cols[e]] = 0
+        part.append(kitagawa(f, q, bouge, seul)["réussites"][0])
+    print(f"  mêmes {k} basculements au hasard (200 tirages) : part dans les réussites {np.mean(part):+.3f} "
+          f"(écart-type {np.std(part, ddof=1):.3f})")
 
 
 def decaler(x, cible, rng):
