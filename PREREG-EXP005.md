@@ -94,14 +94,13 @@ normale) : environ 94 % pour une différence réelle de 0,025, environ 29 % pour
   (10 000 rééchantillons, `default_rng(2)` sur les 2 000 épisodes, `default_rng(3)` sur la strate) ;
   classes de courses (réussite, T placé sans réussite, T jamais placé) sur tous les épisodes et dans la
   strate ; plancher de bruit (épisodes discordants par 50 entre deux graines de fp32).
-- Décomposition de l'écart de log M3 à 6 bits dans la strate, sans appariement des graines (décomposition de
-  Kitagawa sur les courses graine × épisode) : l'écart des moyennes se partage exactement en un écart dans les
-  réussites et un écart dans les échecs, chacun pondéré par la part moyenne de son issue, et une part due au
-  changement du taux de réussite. Les deux premiers termes forment la part que le taux de réussite ne peut pas
-  voir ; le premier mesure la précision des réussites. Intervalles bootstrap sur les épisodes
-  (`default_rng(3)`). Une répartition par paires d'issues à la même graine (SS, SF, FS, FF), envisagée d'abord,
-  est écartée : elle dépend de l'appariement des graines, qui porte de l'information ici (corrélation
-  des résidus de log M3 à la même graine entre fp32 et 6 bits : 0,39 dans la strate d'EXP-003).
+- Pas de décomposition de l'écart de pose selon l'issue des courses (réussites, échecs). Deux versions ont été
+  écartées avant le lancement : la répartition par paires d'issues à la même graine (SS, SF, FS, FF) dépend de
+  l'appariement des graines ; la décomposition de Kitagawa, sans appariement, mélange la précision et la
+  sélection des courses qui réussissent. Vérifié sur la pleine précision d'EXP-003 : basculer 1 % des courses
+  de la strate de la réussite à l'échec, sans toucher à aucune pose, donne une part « dans les réussites » de
+  -0,010 [-0,017 ; -0,004], le tiers de l'effet cherché. H6 dit déjà ce que ces lectures visaient : la pose se
+  dégrade alors que la réussite ne bouge pas.
 - Traduction physique : écart moyen, dans la strate, de la distance minimale du T à son but (pixels) et de
   l'écart d'angle minimal (degrés), moyennés sur les graines, avec intervalle bootstrap ; minima pris sur les
   mêmes pas que M3 (amendement 4 d'EXP-003 pour les courses divergentes). Repères : la marge du T seul passe

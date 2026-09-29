@@ -109,44 +109,13 @@ def test_comparer_sur_M3():
     assert r["ecarts"]["reussite_bouge"]["haut"] == pct((x / 5)[bouge], boots.idx, 97.5)
     d2 = np.log(np.maximum(q["M2"], 0.05)).mean(0) - np.log(np.maximum(f["M2"], 0.05)).mean(0)
     assert abs(r["ecarts"]["log_M2"]["moyenne"] - d2.mean()) < 1e-12 and r["ecarts"]["log_M2"]["bas"] == pct(d2, boot.idx, 2.5)
-    kita = kitagawa_a_part(f, q, bouge, boots.idx)
-    dc = r["decomposition_strate"]
-    for k in ("reussites", "echecs", "composition"):
-        assert abs(dc[k]["moyenne"] - kita[k][0]) < 1e-12 and abs(dc[k]["bas"] - kita[k][1]) < 1e-9 \
-            and abs(dc[k]["haut"] - kita[k][2]) < 1e-9, (k, dc[k], kita[k])
-    assert abs(dc["total"] - r["delta_log_M3_bouge"]) < 1e-12
-    # lecture : si seuls les échecs empirent, à réussites identiques, toute la dégradation est « dans les échecs »
-    q2 = dict(f, M3=np.where(f["S"] == 1, f["M3"], f["M3"] * np.exp(0.1)))
-    dc2 = A5.comparer_version(f, q2, bouge, inv, boot, boots)["decomposition_strate"]
-    assert dc2["reussites"]["moyenne"] == 0 and dc2["composition"]["moyenne"] == 0
-    assert abs(dc2["echecs"]["moyenne"] - dc2["total"]) < 1e-12 and dc2["total"] > 0.01
-    assert A5.decomposition_strate(f, dict(f, S=np.ones_like(f["S"])), bouge, boots) is None   # une issue manque
     ddt = (q["dT_min"].mean(0) - f["dT_min"].mean(0))[bouge]
     assert r["physique_strate"]["dT_min_px"]["moyenne"] == ddt.mean() and r["physique_strate"]["dT_min_px"]["bas"] == pct(ddt, boots.idx, 2.5)
     d = x / 5
     m_, se = d.mean(), d.std(ddof=1) / np.sqrt(n)
     assert abs(r["controle_tost_t"]["p_bas"] - stats.t.sf((m_ + 0.02) / se, n - 1)) < 1e-12
-    print("ok comparaison : test sur M3 (p différente avec M2), écarts, bornes bootstrap, décomposition sans "
-          "appariement (valeurs, bornes, somme, lecture), écart en unités physiques et TOST t recalculés à part")
-
-
-def kitagawa_a_part(f, q, bouge, idx):
-    """Décomposition recalculée autrement : poids des épisodes par comptage (bincount), moyennes par issue."""
-    lf, lq = np.log(np.maximum(f["M3"], 0.05))[:, bouge], np.log(np.maximum(q["M3"], 0.05))[:, bouge]
-    Sf, Sq = f["S"][:, bouge] == 1, q["S"][:, bouge] == 1
-
-    def calcul(w):                                    # w : poids de chaque épisode
-        W = np.broadcast_to(w, Sf.shape)
-        pf, pq = (W * Sf).sum() / W.sum(), (W * Sq).sum() / W.sum()
-        mSf, mFf = (W * lf)[Sf].sum() / W[Sf].sum(), (W * lf)[~Sf].sum() / W[~Sf].sum()
-        mSq, mFq = (W * lq)[Sq].sum() / W[Sq].sum(), (W * lq)[~Sq].sum() / W[~Sq].sum()
-        return np.array([(pf + pq) / 2 * (mSq - mSf), (1 - (pf + pq) / 2) * (mFq - mFf),
-                         (pq - pf) * ((mSq + mSf) / 2 - (mFq + mFf) / 2)])
-
-    point = calcul(np.ones(Sf.shape[1]))
-    boot = np.array([calcul(np.bincount(i, minlength=Sf.shape[1]).astype(float)) for i in idx])
-    return {k: (point[j], np.percentile(boot[:, j], 2.5), np.percentile(boot[:, j], 97.5))
-            for j, k in enumerate(("reussites", "echecs", "composition"))}
+    print("ok comparaison : test sur M3 (p différente avec M2), écarts, bornes bootstrap, écart en unités physiques et "
+          "TOST t recalculés à part")
 
 
 def physique_a_part(d, v, bouge):
@@ -273,7 +242,8 @@ def test_scenarios(tmp):
     bs = A.Bootstrap(n=nb, graine=3).idx
     for cle, ecart in (("dT_min_px", t6 - tf), ("dth_min_deg", a6 - af)):
         e = h["physique_strate"][cle]
-        assert abs(e["moyenne"] - ecart.mean()) < 1e-9 and abs(e["bas"] - pct(ecart, bs, 2.5)) < 1e-9, (cle, e)
+        assert abs(e["moyenne"] - ecart.mean()) < 1e-9 and abs(e["bas"] - pct(ecart, bs, 2.5)) < 1e-9 \
+            and abs(e["haut"] - pct(ecart, bs, 97.5)) < 1e-9, (cle, e)
     # une course divergente : ses pas après la divergence (T encore fini) ne comptent pas
     x = dict(np.load(d / "all-6_s54.npz"))
     i = int(np.where(~x["success"] & np.isnan(x["state"]).any(axis=(0, 2)) & ~np.isnan(x["state"][0]).any(axis=1))[0][0])
@@ -281,7 +251,7 @@ def test_scenarios(tmp):
     assert np.isfinite(x["state"][25:, i, 2:5]).all() and np.array_equal(e[20:], np.repeat(x["state"][19:20, i], 30, axis=0))
     txt = A5.rapport(r)
     assert "établie" in txt and "Progression selon les bits" in txt and not re.search(r"\bnan\b|\binf\b", txt.lower())
-    assert "dans les échecs" in txt and "20 px sur l'agent et le T ensemble" in txt
+    assert "20 px sur l'agent et le T ensemble" in txt and "composition" not in txt
     r_inv = dict(r, progression_8_vers_6=dict(r["progression_8_vers_6"], sens=-1, etablie=False))
     assert "non établie, pose plus mauvaise à 8 bits qu'à 6 bits" in A5.rapport(r_inv)
     print("ok effet cherché (vraies vérifications du code) : H6 établie, progression établie ; p, écarts, contrôle à "
@@ -299,7 +269,7 @@ def test_scenarios(tmp):
     r3 = analyser(d3, fin3, excl3)
     h = r3["H6"]
     assert h["delta_reussite"] == 0 and h["delta_log_M3_bouge"] == 0 and h["p_b"] == 1.0 and h["verdict"] == "non établie"
-    assert r3["progression_8_vers_6"] is None and r3["H6"]["decomposition_strate"]["total"] == 0
+    assert r3["progression_8_vers_6"] is None
     print("ok sans effet : écarts nuls, p_b = 1, H6 non établie, progression non rapportée")
     return d, fin, excl
 

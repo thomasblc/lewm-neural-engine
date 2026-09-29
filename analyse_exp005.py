@@ -194,37 +194,6 @@ def stat_h6(x, w, inv):
     return {"p_bas": p_bas, "p_haut": p_haut, "p_b": p_b, "p": max(p_bas, p_haut, p_b)}
 
 
-def decomposition_strate(f, q, bouge, boot_strate):
-    """Écart moyen de log M3 dans la strate, sur les courses (graine, épisode), partagé sans appariement des graines
-    (Kitagawa) : écart dans les réussites et dans les échecs, pondérés par la part moyenne de chaque issue, et part
-    due au changement du taux de réussite. Les trois termes somment exactement à l'écart moyen. Intervalles
-    bootstrap percentile sur les épisodes (mêmes rééchantillons que la strate). None si une issue manque."""
-    def sommes(t):
-        s, l = t["S"][:, bouge].astype(bool), A.lg(t["M3"])[:, bouge]
-        return [x.astype(np.float64) for x in (s.sum(0), np.where(s, l, 0).sum(0), (~s).sum(0), np.where(~s, l, 0).sum(0))]
-
-    F, Q = sommes(f), sommes(q)
-
-    def termes(idx):
-        (nSf, lSf, nFf, lFf), (nSq, lSq, nFq, lFq) = ([x[idx].sum(axis=-1) for x in V] for V in (F, Q))
-        pf, pq = nSf / (nSf + nFf), nSq / (nSq + nFq)
-        mSf, mFf, mSq, mFq = lSf / nSf, lFf / nFf, lSq / nSq, lFq / nFq
-        return {"reussites": (pf + pq) / 2 * (mSq - mSf), "echecs": (2 - pf - pq) / 2 * (mFq - mFf),
-                "composition": (pq - pf) * ((mSq + mSf) / 2 - (mFq + mFf) / 2)}
-
-    if min(x.sum() for x in (F[0], F[2], Q[0], Q[2])) == 0:
-        return None
-    with np.errstate(all="ignore"):
-        point, boot = termes(np.arange(len(F[0]))), termes(boot_strate.idx)
-    out = {}
-    for k in point:
-        b = boot[k][np.isfinite(boot[k])]
-        out[k] = {"moyenne": float(point[k]), "bas": float(np.percentile(b, 2.5)), "haut": float(np.percentile(b, 97.5))}
-    out["total"] = float(sum(point.values()))
-    out["taux_reussite"] = [float(F[0].sum() / (F[0].sum() + F[2].sum())), float(Q[0].sum() / (Q[0].sum() + Q[2].sum()))]
-    return out
-
-
 def comparer_version(f, q, bouge, inv, boot, boot_strate):
     x = q["K"] - f["K"]
     d3 = A.lg(q["M3"]).mean(axis=0) - A.lg(f["M3"]).mean(axis=0)
@@ -237,7 +206,7 @@ def comparer_version(f, q, bouge, inv, boot, boot_strate):
     return {"delta_reussite": float(x.mean() / 5), "delta_log_M3_bouge": float(d3[bouge].mean()),
             "episodes_bouge": int(bouge.sum()), **stat, "ecarts": ecarts,
             "sens_reussite": [signe_ic(ecarts["reussite"]), signe_ic(ecarts["reussite_bouge"])],
-            "physique_strate": physique, "decomposition_strate": decomposition_strate(f, q, bouge, boot_strate),
+            "physique_strate": physique,
             "controle_tost_t": A.tost_t(x / 5)}
 
 
@@ -324,12 +293,6 @@ def rapport(r):
                  + " / ".join(f"{100 * d['classes_bouge'][x]:.1f}" for x in A.CLASSES) + " (réussite / T placé seul / T jamais placé).")
     L.append(f"- Écart de log M2 à 6 bits : {A.ic_txt(h['ecarts']['log_M2'], 1, 3)} ; plancher de bruit : "
              f"{A.ic_txt(r['descriptifs']['plancher_discordants_par_50'], 1, 2, '')} épisodes discordants sur 50.")
-    dc = h["decomposition_strate"]
-    if dc is not None:
-        L.append(f"- Décomposition de l'écart de log M3 à 6 bits dans la strate, sans appariement des graines : dans les "
-                 f"réussites {A.ic_txt(dc['reussites'], 1, 4)}, dans les échecs {A.ic_txt(dc['echecs'], 1, 4)} (ces deux "
-                 f"parts échappent au taux de réussite) ; part due au changement du taux de réussite "
-                 f"{A.ic_txt(dc['composition'], 1, 4)} ; total {dc['total']:+.4f}.")
     if r["comparaison_exp003"]:
         L += ["", "## À côté d'EXP-003 (sans regroupement)", ""]
         for v, e in r["comparaison_exp003"].items():

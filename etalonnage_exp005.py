@@ -4,7 +4,8 @@
 Mesure les fausses alertes (sans effet sur la pose ; réussite exactement à -2 et à +2 points, pour chaque borne et
 pour H6 entière) et la puissance (écart de pose égal à celui d'EXP-003, puis à la moitié). Les chiffres sont ceux
 cités dans PREREG-EXP005.md. La puissance de la progression selon les bits (intervalle à 95 % au-dessus de 0) est
-calculée par approximation normale à la fin.
+calculée par approximation normale. Enfin, la raison d'écarter la décomposition de Kitagawa : sur la pleine
+précision d'EXP-003, basculer 1 % des courses de la strate de la réussite à l'échec, sans toucher aux poses.
 
 Usage :
     python etalonnage_exp005.py        # environ 20 s sur CPU
@@ -38,6 +39,41 @@ def ecart_type_d68():
                             for g in A.GA])).mean(0) for v in ("all:6", "all:8")}
     bouge = A.depart({("fp32", A.GA[0]): dict(np.load(R / "fp32_s42.npz"))})["bouge"]
     return float((lg["all:6"] - lg["all:8"])[bouge].std(ddof=1))
+
+
+def kitagawa(f, q, bouge, idx):
+    """Écart de log M3 de la strate partagé sur les courses (graine, épisode) : dans les réussites, dans les échecs,
+    changement du taux de réussite (version écartée d'analyse_exp005, commit a0a9304). Moyenne et bornes à 95 %."""
+    def sommes(t):
+        s, l = t["S"][:, bouge].astype(bool), A.lg(t["M3"])[:, bouge]
+        return [x.astype(np.float64) for x in (s.sum(0), np.where(s, l, 0).sum(0), (~s).sum(0), np.where(~s, l, 0).sum(0))]
+
+    def termes(i):
+        (nSf, lSf, nFf, lFf), (nSq, lSq, nFq, lFq) = ([x[i].sum(axis=-1) for x in V] for V in (sommes(f), sommes(q)))
+        pf, pq = nSf / (nSf + nFf), nSq / (nSq + nFq)
+        mSf, mFf, mSq, mFq = lSf / nSf, lFf / nFf, lSq / nSq, lFq / nFq
+        return {"réussites": (pf + pq) / 2 * (mSq - mSf), "échecs": (2 - pf - pq) / 2 * (mFq - mFf),
+                "taux": (pq - pf) * ((mSq + mSf) / 2 - (mFq + mFf) / 2)}
+
+    point, boot = termes(np.arange(int(bouge.sum()))), termes(idx)
+    return {k: (point[k], np.percentile(boot[k], 2.5), np.percentile(boot[k], 97.5)) for k in point}
+
+
+def selection():
+    D = [dict(np.load(R / f"fp32_s{g}.npz")) for g in A.GA]
+    f = {"S": np.stack([d["success"].astype(np.int64) for d in D]),
+         "M3": np.stack([A.controler_course(d, "fp32")[1] for d in D])}
+    bouge = A.depart({("fp32", A.GA[0]): D[0]})["bouge"]
+    cols = np.where(bouge)[0]
+    S, M3 = f["S"][:, cols], f["M3"][:, cols]
+    k = int(round(0.01 * S.size))
+    reussies = np.argwhere(S == 1)
+    q = dict(f, S=f["S"].copy())
+    for g, e in reussies[np.argsort(-M3[S == 1], kind="stable")[:k]]:   # réussites les moins précises
+        q["S"][g, cols[e]] = 0
+    t = kitagawa(f, q, bouge, A.Bootstrap(n=int(bouge.sum()), graine=3).idx)
+    print(f"décomposition de Kitagawa, {k} réussites basculées en échecs sans toucher aux poses : "
+          + " ; ".join(f"{n} {m:+.3f} [{b:+.3f}, {h:+.3f}]" for n, (m, b, h) in t.items()))
 
 
 def decaler(x, cible, rng):
@@ -91,6 +127,8 @@ def main():
     se = sd / np.sqrt(nb)
     print(f"progression : écart-type de d {sd:.3f} ; puissance "
           + ", ".join(f"{100 * stats.norm.cdf(eff / se - stats.norm.ppf(0.975)):.0f} % pour {eff}" for eff in (0.025, 0.010)))
+    # 4. pourquoi la décomposition selon l'issue est écartée
+    selection()
 
 
 if __name__ == "__main__":

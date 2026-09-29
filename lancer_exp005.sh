@@ -61,6 +61,13 @@ autre_calcul() {
 }
 
 garde() {
+  # une garde encore active (celle d'une autre grille, ou de l'étape précédente) sort au plus 4 min après la fin de
+  # son calcul : l'attendre 6 min au plus, pour que la nouvelle étape ait sa propre garde
+  local essais=0
+  while pgrep -f '^(/bin/)?zsh [^ ]*garde_batterie\.sh$' > /dev/null && [ $essais -lt 6 ]; do
+    essais=$((essais + 1))
+    sleep 60
+  done
   if pgrep -f '^(/bin/)?zsh [^ ]*garde_batterie\.sh$' > /dev/null; then
     echo "[info] une garde de batterie tourne déjà"
   else
