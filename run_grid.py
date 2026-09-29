@@ -11,7 +11,9 @@ fixé par (graine, position de l'épisode dans l'échantillon, numéro du plan).
 épisode ne dépend donc ni des autres épisodes du paquet ni de la version du modèle. La config
 officielle (un générateur partagé, tiré épisode après épisode) couplait les épisodes d'un même paquet.
 
-Le tirage des épisodes reproduit celui de le-wm/eval.py (graine 42 de la config).
+Le tirage des épisodes reproduit celui de le-wm/eval.py (graine 42 de la config). EXP-005 ajoute deux
+options, sans effet quand elles sont absentes : --graine-episodes (autre tirage) et --exclure (meta.json
+d'expériences dont les couples (épisode, pas de départ) sont écartés du tirage).
 
 Usage :
     python run_grid.py --out ../resultats/exp003 --n 500 --chunk 50 --specs fp32 all:4 --seeds 42 43
@@ -130,11 +132,38 @@ def preparer_donnees(cfg):
     return dataset, process, col, valid
 
 
-def tirer_episodes(cfg, dataset, col, valid, n):
-    g = np.random.default_rng(cfg.seed)
-    idx = np.sort(valid[g.choice(len(valid) - 1, size=n, replace=False)])
+def tirer_episodes(cfg, dataset, col, valid, n, graine=None, exclus=frozenset()):
+    if graine is None and not exclus:                     # tirage d'origine, identique à c5703db
+        g = np.random.default_rng(cfg.seed)
+        idx = np.sort(valid[g.choice(len(valid) - 1, size=n, replace=False)])
+        rows = dataset.get_row_data(idx)
+        return np.asarray(rows[col]).tolist(), np.asarray(rows["step_idx"]).tolist()
+    # EXP-005 : même forme de tirage, autre graine, couples déjà utilisés écartés dans l'ordre du tirage. Le
+    # nombre de candidats dépend de la liste d'exclusion : le tirage est fixé par (graine, n, liste d'exclusion).
+    g = np.random.default_rng(cfg.seed if graine is None else graine)
+    cand = valid[g.choice(len(valid) - 1, size=min(len(valid) - 1, n + len(exclus) + 100), replace=False)]
+    ordre = np.argsort(cand)                              # le lecteur HDF5 veut des indices croissants
+    rows = dataset.get_row_data(cand[ordre])
+    lues = list(zip(np.asarray(rows[col]).tolist(), np.asarray(rows["step_idx"]).tolist()))
+    paires = [None] * len(cand)
+    for j, i in enumerate(ordre):
+        paires[i] = lues[j]
+    garde = [i for i, pr in enumerate(paires) if pr not in exclus][:n]
+    if len(garde) < n:
+        sys.exit(f"tirage : {len(garde)} épisodes disponibles au lieu de {n}")
+    idx = np.sort(cand[garde])
     rows = dataset.get_row_data(idx)
     return np.asarray(rows[col]).tolist(), np.asarray(rows["step_idx"]).tolist()
+
+
+def lire_exclus(chemins):
+    """Couples (épisode, pas de départ) des meta.json donnés (format de run_grid ou des premiers tests)."""
+    exclus = set()
+    for c in chemins:
+        m = json.loads(Path(c).read_text())
+        m = m.get("protocole", m)
+        exclus |= set(zip(m["episodes_idx"], m["start_steps"]))
+    return frozenset(exclus)
 
 
 def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg):
@@ -208,6 +237,8 @@ def main():
     ap.add_argument("--specs", nargs="+", required=True)
     ap.add_argument("--seeds", nargs="+", type=int, required=True)
     ap.add_argument("--device", default="mps")
+    ap.add_argument("--graine-episodes", type=int, default=None)
+    ap.add_argument("--exclure", nargs="*", default=[])
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
@@ -215,11 +246,15 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     cfg = charger_config(args.chunk, args.device)
     dataset, process, col, valid = preparer_donnees(cfg)
-    ep_all, st_all = tirer_episodes(cfg, dataset, col, valid, args.n)
+    exclus = lire_exclus(args.exclure)
+    ep_all, st_all = tirer_episodes(cfg, dataset, col, valid, args.n, args.graine_episodes, exclus)
     sha, sale = git_info()
     protocole = {"n": args.n, "chunk": args.chunk, "episodes_idx": ep_all, "start_steps": st_all,
                  "episode_seed": int(cfg.seed), "device": args.device, "hasard": "par episode (amendement 1)",
                  "config": OmegaConf.to_container(cfg, resolve=False)}
+    if args.graine_episodes is not None or exclus:           # absent du protocole d'EXP-003 et d'EXP-004
+        protocole["graine_episodes"] = args.graine_episodes
+        protocole["exclus"] = sorted(map(list, exclus))
     f_meta = out / "meta.json"
     if f_meta.exists():
         ancien = json.loads(f_meta.read_text())
