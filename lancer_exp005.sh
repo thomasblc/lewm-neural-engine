@@ -17,12 +17,17 @@ main() {
   verifier $PY
   HEAD0=$(git rev-parse HEAD)
   echo "[info] code vérifié : $(git rev-parse --short HEAD)"
+  # une grille commencée avec un autre commit ne se reprend pas : ses fichiers seraient de deux commits
+  if [ -f $R/exp005/meta.json ]; then
+    local commit_grille=$($PY -c 'import json, sys; print(json.load(open(sys.argv[1]))["git"])' $R/exp005/meta.json)
+    [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] grille commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
+  fi
 
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite (une grille, ou le lanceur d'une autre expérience
   #    entre deux de ses étapes), 24 h au plus
   local debut=$(date +%s) vides=0
   while [ $vides -lt 3 ]; do
-    if pgrep -f '[r]un_grid\.py' > /dev/null || pgrep -f '[l]ancer_exp004\.sh' > /dev/null || pgrep -f '[l]ancer_grille\.sh' > /dev/null; then
+    if autre_calcul; then
       vides=0
     else
       vides=$((vides + 1))
@@ -33,22 +38,34 @@ main() {
   echo "[info] GPU libre, lancement à $(date '+%H:%M')"
 
   # 2. garde de batterie (chargeur de 70 W trop faible en plein calcul), si aucune ne tourne
-  if pgrep -f '[g]arde_batterie' > /dev/null; then
-    echo "[info] une garde de batterie tourne déjà"
-  else
-    GRILLE=exp005 ATTENDUS=15 PAUSE_INITIALE=0 REPRISE_1=80 zsh $GARDE > /dev/null 2>&1 &!
-    echo "[info] garde de batterie lancée pour exp005"
-  fi
+  garde exp005 15
 
   # 3. la grille : 3 versions × 5 graines × 2 000 épisodes, graine par graine
   verifier $PY
   caffeinate -i $PY run_grid.py --out $R/exp005 $TIRAGE --specs fp32 all:6 all:8 --seeds 52 53 54 55 56
 
-  # 4. sanité de clôture : all:6 graine 52 recalculé doit redonner le fichier de la grille
+  # 4. sanité de clôture : all:6 graine 52 recalculé doit redonner le fichier de la grille ; la garde de la grille
+  #    peut être sortie entre les deux étapes, on en relance une si besoin
   verifier $PY
+  garde exp005-sanite-fin 1
   caffeinate -i $PY run_grid.py --out $R/exp005-sanite-fin $TIRAGE --specs all:6 --seeds 52
   comparer $PY $R/exp005-sanite-fin/all-6_s52.npz $R/exp005/all-6_s52.npz "sanité de clôture"
   echo "[info] EXP-005 finie à $(date '+%H:%M')"
+}
+
+# motifs ancrés sur l'exécutable : une commande qui cite seulement ces noms (un appel de shell, un test) ne compte pas
+autre_calcul() {
+  pgrep -f '^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\.py( |$)' > /dev/null ||
+    pgrep -f '^(/bin/)?zsh (\./|[^ ]*/)?lancer_(exp004|grille)\.sh( |$)' > /dev/null
+}
+
+garde() {
+  if pgrep -f '^(/bin/)?zsh [^ ]*garde_batterie\.sh$' > /dev/null; then
+    echo "[info] une garde de batterie tourne déjà"
+  else
+    GRILLE=$1 ATTENDUS=$2 PAUSE_INITIALE=0 REPRISE_1=80 zsh $GARDE > /dev/null 2>&1 &!
+    echo "[info] garde de batterie lancée pour $1"
+  fi
 }
 
 verifier() {

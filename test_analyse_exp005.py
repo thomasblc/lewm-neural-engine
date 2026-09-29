@@ -1,5 +1,6 @@
-"""Tests de analyse_exp005.py : cas construits à la main (sans simulateur, comptages refaits en numpy pur), puis
-grilles simulées de 2 000 épisodes (simulateur d'EXP-003) et refus des fichiers corrompus.
+"""Tests de analyse_exp005.py : cas construits à la main (comptages refaits en numpy pur, sans le code testé),
+fonctions de décision, grilles simulées de 2 000 épisodes (simulateur d'EXP-003) passées par les vraies
+vérifications du code, et refus des fichiers corrompus. À lancer sur un arbre commité.
 
 Usage :
     python test_analyse_exp005.py
@@ -13,12 +14,17 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from scipy import stats
 
 import analyse_exp003 as A
 import analyse_exp005 as A5
 import test_analyse_exp003 as T
+from metriques import ecart_angle, prolonger
 
 SIGNES = np.random.default_rng(0).choice(np.array([-1.0, 1.0]), size=(10_000, A5.N5))   # refaits ici, à part
+TETE = subprocess.run(["git", "-C", str(A.ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+PROPRE = subprocess.run(["git", "-C", str(A.ICI), "status", "--porcelain", "--untracked-files=no"],
+                        capture_output=True, text=True).stdout.strip() == ""
 
 
 def p_numpy(x, sens, n=None):
@@ -31,35 +37,89 @@ def p_numpy(x, sens, n=None):
     return (1 + int(compte)) / 10_001
 
 
+def pct(x, idx, q):
+    return float(np.percentile(np.asarray(x, float)[idx].mean(axis=1), q))
+
+
+# ---------------------------------------------------------------- statistique et décisions, sans simulateur
+
 def test_statistique_a_la_main():
     inv = A.Inversion(n=A5.N5)
-    rng = np.random.default_rng(99)
     w0 = np.zeros(1333)
-    # (i) réussite exactement 2,5 points au-dessus (250 épisodes à +1 sur 2 000) : seule la borne haute échoue
-    x = np.zeros(A5.N5, dtype=int); x[:250] = 1
+    x = np.zeros(A5.N5, dtype=int); x[:250] = 1                  # +2,5 points : seule la borne haute échoue
     s = A5.stat_h6(x, w0 + 0.01, inv)
-    assert x.mean() / 5 == 0.025 and s["p_haut"] > 0.05 and s["p"] == s["p_haut"], s
-    assert s["p_haut"] == p_numpy(10 * x - 1, "moins") and s["p_bas"] == p_numpy(10 * x + 1, "plus")
-    # (ii) réussite exactement 1,5 point en dessous (150 épisodes à -1) : dans la marge, p_bas petite
-    x = np.zeros(A5.N5, dtype=int); x[:150] = -1
+    assert s["p_haut"] > 0.05 and s["p"] == s["p_haut"] == p_numpy(10 * x - 1, "moins") and s["p_bas"] == p_numpy(10 * x + 1, "plus")
+    x = np.zeros(A5.N5, dtype=int); x[:150] = -1                 # -1,5 point : dans la marge
     s = A5.stat_h6(x, w0 + 0.01, inv)
-    assert x.mean() / 5 == -0.015
     assert s["p_bas"] == p_numpy(10 * x + 1, "plus") < 0.05 and s["p_haut"] == p_numpy(10 * x - 1, "moins")
-    # (ii bis) exactement 2,5 points en dessous : hors de la marge, la borne basse échoue
-    x = np.zeros(A5.N5, dtype=int); x[:250] = -1
+    x = np.zeros(A5.N5, dtype=int); x[:250] = -1                 # -2,5 points : hors de la marge
     s = A5.stat_h6(x, w0 + 0.01, inv)
-    assert s["p_bas"] > 0.05 and s["p"] == s["p_bas"] == p_numpy(10 * x + 1, "plus"), s
-    # (iii) petit effet sur la pose : p unilatérale vers 0,02, la bilatérale serait vers le double
-    w = rng.normal(0, 0.258, 1333)
-    w = w - w.mean() + 2.1 * 0.258 / np.sqrt(1333)
-    s = A5.stat_h6(np.zeros(A5.N5, dtype=int), w, inv)
-    assert s["p_b"] == p_numpy(w, "plus", 1333) and 0.005 < s["p_b"] < 0.04, s["p_b"]
-    assert p_numpy(w, "bilateral", 1333) > 1.5 * s["p_b"]
-    print("ok statistique à la main : borne haute seule en échec, p_bas dans la marge, p_b unilatérale, "
-          "toutes égales au comptage numpy indépendant")
+    assert s["p_bas"] > 0.05 and s["p"] == s["p_bas"] == p_numpy(10 * x + 1, "plus")
+    rng = np.random.default_rng(99)
+    w = rng.normal(0, 0.258, 1333); w = w - w.mean() + 2.1 * 0.258 / np.sqrt(1333)
+    s = A5.stat_h6(np.zeros(A5.N5, dtype=int), w, inv)           # petit effet : unilatéral vers 0,02
+    assert s["p_b"] == p_numpy(w, "plus", 1333) and 0.005 < s["p_b"] < 0.04 and p_numpy(w, "bilateral", 1333) > 1.5 * s["p_b"]
+    assert A5.verdict_h6(0.0499) == "établie" and A5.verdict_h6(0.05) == A5.verdict_h6(0.0501) == "non établie"
+    print("ok statistique : bornes du TOST, p_b unilatérale, seuil de 5 %, égales au comptage numpy indépendant")
 
 
-def grille(tmp, nom, **kw):
+def test_formulation():
+    ic = lambda b, h: {"moyenne": (b + h) / 2, "bas": b, "haut": h}
+    zero, bas, haut = ic(-0.01, 0.01), ic(-0.02, -0.005), ic(0.003, 0.012)
+    F = A5.formulation_h6
+    assert F(False, zero, zero, True) == "H6 non établie"
+    assert F(True, zero, zero, True).startswith("la pose du T se dégrade à 6 bits alors que la réussite ne bouge pas")
+    assert F(True, bas, zero, True).startswith("à 6 bits, la pose du T et la réussite se dégradent toutes deux")
+    assert F(True, zero, bas, True).startswith("à 6 bits, la pose du T et la réussite se dégradent toutes deux")
+    assert F(True, haut, zero, True).startswith("la pose du T se dégrade à 6 bits alors que la réussite augmente")
+    assert F(True, haut, bas, True).startswith("la pose du T se dégrade à 6 bits ; l'écart de réussite change de sens")
+    assert F(True, zero, zero, True).endswith("(progression selon les bits)")
+    assert F(True, zero, zero, False).endswith("mais l'effet à 6 bits ne se distingue pas du contrôle à 8 bits")
+    assert [A5.signe_ic(e) for e in (zero, bas, haut)] == [0, -1, 1]
+    print("ok règle de rédaction : les 4 sens de l'écart de réussite et les 2 issues de la progression")
+
+
+def test_comparer_sur_M3():
+    """comparer_version porte bien sur M3 (pas M2) et décompose selon les issues, sur des tableaux construits."""
+    rng = np.random.default_rng(5)
+    n, bouge = A5.N5, np.zeros(A5.N5, dtype=bool)
+    bouge[:1333] = True
+
+    def version(decalage3, decalage2):
+        S = (rng.uniform(size=(5, n)) < 0.8).astype(np.int64)
+        M3 = np.exp(rng.normal(0, 0.3, (5, n)) + decalage3)
+        M2 = np.exp(rng.normal(0, 0.3, (5, n)) + decalage2)
+        return {"S": S, "K": S.sum(0), "M3": M3, "M2": M2, "dT_min": rng.uniform(0, 40, (5, n)),
+                "dth_min": rng.uniform(0, 30, (5, n)), "classe": np.zeros((5, n), dtype=int)}
+    f, q = version(0.0, 0.0), version(0.01, 0.2)
+    inv, boot, boots = A.Inversion(n=n), A.Bootstrap(n=n), A.Bootstrap(n=1333, graine=3)
+    r = A5.comparer_version(f, q, bouge, inv, boot, boots)
+    w3 = (np.log(np.maximum(q["M3"], 0.05)).mean(0) - np.log(np.maximum(f["M3"], 0.05)).mean(0))[bouge]
+    w2 = (np.log(np.maximum(q["M2"], 0.05)).mean(0) - np.log(np.maximum(f["M2"], 0.05)).mean(0))[bouge]
+    assert r["p_b"] == p_numpy(w3, "plus", 1333) != p_numpy(w2, "plus", 1333)
+    assert abs(r["delta_log_M3_bouge"] - w3.mean()) < 1e-12 and r["delta_reussite"] == (q["K"] - f["K"]).mean() / 5
+    x = q["K"] - f["K"]
+    assert r["ecarts"]["reussite"]["bas"] == pct(x / 5, boot.idx, 2.5)
+    assert r["ecarts"]["reussite_bouge"]["haut"] == pct((x / 5)[bouge], boots.idx, 97.5)
+    d2 = np.log(np.maximum(q["M2"], 0.05)).mean(0) - np.log(np.maximum(f["M2"], 0.05)).mean(0)
+    assert abs(r["ecarts"]["log_M2"]["moyenne"] - d2.mean()) < 1e-12 and r["ecarts"]["log_M2"]["bas"] == pct(d2, boot.idx, 2.5)
+    diff = np.log(np.maximum(q["M3"], 0.05))[:, bouge] - np.log(np.maximum(f["M3"], 0.05))[:, bouge]
+    for nom, (a, b) in (("SS", (1, 1)), ("SF", (1, 0)), ("FS", (0, 1)), ("FF", (0, 0))):
+        m = (f["S"][:, bouge] == a) & (q["S"][:, bouge] == b)
+        e = r["decomposition_strate"][nom]
+        assert e["courses"] == int(m.sum()) and abs(e["contribution_log_M3"] - diff[m].sum() / diff.size) < 1e-12, nom
+    ddt = (q["dT_min"].mean(0) - f["dT_min"].mean(0))[bouge]
+    assert r["physique_strate"]["dT_min_px"]["moyenne"] == ddt.mean() and r["physique_strate"]["dT_min_px"]["bas"] == pct(ddt, boots.idx, 2.5)
+    d = x / 5
+    m_, se = d.mean(), d.std(ddof=1) / np.sqrt(n)
+    assert abs(r["controle_tost_t"]["p_bas"] - stats.t.sf((m_ + 0.02) / se, n - 1)) < 1e-12
+    print("ok comparaison : test sur M3 (p différente avec M2), écarts, bornes bootstrap, décomposition par issue, "
+          "unités physiques et TOST t recalculés à part")
+
+
+# ---------------------------------------------------------------- grilles simulées
+
+def grille(tmp, nom, sha=None, **kw):
     """Grille simulée : 3 versions × graines 52 à 56, 2 000 trajectoires distinctes, meta.json d'EXP-005."""
     d, fin, excl = Path(tmp) / f"{nom}-exp005", Path(tmp) / f"{nom}-fin", Path(tmp) / f"{nom}-exclus.json"
     sauve = A.N, A.VERSIONS, A.GA
@@ -75,6 +135,8 @@ def grille(tmp, nom, **kw):
     for f in d.glob("*.npz"):
         x = dict(np.load(f))
         x["episodes_idx"] = ep
+        if sha:
+            x["git"] = sha
         np.savez_compressed(f, **x)
     exclus = [[100_000 + i, i % 90] for i in range(A5.N_EXCLUS)]
     excl.write_text(json.dumps({"protocole": {"episodes_idx": [a for a, _ in exclus], "start_steps": [b for _, b in exclus]}}))
@@ -97,14 +159,17 @@ def sans_verif_code(fonction):
         A5.verifier_code5, A5.verifier_analyse = vrais
 
 
-def analyser(d, fin, excl):
-    return sans_verif_code(lambda: A5.analyser(d, fin, [excl], effectifs=None))
+def analyser(d, fin, excl, effectifs=None):
+    return sans_verif_code(lambda: A5.analyser(d, fin, [excl], effectifs=effectifs))
 
 
-def charger_K_M3(d, v):
-    K = sum(np.load(d / f"{v.replace(':', '-')}_s{g}.npz")["success"].astype(np.int64) for g in A5.GRAINES)
-    M3 = np.stack([A.controler_course(dict(np.load(d / f"{v.replace(':', '-')}_s{g}.npz")), v)[1] for g in A5.GRAINES])
-    return K, M3
+def charger(d, v, cle):
+    return np.stack([dict(np.load(d / f"{v.replace(':', '-')}_s{g}.npz"))[cle] for g in A5.GRAINES])
+
+
+def marges(d, v):
+    return [np.stack(x) for x in zip(*[A.controler_course(dict(np.load(d / f"{v.replace(':', '-')}_s{g}.npz")), v)[:2]
+                                        for g in A5.GRAINES])]
 
 
 def test_code():
@@ -116,69 +181,75 @@ def test_code():
             raise AssertionError(sha)
         except A.ControleEchoue as err:
             assert motif in str(err), err
-    try:
-        A5.verifier_analyse("c5703dbbacb1537be9cc03377a3a922f4a81c1ed")
-        raise AssertionError("code d'analyse de c5703db accepté")
-    except A.ControleEchoue as err:
-        assert "code d'analyse diffère" in str(err)
-    tete = subprocess.run(["git", "-C", str(A.ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-    A5.verifier_code5(tete)
-    A5.verifier_analyse(tete)
-    print(f"ok code : empreintes, code d'analyse identique à {tete[:7]} ; c5703db et commit inconnu refusés")
+    assert PROPRE, "arbre modifié : committer avant de lancer les tests"
+    A5.verifier_code5(TETE)
+    A5.verifier_analyse(TETE)
+    print(f"ok code : empreintes, code d'analyse identique à {TETE[:7]} ; c5703db et commit inconnu refusés")
 
 
 def test_scenarios(tmp):
-    # 1. effet cherché à 6 bits (réussite inchangée, échecs plus loin), rien à 8 bits
-    d, fin, excl = grille(tmp, "effet", effets={"all:6": (0.0, 1.5)}, graine=11, divergents=())
-    r = analyser(d, fin, excl)
-    h = r["H6"]
-    assert h["verdict"] == "établie" and r["progression_8_vers_6"], h
-    K, M3 = {}, {}
-    for v in A5.VERSIONS5:
-        K[v], M3[v] = charger_K_M3(d, v)
+    # 1. effet cherché à 6 bits (réussite inchangée, échecs plus loin), rien à 8 bits ; vraies vérifications du code
+    d, fin, excl = grille(tmp, "effet", sha=TETE, effets={"all:6": (0.0, 1.5)}, graine=11, divergents=())
+    r = A5.analyser(d, fin, [excl], effectifs=None)
+    h, k = r["H6"], r["controle_8_bits"]
+    assert r["controles"]["commits"] == [TETE] and r["controles"]["commit_analyse"] == TETE and not r["controles"]["analyse_modifiee"]
+    assert h["verdict"] == "établie" and r["progression_8_vers_6"]["etablie"], h
     bouge = A.depart({("fp32", A.GA[0]): dict(np.load(d / "fp32_s52.npz"))})["bouge"]
-    x = K["all:6"] - K["fp32"]
-    w = (A.lg(M3["all:6"]).mean(0) - A.lg(M3["fp32"]).mean(0))[bouge]
+    nb = int(bouge.sum())
+    K = {v: charger(d, v, "success").astype(np.int64).sum(0) for v in A5.VERSIONS5}
+    M = {v: marges(d, v) for v in A5.VERSIONS5}                   # (M2, M3)
+    lg3 = {v: np.log(np.maximum(M[v][1], 0.05)).mean(0) for v in A5.VERSIONS5}
+    x, w = K["all:6"] - K["fp32"], (lg3["all:6"] - lg3["fp32"])[bouge]
     assert h["p_bas"] == p_numpy(10 * x + 1, "plus") and h["p_haut"] == p_numpy(10 * x - 1, "moins")
-    assert h["p_b"] == p_numpy(w, "plus", int(bouge.sum())) and h["p"] == max(h["p_bas"], h["p_haut"], h["p_b"])
-    assert h["delta_reussite"] == x.mean() / 5 and abs(h["delta_log_M3_bouge"] - w.mean()) < 1e-12
-    assert h["episodes_bouge"] == int(bouge.sum()) < A5.N5
-    moy = (x / 5)[A.Bootstrap(n=A5.N5).idx].mean(axis=1)
-    assert h["ecarts"]["reussite"]["bas"] == np.percentile(moy, 2.5)
-    wb = (A.lg(M3["all:6"]).mean(0) - A.lg(M3["fp32"]).mean(0))[bouge]
-    assert h["ecarts"]["log_M3_bouge"]["haut"] == np.percentile(wb[A.Bootstrap(n=int(bouge.sum()), graine=3).idx].mean(axis=1), 97.5)
-    assert abs(sum(e["contribution_log_M3"] for e in h["decomposition_strate"].values()) - w.mean()) < 1e-12
-    x8 = K["all:8"] - K["fp32"]
-    assert r["controle_8_bits"]["delta_reussite"] == x8.mean() / 5
-    assert (h["formulation"] == "la pose du T se dégrade à 6 bits alors que la réussite ne bouge pas") == h["reussite_stable_95"]
+    assert h["p_b"] == p_numpy(w, "plus", nb) and h["p"] == max(h["p_bas"], h["p_haut"], h["p_b"])
+    assert h["delta_reussite"] == x.mean() / 5 and abs(h["delta_log_M3_bouge"] - w.mean()) < 1e-12 and h["episodes_bouge"] == nb
+    w8 = (lg3["all:8"] - lg3["fp32"])[bouge]
+    assert k["p_b"] == p_numpy(w8, "plus", nb) and k["delta_reussite"] == (K["all:8"] - K["fp32"]).mean() / 5
+    d68 = (lg3["all:6"] - lg3["all:8"])[bouge]
+    g = r["progression_8_vers_6"]
+    assert g["p_unilaterale"] == p_numpy(d68, "plus", nb) and g["ecart_6_moins_8"]["bas"] == pct(d68, A.Bootstrap(n=nb, graine=3).idx, 2.5)
+    S = charger(d, "fp32", "success")
+    paires = [(a, b) for a in range(5) for b in range(5) if a != b]
+    plancher = np.mean([S[a] != S[b] for a, b in paires], axis=0) * 50
+    assert r["descriptifs"]["plancher_discordants_par_50"]["moyenne"] == plancher.mean()
+    for v in A5.VERSIONS5:
+        assert r["descriptifs"][v]["reussite"] == charger(d, v, "success").mean()
+    etat, but = prolonger(np.load(d / "all-6_s52.npz")["state"]), np.load(d / "all-6_s52.npz")["goal_state"].astype(float)
+    assert np.isfinite(np.degrees(np.nanmin(ecart_angle(etat[..., 4], but[None, :, 4]), axis=0))).all()
     txt = A5.rapport(r)
-    assert "établie" in txt and "Contrôle à 8 bits" in txt and not re.search(r"\bnan\b|\binf\b", txt.lower())
-    print("ok effet cherché : H6 établie, progression 8 puis 6 bits ; p, écarts, bornes bootstrap et décomposition "
-          "recalculés à part")
+    assert "établie" in txt and "Progression selon les bits" in txt and not re.search(r"\bnan\b|\binf\b", txt.lower())
+    print("ok effet cherché (vraies vérifications du code) : H6 établie, progression établie ; p, écarts, contrôle à "
+          "8 bits, progression, plancher et réussites recalculés à part")
 
-    # 2. la réussite baisse aussi : H6 ne passe pas, même si la pose se dégrade
+    # 2. la réussite baisse aussi : H6 ne passe pas
     d2, fin2, excl2 = grille(tmp, "baisse", effets={"all:6": (1.2, 1.5)}, graine=12, divergents=())
-    h = analyser(d2, fin2, excl2)["H6"]
-    assert h["verdict"] == "non établie" and h["p_bas"] > 0.5 and h["p_b"] < 0.05 and h["formulation"] == "H6 non établie", h
-    print("ok réussite en baisse : H6 non établie malgré la pose dégradée")
+    r2 = analyser(d2, fin2, excl2)
+    assert r2["H6"]["verdict"] == "non établie" and r2["H6"]["p_bas"] > 0.5 and r2["H6"]["p_b"] < 0.05
+    assert "Progression selon les bits" not in A5.rapport(r2)
+    print("ok réussite en baisse : H6 non établie, progression non rapportée")
 
-    # 3. aucun effet : versions identiques épisode par épisode
+    # 3. aucun effet : versions identiques épisode par épisode ; 8 bits identique à 6 bits, donc pas de progression
     d3, fin3, excl3 = grille(tmp, "nul", graine=13, divergents=(), identiques=("all:6", "all:8"), paquet_reussi=())
-    h = analyser(d3, fin3, excl3)["H6"]
-    assert h["delta_reussite"] == 0 and h["delta_log_M3_bouge"] == 0 and h["p_b"] == 1.0 and h["verdict"] == "non établie", h
-    print("ok sans effet : écarts nuls, p_b = 1, H6 non établie")
+    r3 = analyser(d3, fin3, excl3)
+    h = r3["H6"]
+    assert h["delta_reussite"] == 0 and h["delta_log_M3_bouge"] == 0 and h["p_b"] == 1.0 and h["verdict"] == "non établie"
+    assert not r3["progression_8_vers_6"]["etablie"] and r3["progression_8_vers_6"]["ecart_6_moins_8"]["moyenne"] == 0
+    print("ok sans effet : écarts nuls, p_b = 1, H6 non établie, pas de progression")
     return d, fin, excl
 
 
 def test_refus(tmp, d, fin, excl):
-    def doit_echouer(nom, alterer, motif):
+    def doit_echouer(nom, alterer, motif, reel=False, effectifs=None):
         e, ef, ex = Path(tmp) / f"r-{nom}", Path(tmp) / f"r-{nom}-fin", Path(tmp) / f"r-{nom}-exclus.json"
         shutil.copytree(d, e)
         shutil.copytree(fin, ef)
         shutil.copy(excl, ex)
         alterer(e, ef, ex)
         try:
-            analyser(e, ef, ex)
+            if reel:
+                A5.analyser(e, ef, [ex], effectifs=effectifs)
+            else:
+                analyser(e, ef, ex, effectifs)
         except A.ControleEchoue as err:
             assert motif in str(err), (nom, str(err))
             print(f"   refusé comme attendu ({nom}) : {err}")
@@ -195,47 +266,76 @@ def test_refus(tmp, d, fin, excl):
         x.update(champs)
         np.savez_compressed(dossier / f, **x)
 
-    def inverser(dossier, f):
+    def changer(dossier, f, cle, fonction):
         x = dict(np.load(dossier / f))
-        x["success"][0] = ~x["success"][0]
+        x[cle] = fonction(x[cle])
         np.savez_compressed(dossier / f, **x)
 
-    def trajectoire_exclue(e, ef, ex):                        # une trajectoire de la grille dans l'exclusion
-        x = json.loads(ex.read_text())
-        x["protocole"]["episodes_idx"][0] = 1000
-        ex.write_text(json.dumps(x))
+    def trajectoire_exclue(e, ef, ex):
+        x = json.loads(ex.read_text()); x["protocole"]["episodes_idx"][0] = 1000; ex.write_text(json.dumps(x))
         for dd in (e, ef):
-            m = json.loads((dd / "meta.json").read_text())
-            m["protocole"]["exclus"][0][0] = 1000
+            m = json.loads((dd / "meta.json").read_text()); m["protocole"]["exclus"][0][0] = 1000
             (dd / "meta.json").write_text(json.dumps(m))
 
-    def doublon(e, ef, ex):                                   # deux positions dans la même trajectoire
+    def doublon(e, ef, ex):
         ep = list(range(1000, 1000 + A5.N5)); ep[1] = ep[0]
         for dd in (e, ef):
             meta(dd, episodes_idx=ep)
             for f in dd.glob("*.npz"):
                 modifier(dd, f.name, episodes_idx=np.array(ep))
 
-    doit_echouer("trajectoire exclue", trajectoire_exclue, "trajectoires en commun")
-    doit_echouer("deux positions par trajectoire", doublon, "plusieurs positions dans une même trajectoire")
-    doit_echouer("graine de tirage", lambda e, ef, ex: meta(e, graine_episodes=42), "graine de tirage")
-    doit_echouer("règle de tirage", lambda e, ef, ex: meta(e, regle_tirage="couples"), "règle de tirage différente")
-    doit_echouer("fichier manquant", lambda e, ef, ex: (e / "all-8_s54.npz").unlink(), "fichiers manquants")
-    doit_echouer("couches", lambda e, ef, ex: modifier(e, "all-6_s55.npz", n_couches=73), "73 couches")
-    doit_echouer("arbre modifié", lambda e, ef, ex: modifier(e, "all-8_s53.npz", git_sale=True), "arbre git modifié")
-    doit_echouer("deux commits", lambda e, ef, ex: modifier(e, "fp32_s56.npz", git="1" * 40), "plusieurs commits")
-    doit_echouer("état de départ", lambda e, ef, ex: modifier(e, "all-8_s52.npz",
-                 init_state=np.load(e / "all-8_s52.npz")["init_state"] + 1), "init_state différent")
-    doit_echouer("paquet arrêté tôt", lambda e, ef, ex: modifier(e, "fp32_s55.npz", n_steps=np.r_[30, np.full(39, A.T)].astype(np.int32)),
-                 "paquet 0 arrêté à 30 pas")
-    doit_echouer("clôture sur une autre version", lambda e, ef, ex: shutil.copy(e / "fp32_s52.npz", ef / "all-6_s52.npz"),
-                 "sanité de clôture : pas la même version")
-    doit_echouer("sanité de clôture", lambda e, ef, ex: inverser(ef, "all-6_s52.npz"), "sanité de clôture : success diffère")
-    print("ok contrôles bloquants d'EXP-005 (12 refus, chacun avec son motif)")
+    def exclusion_courte(e, ef, ex):
+        x = json.loads(ex.read_text())
+        x["protocole"]["episodes_idx"].pop(); x["protocole"]["start_steps"].pop(); ex.write_text(json.dumps(x))
+
+    inverser = lambda dossier, f, cle="success": changer(dossier, f, cle, lambda a: np.r_[~a[:1], a[1:]] if a.dtype == bool else a + 1)
+    cas = [
+        ("trajectoire exclue", trajectoire_exclue, "trajectoires en commun"),
+        ("deux positions par trajectoire", doublon, "plusieurs positions dans une même trajectoire"),
+        ("exclusion de 549 couples", exclusion_courte, "549 couples au lieu de 550"),
+        ("graine de tirage", lambda e, ef, ex: meta(e, graine_episodes=42), "graine de tirage"),
+        ("règle de tirage", lambda e, ef, ex: meta(e, regle_tirage="couples"), "règle de tirage différente"),
+        ("nombre d'épisodes", lambda e, ef, ex: meta(e, n=1999), "1999 épisodes au lieu de 2000"),
+        ("fichier manquant", lambda e, ef, ex: (e / "all-8_s54.npz").unlink(), "fichiers manquants"),
+        ("couches", lambda e, ef, ex: modifier(e, "all-6_s55.npz", n_couches=73), "73 couches"),
+        ("arbre modifié", lambda e, ef, ex: modifier(e, "all-8_s53.npz", git_sale=True), "arbre git modifié"),
+        ("deux commits", lambda e, ef, ex: modifier(e, "fp32_s56.npz", git="1" * 40), "plusieurs commits"),
+        ("positions", lambda e, ef, ex: changer(e, "all-8_s55.npz", "positions", lambda a: a[::-1].copy()), "positions"),
+        ("épisodes du fichier", lambda e, ef, ex: changer(e, "all-6_s54.npz", "episodes_idx", lambda a: a[::-1].copy()),
+         "épisodes différents de meta.json"),
+        ("taille des paquets", lambda e, ef, ex: modifier(e, "fp32_s53.npz", chunk=25), "taille des paquets"),
+        ("forme de l'état", lambda e, ef, ex: changer(e, "fp32_s54.npz", "state", lambda a: a[:40]), "forme de l'état"),
+        ("état de départ", lambda e, ef, ex: changer(e, "all-8_s52.npz", "init_state", lambda a: a + 1), "init_state différent"),
+        ("paquet arrêté tôt", lambda e, ef, ex: modifier(e, "fp32_s55.npz", n_steps=np.r_[30, np.full(39, A.T)].astype(np.int32)),
+         "paquet 0 arrêté à 30 pas"),
+        ("clôture sur une autre version", lambda e, ef, ex: shutil.copy(e / "fp32_s52.npz", ef / "all-6_s52.npz"),
+         "sanité de clôture : pas la même version"),
+        ("clôture : succès", lambda e, ef, ex: inverser(ef, "all-6_s52.npz"), "sanité de clôture : success diffère"),
+        ("clôture : contacts", lambda e, ef, ex: inverser(ef, "all-6_s52.npz", "contacts"), "sanité de clôture : contacts diffère"),
+        ("clôture : nombre de pas", lambda e, ef, ex: modifier(ef, "all-6_s52.npz", n_steps=np.full(40, 49, dtype=np.int32)),
+         "sanité de clôture : n_steps diffère"),
+        ("clôture : arbre modifié", lambda e, ef, ex: modifier(ef, "all-6_s52.npz", git_sale=True), "sanité de clôture : arbre git modifié"),
+        ("clôture : torch", lambda e, ef, ex: (ef / "meta.json").write_text(
+            json.dumps(dict(json.loads((ef / "meta.json").read_text()), torch="2.15.0"))), "protocole ou torch différent"),
+    ]
+    for nom, alterer, motif in cas:
+        doit_echouer(nom, alterer, motif)
+    doit_echouer("strates", lambda e, ef, ex: None, "strates de départ inattendues", effectifs=A5.EFFECTIFS5)
+    # vraies vérifications du code : un commit dont le code d'analyse diffère de celui du dossier est refusé
+    ancien = subprocess.run(["git", "-C", str(A.ICI), "rev-parse", "35f312f"], capture_output=True, text=True).stdout.strip()
+
+    def ancien_commit(e, ef, ex):
+        for dd in (e, ef):
+            for f in dd.glob("*.npz"):
+                modifier(dd, f.name, git=ancien)
+    doit_echouer("code d'analyse d'un autre commit", ancien_commit, "code d'analyse diffère", reel=True)
+    print(f"ok contrôles bloquants d'EXP-005 ({len(cas) + 2} refus, chacun avec son motif)")
 
 
 if __name__ == "__main__":
     test_statistique_a_la_main()
+    test_formulation()
+    test_comparer_sur_M3()
     test_code()
     with tempfile.TemporaryDirectory() as tmp:
         d, fin, excl = test_scenarios(tmp)
