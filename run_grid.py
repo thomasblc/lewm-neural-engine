@@ -46,6 +46,9 @@ from torchvision.transforms import v2 as transforms  # noqa: E402
 
 from quant import quantifier  # noqa: E402
 
+# ce que chaque tâche enregistre : dimension de l'état, clés de départ et de but (configs de le-wm/config/eval)
+TACHES = {"pusht": {"dim": 7, "depart": "state", "but": "goal_state", "pusht": True},
+          "tworoom": {"dim": 2, "depart": "proprio", "but": "goal_proprio", "pusht": False}}
 CLE = "ep_key"  # position de l'épisode dans l'échantillon, glissée dans les infos du monde
 
 
@@ -100,10 +103,10 @@ def img_transform(cfg):
     ])
 
 
-def charger_config(chunk, device):
+def charger_config(chunk, device, tache="pusht"):
     with initialize_config_dir(config_dir=str(LEWM / "config" / "eval"), version_base=None):
-        cfg = compose("pusht", overrides=[
-            "policy=pusht/lewm", f"solver.device={device}", f"eval.num_eval={chunk}"])
+        cfg = compose(tache, overrides=[
+            f"policy={tache}/lewm", f"solver.device={device}", f"eval.num_eval={chunk}"])
     cfg.world.max_episode_steps = 2 * cfg.eval.eval_budget
     return cfg
 
@@ -175,7 +178,7 @@ def lire_exclus(chemins):
     return frozenset(exclus)
 
 
-def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg):
+def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg, tache="pusht"):
     """Copie de World._evaluate_from_dataset (stable-worldmodel 0.1.1) qui enregistre chaque pas."""
     n = len(episodes_idx)
     assert n == world.num_envs
@@ -200,9 +203,11 @@ def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg):
     world.infos.update(deepcopy(snapshot))
 
     T = cfg.eval.eval_budget
-    rec = {"state": np.full((T, n, 7), np.nan), "block_pose": np.full((T, n, 3), np.nan),
-           "agent_pos": np.full((T, n, 2), np.nan), "contacts": np.full((T, n), -1, dtype=np.int32),
-           "env_state_dist": np.full((T, n), np.nan)}
+    tc = TACHES[tache]
+    rec = {"state": np.full((T, n, tc["dim"]), np.nan), "env_state_dist": np.full((T, n), np.nan)}
+    if tc["pusht"]:
+        rec.update(block_pose=np.full((T, n, 3), np.nan), agent_pos=np.full((T, n, 2), np.nan),
+                   contacts=np.full((T, n), -1, dtype=np.int32))
     success = np.zeros(n, dtype=bool)
     first = np.full(n, -1, dtype=np.int32)
     t = [0]
@@ -214,10 +219,11 @@ def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg):
         # norme de l'écart d'état 7-D renvoyée par l'env (mélange pixels, radians, vitesses) : ne pas rapporter
         rec["env_state_dist"][k, vivant] = -np.asarray(w.rewards, dtype=np.float64)[vivant]
         if "state" in info:
-            rec["state"][k, vivant] = np.asarray(info["state"]).reshape(n, -1)[:, -7:][vivant]
-        rec["block_pose"][k, vivant] = np.asarray(info["block_pose"]).reshape(n, -1)[:, -3:][vivant]
-        rec["agent_pos"][k, vivant] = np.asarray(info["pos_agent"]).reshape(n, -1)[:, -2:][vivant]
-        rec["contacts"][k, vivant] = np.asarray(info["n_contacts"]).reshape(n, -1)[:, -1][vivant]
+            rec["state"][k, vivant] = np.asarray(info["state"]).reshape(n, -1)[:, -tc["dim"]:][vivant]
+        if tc["pusht"]:
+            rec["block_pose"][k, vivant] = np.asarray(info["block_pose"]).reshape(n, -1)[:, -3:][vivant]
+            rec["agent_pos"][k, vivant] = np.asarray(info["pos_agent"]).reshape(n, -1)[:, -2:][vivant]
+            rec["contacts"][k, vivant] = np.asarray(info["n_contacts"]).reshape(n, -1)[:, -1][vivant]
         term = np.asarray(w.terminateds, dtype=bool)
         first[term & vivant] = k
         success[:] |= term
@@ -226,7 +232,7 @@ def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg):
 
     world._run(max_steps=T, mode="wait", on_step=on_step)
     rec.update(success=success, first_success=first, n_steps=np.int32(t[0]),
-               init_state=np.asarray(init_state["state"]), goal_state=np.asarray(goal_state["goal_state"]))
+               init_state=np.asarray(init_state[tc["depart"]]), goal_state=np.asarray(goal_state[tc["but"]]))
     return rec
 
 
@@ -248,12 +254,13 @@ def main():
     ap.add_argument("--device", default="mps")
     ap.add_argument("--graine-episodes", type=int, default=None)
     ap.add_argument("--exclure", nargs="*", default=[])
+    ap.add_argument("--tache", choices=sorted(TACHES), default="pusht")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    cfg = charger_config(args.chunk, args.device)
+    cfg = charger_config(args.chunk, args.device, args.tache)
     dataset, process, col, valid = preparer_donnees(cfg)
     exclus = lire_exclus(args.exclure)
     ep_all, st_all = tirer_episodes(cfg, dataset, col, valid, args.n, args.graine_episodes, exclus)
@@ -265,6 +272,8 @@ def main():
         protocole["graine_episodes"] = args.graine_episodes
         protocole["exclus"] = sorted(map(list, exclus))
         protocole["regle_tirage"] = "trajectoires exclues entières, une position par trajectoire"
+    if args.tache != "pusht":                                # absent du protocole des expériences sur PushT
+        protocole["tache"] = args.tache
     f_meta = out / "meta.json"
     if f_meta.exists():
         ancien = json.loads(f_meta.read_text())
@@ -299,7 +308,7 @@ def main():
                 policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
                                                      process=process, transform=transform)
                 world.set_policy(policy)
-                recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg))
+                recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache))
             data = {}
             for k in recs[0]:
                 if k in ("init_state", "goal_state") or recs[0][k].ndim < 2:
