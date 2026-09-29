@@ -91,7 +91,7 @@ garde() {
   if pgrep -f '^(/bin/)?zsh [^ ]*garde_batterie\.sh$' > /dev/null; then
     echo "[info] une garde de batterie tourne déjà"
   else
-    GRILLE=$1 ATTENDUS=$2 PAUSE_INITIALE=0 SEUIL_BAS=15 REPRISE_1=55 REPRISE=55 zsh $GARDE > /dev/null 2>&1 &!
+    GRILLE=$1 ATTENDUS=$2 PAUSE_INITIALE=0 SEUIL_BAS=8 REPRISE_1=55 REPRISE=55 zsh $GARDE > /dev/null 2>&1 &!
     echo "[info] garde de batterie lancée pour $1"
   fi
 }
