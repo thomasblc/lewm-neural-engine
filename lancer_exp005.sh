@@ -1,14 +1,16 @@
 #!/bin/zsh
-# EXP-005 (PREREG-EXP005.md) : vérifications, attente qu'aucune autre grille ne tourne, grille de 1 000 nouveaux
-# épisodes (fp32 et all:6, graines 42 à 46), sanité de clôture. caffeinate empêche la mise en veille. Tout le
-# corps est dans des fonctions, lues en entier avant d'être exécutées.
+# EXP-005 (PREREG-EXP005.md) : vérifications, attente qu'aucune autre grille ne tourne, garde de batterie, grille de
+# 2 000 nouveaux épisodes (fp32, all:6 et le contrôle all:8, graines 52 à 56), sanité de clôture. caffeinate empêche
+# la mise en veille. Tout le corps est dans des fonctions, lues en entier avant d'être exécutées.
+# Relancer après une interruption avec >> pour garder le journal : ./lancer_exp005.sh >> ../resultats/exp005.log 2>&1
 set -e
 ICI="${0:A:h}"                 # dossier du script ; dans une fonction, $0 vaut le nom de la fonction
 main() {
   cd "$ICI" || exit 1
   local PY=/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python
   local R=../resultats
-  local TIRAGE=(--n 1000 --chunk 50 --graine-episodes 2026 --exclure $R/exp003/meta.json $R/sanite-n50/meta.json)
+  local TIRAGE=(--n 2000 --chunk 50 --graine-episodes 2026 --exclure $R/exp003/meta.json $R/sanite-n50/meta.json)
+  local GARDE=/Users/thomasblanc/Documents/PRO/these-ia-thomas/outils/garde_batterie.sh
 
   # 0. code figé, arbre propre ; revérifié avant chaque étape, HEAD compris
   local HEAD0=""
@@ -16,22 +18,36 @@ main() {
   HEAD0=$(git rev-parse HEAD)
   echo "[info] code vérifié : $(git rev-parse --short HEAD)"
 
-  # 1. le GPU est partagé : attendre qu'aucune autre grille ne tourne, 24 h au plus
-  local debut=$(date +%s)
-  while pgrep -f '[r]un_grid\.py' > /dev/null; do
+  # 1. le GPU est partagé : attendre 3 contrôles vides de suite (une grille, ou le lanceur d'une autre expérience
+  #    entre deux de ses étapes), 24 h au plus
+  local debut=$(date +%s) vides=0
+  while [ $vides -lt 3 ]; do
+    if pgrep -f '[r]un_grid\.py' > /dev/null || pgrep -f '[l]ancer_exp004\.sh' > /dev/null || pgrep -f '[l]ancer_grille\.sh' > /dev/null; then
+      vides=0
+    else
+      vides=$((vides + 1))
+    fi
     [ $(( $(date +%s) - debut )) -lt 86400 ] || { echo "[arrêt] une autre grille tourne encore après 24 h"; exit 1; }
-    sleep 60
+    [ $vides -ge 3 ] || sleep 60
   done
   echo "[info] GPU libre, lancement à $(date '+%H:%M')"
 
-  # 2. la grille : 2 versions × 5 graines × 1 000 épisodes, graine par graine
-  verifier $PY
-  caffeinate -i $PY run_grid.py --out $R/exp005 $TIRAGE --specs fp32 all:6 --seeds 42 43 44 45 46
+  # 2. garde de batterie (chargeur de 70 W trop faible en plein calcul), si aucune ne tourne
+  if pgrep -f '[g]arde_batterie' > /dev/null; then
+    echo "[info] une garde de batterie tourne déjà"
+  else
+    GRILLE=exp005 ATTENDUS=15 PAUSE_INITIALE=0 REPRISE_1=80 zsh $GARDE > /dev/null 2>&1 &!
+    echo "[info] garde de batterie lancée pour exp005"
+  fi
 
-  # 3. sanité de clôture : all:6 graine 42 recalculé doit redonner le fichier de la grille
+  # 3. la grille : 3 versions × 5 graines × 2 000 épisodes, graine par graine
   verifier $PY
-  caffeinate -i $PY run_grid.py --out $R/exp005-sanite-fin $TIRAGE --specs all:6 --seeds 42
-  comparer $PY $R/exp005-sanite-fin/all-6_s42.npz $R/exp005/all-6_s42.npz "sanité de clôture"
+  caffeinate -i $PY run_grid.py --out $R/exp005 $TIRAGE --specs fp32 all:6 all:8 --seeds 52 53 54 55 56
+
+  # 4. sanité de clôture : all:6 graine 52 recalculé doit redonner le fichier de la grille
+  verifier $PY
+  caffeinate -i $PY run_grid.py --out $R/exp005-sanite-fin $TIRAGE --specs all:6 --seeds 52
+  comparer $PY $R/exp005-sanite-fin/all-6_s52.npz $R/exp005/all-6_s52.npz "sanité de clôture"
   echo "[info] EXP-005 finie à $(date '+%H:%M')"
 }
 

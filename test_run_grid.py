@@ -40,12 +40,12 @@ def test_tirage():
     assert RG.tirer_episodes(cfg, dataset, col, valid, 500) == (m3["episodes_idx"], m3["start_steps"])
     exclus = RG.lire_exclus([R / "exp003" / "meta.json", R / "sanite-n50" / "meta.json"])
     assert len(exclus) == 550
-    e, s = RG.tirer_episodes(cfg, dataset, col, valid, 1000, 2026, exclus)
-    assert (e, s) == RG.tirer_episodes(cfg, dataset, col, valid, 1000, 2026, exclus)
-    paires = set(zip(e, s))
-    assert len(e) == len(paires) == 1000 and not (paires & exclus)
-    print("ok tirage : défaut identique à EXP-003 ; 1 000 épisodes reproductibles, aucun en commun avec "
-          "EXP-003 ni EXP-002")
+    e, s = RG.tirer_episodes(cfg, dataset, col, valid, 2000, 2026, exclus)
+    assert (e, s) == RG.tirer_episodes(cfg, dataset, col, valid, 2000, 2026, exclus)
+    assert len(e) == len(set(e)) == 2000, "une position par trajectoire"
+    assert not (set(e) & {a for a, _ in exclus}), "trajectoires d'EXP-003 ou d'EXP-002 exclues entières"
+    print("ok tirage : défaut identique à EXP-003 ; 2 000 épisodes reproductibles, 2 000 trajectoires "
+          "distinctes, aucune d'EXP-003 ni d'EXP-002")
 
 
 if __name__ == "__main__":

@@ -138,17 +138,26 @@ def tirer_episodes(cfg, dataset, col, valid, n, graine=None, exclus=frozenset())
         idx = np.sort(valid[g.choice(len(valid) - 1, size=n, replace=False)])
         rows = dataset.get_row_data(idx)
         return np.asarray(rows[col]).tolist(), np.asarray(rows["step_idx"]).tolist()
-    # EXP-005 : même forme de tirage, autre graine, couples déjà utilisés écartés dans l'ordre du tirage. Le
-    # nombre de candidats dépend de la liste d'exclusion : le tirage est fixé par (graine, n, liste d'exclusion).
+    # EXP-005 : même forme de tirage, autre graine. On écarte les trajectoires entières déjà utilisées (tout
+    # pas de départ d'un épisode du jeu présent dans la liste d'exclusion) et on garde au plus une position par
+    # trajectoire, dans l'ordre du tirage : les positions sont des épisodes indépendants. Le nombre de candidats
+    # dépend de n et de la liste : le tirage est fixé par (graine, n, liste d'exclusion).
     g = np.random.default_rng(cfg.seed if graine is None else graine)
-    cand = valid[g.choice(len(valid) - 1, size=min(len(valid) - 1, n + len(exclus) + 100), replace=False)]
+    cand = valid[g.choice(len(valid) - 1, size=min(len(valid) - 1, 2 * n + len(exclus) + 100), replace=False)]
     ordre = np.argsort(cand)                              # le lecteur HDF5 veut des indices croissants
     rows = dataset.get_row_data(cand[ordre])
     lues = list(zip(np.asarray(rows[col]).tolist(), np.asarray(rows["step_idx"]).tolist()))
     paires = [None] * len(cand)
     for j, i in enumerate(ordre):
         paires[i] = lues[j]
-    garde = [i for i, pr in enumerate(paires) if pr not in exclus][:n]
+    ep_exclus, vus, garde = {a for a, _ in exclus}, set(), []
+    for i, (ep, _) in enumerate(paires):
+        if ep in ep_exclus or ep in vus:
+            continue
+        vus.add(ep)
+        garde.append(i)
+        if len(garde) == n:
+            break
     if len(garde) < n:
         sys.exit(f"tirage : {len(garde)} épisodes disponibles au lieu de {n}")
     idx = np.sort(cand[garde])
@@ -255,6 +264,7 @@ def main():
     if args.graine_episodes is not None or exclus:           # absent du protocole d'EXP-003 et d'EXP-004
         protocole["graine_episodes"] = args.graine_episodes
         protocole["exclus"] = sorted(map(list, exclus))
+        protocole["regle_tirage"] = "trajectoires exclues entières, une position par trajectoire"
     f_meta = out / "meta.json"
     if f_meta.exists():
         ancien = json.loads(f_meta.read_text())

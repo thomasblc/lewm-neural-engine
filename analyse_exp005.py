@@ -1,8 +1,10 @@
 """EXP-005 : analyse pré-enregistrée (PREREG-EXP005.md), figée avec lui.
 
-Contrôle les 10 fichiers d'EXP-005 (fp32 et all:6, graines 42 à 46, 1 000 nouveaux épisodes) et la sanité
-de clôture, puis teste H6 (réussite équivalente à ± 2 points et pose du T dégradée à 6 bits) et calcule les
-descriptifs. Les outils statistiques et les contrôles par course sont ceux d'analyse_exp003.py.
+Contrôle les 15 fichiers d'EXP-005 (fp32, all:6 et le contrôle all:8, graines 52 à 56, 2 000 nouveaux
+épisodes pris dans 2 000 trajectoires distinctes) et la sanité de clôture, vérifie que le code d'analyse est
+celui du commit des données, puis teste H6 (réussite à ± 2 points et pose du T dégradée à 6 bits) et calcule
+les descriptifs, dont le contrôle à 8 bits. Les outils statistiques et les contrôles par course sont ceux
+d'analyse_exp003.py.
 
 Usage :
     python analyse_exp005.py --grille ../resultats/exp005 --sanite-fin ../resultats/exp005-sanite-fin \\
@@ -19,14 +21,17 @@ import numpy as np
 
 import analyse_exp003 as A
 
-N5 = 1000
-VERSIONS5 = ("fp32", "all:6")
-GRAINES = A.GA
+N5 = 2000
+VERSIONS5 = ("fp32", "all:6", "all:8")
+GRAINES = (52, 53, 54, 55, 56)      # graines neuves : ni EXP-003 ni EXP-004 ne les ont utilisées
 GRAINE_EPISODES = 2026
-RUN_GRID_SHA256 = "31e665344fbc5a312a7714d7252bde9eae2c931e65e31cdfc1b2f3c5af513fcc"
+N_EXCLUS = 550                      # couples d'EXP-003 (500) et d'EXP-002 (50)
+REGLE_TIRAGE = "trajectoires exclues entières, une position par trajectoire"
+FICHIERS_ANALYSE = ("analyse_exp005.py", "analyse_exp003.py", "metriques.py", "PREREG-EXP005.md")
+RUN_GRID_SHA256 = "f37d7218edea918f71bc3e44fe8019576f624597bced2954882c4aea21a74697"
 QUANT_SHA256 = "2c450c5b06ebd6753e77ff9c189fffc339b655070efaf32e103f13ad5e29c65d"
-EFFECTIFS5 = (653, 120)
-COUCHES = {"fp32": 0, "all:6": 109}
+EFFECTIFS5 = (1333, 233)
+COUCHES = {"fp32": 0, "all:6": 109, "all:8": 109}
 CLES_SANITE = ("state", "block_pose", "agent_pos", "contacts", "success", "first_success", "n_steps")
 
 
@@ -42,12 +47,19 @@ def verifier_code5(sha):
                  f"le commit {sha[:7]} n'a pas le {f} d'EXP-005")
 
 
+def verifier_analyse(sha):
+    """Le code d'analyse et le pré-enregistrement du dossier courant sont ceux du commit des données."""
+    A.exiger(git("diff", "--quiet", sha, "--", *FICHIERS_ANALYSE).returncode == 0,
+             f"le code d'analyse diffère de celui du commit {sha[:7]} des données")
+
+
 def lire_exclus(chemins):
     exclus = set()
     for c in chemins:
         m = json.loads(Path(c).read_text())
         m = m.get("protocole", m)
         exclus |= set(zip(m["episodes_idx"], m["start_steps"]))
+    A.exiger(len(exclus) == N_EXCLUS, f"liste d'exclusion : {len(exclus)} couples au lieu de {N_EXCLUS}")
     return exclus
 
 
@@ -57,8 +69,10 @@ def charger5(dossier, exclus):
     A.exiger(proto["n"] == N5, f"meta.json : {proto['n']} épisodes au lieu de {N5}")
     A.exiger(proto.get("graine_episodes") == GRAINE_EPISODES, "graine de tirage des épisodes différente")
     A.exiger({tuple(x) for x in proto.get("exclus", [])} == exclus, "liste d'exclusion différente")
-    paires = list(zip(proto["episodes_idx"], proto["start_steps"]))
-    A.exiger(len(set(paires)) == N5 and not (set(paires) & exclus), "épisodes en commun avec EXP-003 ou EXP-002")
+    A.exiger(proto.get("regle_tirage") == REGLE_TIRAGE, "règle de tirage différente")
+    trajectoires = set(proto["episodes_idx"])
+    A.exiger(not (trajectoires & {a for a, _ in exclus}), "trajectoires en commun avec EXP-003 ou EXP-002")
+    A.exiger(len(trajectoires) == N5, "plusieurs positions dans une même trajectoire")
     res = {}
     for f in sorted(dossier.glob("*.npz")):
         if ".tmp." in f.name:
@@ -99,9 +113,10 @@ def verifier_sanite_fin(dossier_grille, dossier_fin):
     m2 = json.loads((Path(dossier_fin) / "meta.json").read_text())
     A.exiger(json.dumps(m1["protocole"], sort_keys=True, default=str) == json.dumps(m2["protocole"], sort_keys=True, default=str)
              and m1.get("torch") == m2.get("torch"), "sanité de clôture : protocole ou torch différent")
-    a, b = dict(np.load(Path(dossier_fin) / "all-6_s42.npz")), dict(np.load(Path(dossier_grille) / "all-6_s42.npz"))
+    f = f"all-6_s{GRAINES[0]}.npz"
+    a, b = dict(np.load(Path(dossier_fin) / f)), dict(np.load(Path(dossier_grille) / f))
     A.exiger(not bool(a["git_sale"]), "sanité de clôture : arbre git modifié au lancement")
-    A.exiger((str(a["spec"]), int(a["seed"])) == ("all:6", 42), "sanité de clôture : pas la même version")
+    A.exiger((str(a["spec"]), int(a["seed"])) == ("all:6", GRAINES[0]), "sanité de clôture : pas la même version")
     verifier_code5(str(a["git"]))
     for k in CLES_SANITE:
         A.exiger(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f"), f"sanité de clôture : {k} diffère")
@@ -122,76 +137,115 @@ def table(res, v):
             "classe": np.where(S == 1, 0, np.where(M3 < 1, 1, 2)), "divergences": divergences, "limites": limites}
 
 
+def stat_h6(x, w, inv):
+    """H6 : TOST sur x (différences de K sur 5 graines, tous les épisodes) et test unilatéral sur w (strate)."""
+    p_bas, p_haut = inv.p(10 * x + 1, "plus"), inv.p(10 * x - 1, "moins")
+    p_b = inv.p(w, "plus")
+    return {"p_bas": p_bas, "p_haut": p_haut, "p_b": p_b, "p": max(p_bas, p_haut, p_b)}
+
+
+def decomposition_strate(f, q, bouge):
+    """Part de chaque paire de résultats par graine (fp32, version) dans l'écart moyen de log M3 de la strate."""
+    diff = (A.lg(q["M3"]) - A.lg(f["M3"]))[:, bouge]
+    Sf, Sq, n = f["S"][:, bouge], q["S"][:, bouge], diff.size
+    out = {}
+    for nom, (a, b) in (("SS", (1, 1)), ("SF", (1, 0)), ("FS", (0, 1)), ("FF", (0, 0))):
+        m = (Sf == a) & (Sq == b)
+        out[nom] = {"courses": int(m.sum()), "contribution_log_M3": float(diff[m].sum() / n)}
+    return out
+
+
+def comparer_version(f, q, bouge, inv, boot, boot_strate):
+    x = q["K"] - f["K"]
+    d3 = A.lg(q["M3"]).mean(axis=0) - A.lg(f["M3"]).mean(axis=0)
+    d2 = A.lg(q["M2"]).mean(axis=0) - A.lg(f["M2"]).mean(axis=0)
+    stat = stat_h6(x, d3[bouge], inv)
+    ecarts = {"reussite": boot.ic(x / 5), "reussite_bouge": boot_strate.ic((x / 5)[bouge]),
+              "log_M3": boot.ic(d3), "log_M3_bouge": boot_strate.ic(d3[bouge]), "log_M2": boot.ic(d2)}
+    stable = all(e["bas"] <= 0 <= e["haut"] for e in (ecarts["reussite"], ecarts["reussite_bouge"]))
+    return {"delta_reussite": float(x.mean() / 5), "delta_log_M3_bouge": float(d3[bouge].mean()),
+            "episodes_bouge": int(bouge.sum()), **stat, "ecarts": ecarts, "reussite_stable_95": stable,
+            "decomposition_strate": decomposition_strate(f, q, bouge), "controle_tost_t": A.tost_t(x / 5)}
+
+
 def analyser(grille, sanite_fin, exclure, exp003=None, effectifs=EFFECTIFS5):
     exclus = lire_exclus(exclure)
     res, shas = charger5(grille, exclus)
+    A.exiger(len(shas) == 1, f"fichiers de plusieurs commits : {shas}")
+    verifier_analyse(shas[0])
     verifier_sanite_fin(grille, sanite_fin)
-    dep = A.depart(res)
+    # depart() d'EXP-003 lit le fichier fp32 de la graine 42 ; EXP-005 utilise les graines 52 à 56
+    dep = A.depart({("fp32", A.GA[0]): res[("fp32", GRAINES[0])]})
     if effectifs is not None:
         A.exiger((int(dep["bouge"].sum()), int(dep["au_but"].sum())) == effectifs,
                  f"strates de départ inattendues : {int(dep['bouge'].sum())}, {int(dep['au_but'].sum())}")
-    f, q = table(res, "fp32"), table(res, "all:6")
+    T5 = {v: table(res, v) for v in VERSIONS5}
     bouge = dep["bouge"]
     inv = A.Inversion(n=N5)
     boot, boot_strate = A.Bootstrap(n=N5), A.Bootstrap(n=int(bouge.sum()), graine=3)
-
-    x = q["K"] - f["K"]
-    w = (A.lg(q["M3"]).mean(axis=0) - A.lg(f["M3"]).mean(axis=0))[bouge]
-    p_bas, p_haut = inv.p(10 * x + 1, "plus"), inv.p(10 * x - 1, "moins")
-    p_b = inv.p(w, "plus")
-    p = max(p_bas, p_haut, p_b)
-    h6 = {"delta_reussite": float(x.mean() / 5), "p_bas": p_bas, "p_haut": p_haut,
-          "delta_log_M3_bouge": float(w.mean()), "episodes_bouge": int(w.size), "p_b": p_b, "p": p,
-          "verdict": "établie" if p < A.ALPHA else "non établie", "controle_tost_t": A.tost_t(x / 5)}
-
-    d3 = A.lg(q["M3"]).mean(axis=0) - A.lg(f["M3"]).mean(axis=0)
-    d2 = A.lg(q["M2"]).mean(axis=0) - A.lg(f["M2"]).mean(axis=0)
+    h6 = comparer_version(T5["fp32"], T5["all:6"], bouge, inv, boot, boot_strate)
+    h6["verdict"] = "établie" if h6["p"] < A.ALPHA else "non établie"
+    if h6["verdict"] == "établie":                        # règle de rédaction (PREREG-EXP005)
+        h6["formulation"] = ("la pose du T se dégrade à 6 bits alors que la réussite ne bouge pas" if h6["reussite_stable_95"]
+                             else "à 6 bits, la pose du T et la réussite se dégradent toutes deux (réussite dans ± 2 points)")
+    else:
+        h6["formulation"] = "H6 non établie"
+    controle = comparer_version(T5["fp32"], T5["all:8"], bouge, inv, boot, boot_strate)
+    progression = controle["delta_log_M3_bouge"] < h6["delta_log_M3_bouge"]
+    f = T5["fp32"]
     paires = [(a, b) for a in range(5) for b in range(5) if a != b]
     discord = np.mean([f["S"][a] != f["S"][b] for a, b in paires], axis=0) * 50
     desc = {v: {"reussite": float(t["S"].mean()), "classes": A.parts(t["classe"]),
-                "classes_bouge": A.parts(t["classe"][:, bouge])} for v, t in (("fp32", f), ("all:6", q))}
-    desc["ecarts"] = {"reussite": boot.ic(x / 5), "reussite_bouge": boot_strate.ic((x / 5)[bouge]),
-                      "log_M3": boot.ic(d3), "log_M3_bouge": boot_strate.ic(d3[bouge]),
-                      "log_M2": boot.ic(d2)}
+                "classes_bouge": A.parts(t["classe"][:, bouge])} for v, t in T5.items()}
     desc["plancher_discordants_par_50"] = boot.ic(discord)
     comparaison = None
     if exp003 is not None:
-        r3 = json.loads(Path(exp003).read_text())["descriptifs"]["all:6"]
-        comparaison = {"exp003_reussite": r3["delta_reussite"], "exp003_bouge": r3["bouge"]}
-    return {"controles": {"commits": shas, "episodes_bouge": int(bouge.sum()), "episodes_T_au_but": int(dep["au_but"].sum()),
-                          "divergences": {"fp32": f["divergences"], "all:6": q["divergences"]},
-                          "cas_limites_arrondi": {"fp32": f["limites"], "all:6": q["limites"]}},
-            "H6": h6, "descriptifs": desc, "comparaison_exp003": comparaison}
+        r3 = json.loads(Path(exp003).read_text())["descriptifs"]
+        comparaison = {v: {"reussite": r3[v]["delta_reussite"], "bouge": r3[v]["bouge"]} for v in ("all:6", "all:8")}
+    tete = git("rev-parse", "HEAD").stdout.strip()
+    return {"controles": {"commits": shas, "commit_analyse": tete,
+                          "analyse_modifiee": bool(git("status", "--porcelain", "--untracked-files=no").stdout.strip()),
+                          "episodes_bouge": int(bouge.sum()), "episodes_T_au_but": int(dep["au_but"].sum()),
+                          "divergences": {v: t["divergences"] for v, t in T5.items()},
+                          "cas_limites_arrondi": {v: t["limites"] for v, t in T5.items()}},
+            "H6": h6, "controle_8_bits": controle, "progression_8_vers_6": progression,
+            "descriptifs": desc, "comparaison_exp003": comparaison}
 
 
 def rapport(r):
-    h, c, e = r["H6"], r["controles"], r["descriptifs"]["ecarts"]
+    h, k, c = r["H6"], r["controle_8_bits"], r["controles"]
     L = ["# EXP-005 : analyse pré-enregistrée", "",
-         f"Contrôles passés : 10 fichiers (commits {', '.join(s[:7] for s in c['commits'])}), sanité de clôture identique, "
+         f"Contrôles passés : 15 fichiers (commit {', '.join(x[:7] for x in c['commits'])}), code d'analyse identique à ce commit "
+         f"(analyse lancée depuis {c['commit_analyse'][:7]}{', arbre modifié' if c['analyse_modifiee'] else ''}), sanité de clôture identique, "
          f"{c['episodes_bouge']} épisodes où le T doit bouger, {c['episodes_T_au_but']} où il part au but, "
-         f"courses divergentes : {c['divergences']['fp32'] + c['divergences']['all:6']}.", "",
-         "## H6 : à 6 bits, réussite équivalente à ± 2 points et pose du T dégradée", "",
-         "| Partie | Estimation | p |", "| --- | --- | --- |",
-         f"| (a) réussite, 1 000 épisodes | {100 * h['delta_reussite']:+.2f} points | bas {h['p_bas']:.4f}, haut {h['p_haut']:.4f} |",
-         f"| (b) log M3, {h['episodes_bouge']} épisodes où le T doit bouger | {h['delta_log_M3_bouge']:+.3f} | {h['p_b']:.4f} |",
+         f"courses divergentes : {sum(c['divergences'].values())}.", "",
+         "## H6 : à 6 bits, réussite à ± 2 points et pose du T dégradée", "",
+         "| Partie | Estimation, intervalle à 95 % | p |", "| --- | --- | --- |",
+         f"| (a) réussite, {N5} épisodes | {A.ic_txt(h['ecarts']['reussite'], 100, 2)} points | bas {h['p_bas']:.4f}, haut {h['p_haut']:.4f} |",
+         f"| (b) log M3, {h['episodes_bouge']} épisodes où le T doit bouger | {A.ic_txt(h['ecarts']['log_M3_bouge'], 1, 3)} | {h['p_b']:.4f} |",
          f"| H6 (intersection-union) | | {h['p']:.4f} : **{h['verdict']}** |", "",
+         f"Formulation retenue (règle fixée d'avance) : {h['formulation']}. Réussite dans la strate : "
+         f"{A.ic_txt(h['ecarts']['reussite_bouge'], 100, 2)} points.",
          f"Contrôle TOST t : p = {h['controle_tost_t']['p']:.4f}, intervalle à 90 % "
          f"[{100 * h['controle_tost_t']['ic90'][0]:+.2f}, {100 * h['controle_tost_t']['ic90'][1]:+.2f}] points.", "",
-         "## Descriptif (intervalle bootstrap à 95 %)", "",
-         f"- Réussite : fp32 {100 * r['descriptifs']['fp32']['reussite']:.1f} %, all:6 {100 * r['descriptifs']['all:6']['reussite']:.1f} %.",
-         f"- Écart de réussite : {A.ic_txt(e['reussite'])} points ; dans la strate {A.ic_txt(e['reussite_bouge'])}.",
-         f"- Écart de log M3 : {A.ic_txt(e['log_M3'], 1, 3)} ; dans la strate {A.ic_txt(e['log_M3_bouge'], 1, 3)}.",
-         f"- Écart de log M2 : {A.ic_txt(e['log_M2'], 1, 3)}.",
-         f"- Plancher de bruit : {A.ic_txt(r['descriptifs']['plancher_discordants_par_50'], 1, 2, '')} épisodes discordants sur 50."]
-    for v in ("fp32", "all:6"):
-        cl = r["descriptifs"][v]["classes_bouge"]
-        L.append(f"- Classes dans la strate, {v} : " + " / ".join(f"{100 * cl[k]:.1f}" for k in A.CLASSES)
-                 + " (réussite / T placé seul / T jamais placé).")
+         "## Contrôle à 8 bits (descriptif, mêmes statistiques)", "",
+         f"- Réussite : {A.ic_txt(k['ecarts']['reussite'], 100, 2)} points ; log M3 dans la strate : "
+         f"{A.ic_txt(k['ecarts']['log_M3_bouge'], 1, 3)} (p unilatérale {k['p_b']:.4f}).",
+         f"- Progression selon les bits (écart de log M3 plus petit à 8 qu'à 6 bits) : {'oui' if r['progression_8_vers_6'] else 'non'}.", "",
+         "## Descriptif", ""]
+    for v in ("fp32", "all:6", "all:8"):
+        d = r["descriptifs"][v]
+        L.append(f"- {v} : réussite {100 * d['reussite']:.1f} % ; classes dans la strate "
+                 + " / ".join(f"{100 * d['classes_bouge'][x]:.1f}" for x in A.CLASSES) + " (réussite / T placé seul / T jamais placé).")
+    L.append(f"- Écart de log M2 à 6 bits : {A.ic_txt(h['ecarts']['log_M2'], 1, 3)} ; plancher de bruit : "
+             f"{A.ic_txt(r['descriptifs']['plancher_discordants_par_50'], 1, 2, '')} épisodes discordants sur 50.")
+    L.append("- Décomposition de l'écart de log M3 à 6 bits dans la strate (fp32 puis 6 bits, par graine) : "
+             + " ; ".join(f"{n} {e['courses']} courses, {e['contribution_log_M3']:+.4f}" for n, e in h["decomposition_strate"].items()) + ".")
     if r["comparaison_exp003"]:
-        k = r["comparaison_exp003"]
-        L += ["", "## À côté d'EXP-003 (sans regroupement)", "",
-              f"- EXP-003, 6 bits : écart de réussite {A.ic_txt(k['exp003_reussite'])} points ; dans la strate, "
-              f"réussite {A.ic_txt(k['exp003_bouge']['delta_reussite'])}, log M3 {A.ic_txt(k['exp003_bouge']['delta_log_M3'], 1, 3)}."]
+        L += ["", "## À côté d'EXP-003 (sans regroupement)", ""]
+        for v, e in r["comparaison_exp003"].items():
+            L.append(f"- EXP-003, {v} : réussite {A.ic_txt(e['reussite'])} points ; dans la strate, réussite "
+                     f"{A.ic_txt(e['bouge']['delta_reussite'])}, log M3 {A.ic_txt(e['bouge']['delta_log_M3'], 1, 3)}.")
     return "\n".join(L) + "\n"
 
 
