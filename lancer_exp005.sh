@@ -7,6 +7,7 @@ set -e
 ICI="${0:A:h}"                 # dossier du script ; dans une fonction, $0 vaut le nom de la fonction
 main() {
   cd "$ICI" || exit 1
+  caffeinate -i -w $$ &!         # pas de veille pendant l'attente ni entre les étapes, jusqu'à la sortie du lanceur
   local PY=/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python
   local R=../resultats
   local TIRAGE=(--n 2000 --chunk 50 --graine-episodes 2026 --exclure $R/exp003/meta.json $R/sanite-n50/meta.json)

@@ -5,8 +5,8 @@ quand on la lancera »), avant tout calcul d'EXP-005. Taille choisie par Thomas 
 complète ») : 2 000 épisodes et un contrôle à 8 bits. Figé par le commit enregistré dans les fichiers
 d'EXP-005 : le lanceur vérifie avant chaque étape que l'arbre est propre et que HEAD n'a pas bougé depuis son
 démarrage, et l'analyse vérifie que son propre code et ce texte sont ceux de ce commit. Tout changement
-ultérieur est un amendement déclaré. Version relue deux fois par deux relecteurs (première version `ef6ca16`,
-corrections `35f312f`, puis ce texte).
+ultérieur est un amendement déclaré. Version relue trois fois par deux relecteurs (première version `ef6ca16`,
+corrections `35f312f` puis `a8e8cab`, puis ce texte).
 
 ## D'où vient la question
 
@@ -57,16 +57,19 @@ corrections `35f312f`, puis ce texte).
 - **Règle de rédaction.** Chaque intervalle bootstrap à 95 % de l'écart de réussite (sur les 2 000 épisodes
   et dans la strate) est classé : sous 0, contient 0, au-dessus de 0. Si H6 est établie : les deux
   contiennent 0, « la pose du T se dégrade à 6 bits alors que la réussite ne bouge pas » ; au moins un sous 0
-  et aucun au-dessus, « la pose et la réussite se dégradent toutes deux, la réussite restant à ± 2 points » ;
-  au moins un au-dessus et aucun sous 0, « la pose se dégrade alors que la réussite augmente légèrement, en
-  restant à ± 2 points » ; un de chaque, « l'écart de réussite change de sens entre tous les épisodes et la
-  strate ». La phrase se complète par la progression selon les bits (section suivante). Les deux intervalles
+  et aucun au-dessus, « la pose et la réussite se dégradent toutes deux, la réussite restant à ± 2 points sur
+  l'ensemble des épisodes » ; au moins un au-dessus et aucun sous 0, « la pose se dégrade alors que la réussite
+  augmente légèrement, en restant à ± 2 points sur l'ensemble des épisodes » ; un de chaque, « l'écart de
+  réussite change de sens entre tous les épisodes et la strate ». La marge de ± 2 points n'est testée que sur
+  les 2 000 épisodes ; dans la strate, l'intervalle est rapporté sans test. La phrase se complète par la progression selon les bits (section suivante). Les deux intervalles
   figurent dans le tableau de H6, avec la traduction de l'écart de pose en pixels et en degrés.
 - Puissance (écart-type de w estimé sur EXP-003, 0,258 par épisode) : pour (b), environ 99 % si l'écart réel
   vaut celui d'EXP-003 (+0,030), environ 70 % s'il vaut la moitié ; pour (a), presque 1 (erreur type de
   l'écart de réussite d'environ 0,3 point sur 2 000 épisodes). Vérifié par étalonnage sur des
   pseudo-expériences tirées des données d'EXP-003 (`etalonnage_exp005.py`) : fausses alertes 4,6 % pour (b)
-  sans effet, 4,95 % et 4,58 % pour les bornes de (a) exactement à ± 2 points ; puissance 99,5 % et 70,0 %.
+  sans effet, 4,95 % et 4,58 % pour les bornes de (a) exactement à ± 2 points ; pour H6 entière avec la
+  réussite exactement à -2 points et la pose dégradée de +0,030, 5,6 % sur 1 000 tirages (erreur Monte-Carlo
+  0,7 point, compatible avec 5 %) ; puissance 99,5 % et 70,0 %.
   Une H6 non établie ne prouvera pas l'absence d'effet. H6 n'a pas de taille d'effet minimale : on rapporte
   l'écart de pose en unités physiques pour juger de son importance.
 
@@ -75,12 +78,15 @@ corrections `35f312f`, puis ce texte).
 Les mêmes statistiques qu'H6 pour all:8 contre fp32 (écarts, intervalles, p rapportées sans valeur de
 décision). Progression selon les bits : d(e) = moyenne sur les graines de log(max(M3, 0,05)) à 6 bits moins
 la même chose à 8 bits, dans la strate (la pleine précision s'annule) ; intervalle bootstrap apparié
-(`default_rng(3)`) et p unilatérale par inversion de signe, rapportés. Progression établie si l'intervalle
-est entièrement au-dessus de 0. Si H6 est établie, la phrase se termine par « la dégradation est plus faible
-à 8 bits (progression selon les bits) » quand la progression est établie, et sinon par « mais l'effet à
-6 bits ne se distingue pas du contrôle à 8 bits ». La progression n'est rapportée que si H6 est établie.
-Puissance (écart-type de d estimé sur EXP-003, 0,261 par épisode) : environ 97 % pour une différence réelle
-de 0,025, environ 40 % pour 0,010.
+(`default_rng(3)`). La décision se lit sur l'intervalle, classé comme ceux de la réussite : entièrement
+au-dessus de 0, progression établie ; il contient 0, non établie ; entièrement sous 0, non établie, pose plus
+mauvaise à 8 bits qu'à 6 bits. La p unilatérale par inversion de signe est rapportée sans valeur de décision.
+Si H6 est établie, la phrase se termine selon ces trois cas par « la dégradation est plus faible à 8 bits
+(progression selon les bits) », « mais l'effet à 6 bits ne se distingue pas du contrôle à 8 bits » ou « mais la
+pose est plus mauvaise à 8 bits qu'à 6 bits (pas de progression selon les bits) ». La progression n'est
+rapportée (rapport et fichier de résultats) que si H6 est établie. Puissance (écart-type de d estimé sur
+EXP-003, 0,261 par épisode ; intervalle bilatéral à 95 %, soit un test unilatéral à 2,5 % ; approximation
+normale) : environ 94 % pour une différence réelle de 0,025, environ 29 % pour 0,010.
 
 ## Descriptif, sans test
 
@@ -88,13 +94,18 @@ de 0,025, environ 40 % pour 0,010.
   (10 000 rééchantillons, `default_rng(2)` sur les 2 000 épisodes, `default_rng(3)` sur la strate) ;
   classes de courses (réussite, T placé sans réussite, T jamais placé) sur tous les épisodes et dans la
   strate ; plancher de bruit (épisodes discordants par 50 entre deux graines de fp32).
-- Décomposition de l'écart de log M3 à 6 bits dans la strate selon les issues par graine (SS, SF, FS, FF :
-  fp32 puis 6 bits). SS et FF réunies forment la part que le taux de réussite ne peut pas voir (même issue des
-  deux côtés) ; SS seule mesure la précision des réussites. SF et FS dépendent en grande partie de
-  l'appariement des graines, qui porte peu d'information ici (écart-type de w apparié 0,258 contre 0,256 sans
-  appariement dans EXP-003) : descriptifs.
+- Décomposition de l'écart de log M3 à 6 bits dans la strate, sans appariement des graines (décomposition de
+  Kitagawa sur les courses graine × épisode) : l'écart des moyennes se partage exactement en un écart dans les
+  réussites et un écart dans les échecs, chacun pondéré par la part moyenne de son issue, et une part due au
+  changement du taux de réussite. Les deux premiers termes forment la part que le taux de réussite ne peut pas
+  voir ; le premier mesure la précision des réussites. Intervalles bootstrap sur les épisodes
+  (`default_rng(3)`). Une répartition par paires d'issues à la même graine (SS, SF, FS, FF), envisagée d'abord,
+  est écartée : elle dépend de l'appariement des graines, qui porte de l'information ici (corrélation
+  des résidus de log M3 à la même graine entre fp32 et 6 bits : 0,39 dans la strate d'EXP-003).
 - Traduction physique : écart moyen, dans la strate, de la distance minimale du T à son but (pixels) et de
-  l'écart d'angle minimal (degrés), moyennés sur les graines, avec intervalle bootstrap.
+  l'écart d'angle minimal (degrés), moyennés sur les graines, avec intervalle bootstrap ; minima pris sur les
+  mêmes pas que M3 (amendement 4 d'EXP-003 pour les courses divergentes). Repères : la marge du T seul passe
+  sous 1 à 20 px et 20 degrés ; le seuil de succès de 20 px porte sur l'agent et le T ensemble.
 - Comparaison avec EXP-003 : les écarts à 6 et 8 bits côte à côte, sans les regrouper.
 
 ## Contrôles bloquants

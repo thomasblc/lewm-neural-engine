@@ -123,6 +123,19 @@ def verifier_sanite_fin(dossier_grille, dossier_fin):
         A.exiger(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f"), f"sanité de clôture : {k} diffère")
 
 
+def etat_mesure(d):
+    """État sur lequel portent les marges, comme dans controler_course (amendement 4) : pas gelés prolongés ; pour
+    une course divergente, pas entièrement finis seulement, ou état de départ si elle diverge dès le pas 0."""
+    etat = d["state"].astype(np.float64)
+    nan_pas = np.isnan(etat).any(axis=2)
+    j = np.where(nan_pas.any(axis=0), nan_pas.argmax(axis=0), etat.shape[0])
+    diverge = ~d["success"].astype(bool) & (j < etat.shape[0])
+    etat[(np.arange(etat.shape[0])[:, None] >= j[None, :]) & diverge[None, :]] = np.nan
+    zero = diverge & (j == 0)
+    etat[0, zero] = d["init_state"][zero]
+    return prolonger(etat)
+
+
 def table(res, v):
     S, M2, M3, dT, dth, divergences, limites = [], [], [], [], [], 0, 0
     for g in GRAINES:
@@ -133,8 +146,9 @@ def table(res, v):
         S.append(d["success"].astype(np.int64))
         M2.append(m)
         M3.append(mT)
-        # pour traduire l'écart de pose en unités physiques : position du T (px) et angle (degrés) au plus près
-        etat, but = prolonger(d["state"]), d["goal_state"].astype(np.float64)
+        # pour traduire l'écart de pose en unités physiques : position du T (px) et angle (degrés) au plus près,
+        # sur les mêmes pas que M3
+        etat, but = etat_mesure(d), d["goal_state"].astype(np.float64)
         dT.append(np.nanmin(np.linalg.norm(etat[..., 2:4] - but[None, :, 2:4], axis=-1), axis=0))
         dth.append(np.degrees(np.nanmin(ecart_angle(etat[..., 4], but[None, :, 4]), axis=0)))
     S, M3 = np.stack(S), np.stack(M3)
@@ -151,22 +165,26 @@ def signe_ic(e):
     return -1 if e["haut"] < 0 else (1 if e["bas"] > 0 else 0)
 
 
-def formulation_h6(etablie, ic_tous, ic_strate, progression):
+def formulation_h6(etablie, ic_tous, ic_strate, sens_progression):
     """Phrase fixée d'avance (PREREG-EXP005, règle de rédaction), selon le sens de l'écart de réussite (tous les
-    épisodes et strate) et la progression entre 8 et 6 bits."""
+    épisodes et strate) et le sens de l'écart de pose entre 6 et 8 bits (signe_ic de son intervalle)."""
     if not etablie:
         return "H6 non établie"
     sens = {signe_ic(ic_tous), signe_ic(ic_strate)}
     if sens == {0}:
         base = "la pose du T se dégrade à 6 bits alors que la réussite ne bouge pas"
     elif -1 in sens and 1 not in sens:
-        base = "à 6 bits, la pose du T et la réussite se dégradent toutes deux, la réussite restant à ± 2 points"
+        base = ("à 6 bits, la pose du T et la réussite se dégradent toutes deux, la réussite restant à ± 2 points "
+                "sur l'ensemble des épisodes")
     elif 1 in sens and -1 not in sens:
-        base = "la pose du T se dégrade à 6 bits alors que la réussite augmente légèrement, en restant à ± 2 points"
+        base = ("la pose du T se dégrade à 6 bits alors que la réussite augmente légèrement, en restant à ± 2 points "
+                "sur l'ensemble des épisodes")
     else:
         base = "la pose du T se dégrade à 6 bits ; l'écart de réussite change de sens entre tous les épisodes et la strate"
-    return base + (" ; la dégradation est plus faible à 8 bits (progression selon les bits)" if progression
-                   else " ; mais l'effet à 6 bits ne se distingue pas du contrôle à 8 bits")
+    return base + {1: " ; la dégradation est plus faible à 8 bits (progression selon les bits)",
+                   0: " ; mais l'effet à 6 bits ne se distingue pas du contrôle à 8 bits",
+                   -1: " ; mais la pose est plus mauvaise à 8 bits qu'à 6 bits (pas de progression selon les bits)"}[
+        sens_progression]
 
 
 def stat_h6(x, w, inv):
@@ -176,14 +194,34 @@ def stat_h6(x, w, inv):
     return {"p_bas": p_bas, "p_haut": p_haut, "p_b": p_b, "p": max(p_bas, p_haut, p_b)}
 
 
-def decomposition_strate(f, q, bouge):
-    """Part de chaque paire de résultats par graine (fp32, version) dans l'écart moyen de log M3 de la strate."""
-    diff = (A.lg(q["M3"]) - A.lg(f["M3"]))[:, bouge]
-    Sf, Sq, n = f["S"][:, bouge], q["S"][:, bouge], diff.size
+def decomposition_strate(f, q, bouge, boot_strate):
+    """Écart moyen de log M3 dans la strate, sur les courses (graine, épisode), partagé sans appariement des graines
+    (Kitagawa) : écart dans les réussites et dans les échecs, pondérés par la part moyenne de chaque issue, et part
+    due au changement du taux de réussite. Les trois termes somment exactement à l'écart moyen. Intervalles
+    bootstrap percentile sur les épisodes (mêmes rééchantillons que la strate). None si une issue manque."""
+    def sommes(t):
+        s, l = t["S"][:, bouge].astype(bool), A.lg(t["M3"])[:, bouge]
+        return [x.astype(np.float64) for x in (s.sum(0), np.where(s, l, 0).sum(0), (~s).sum(0), np.where(~s, l, 0).sum(0))]
+
+    F, Q = sommes(f), sommes(q)
+
+    def termes(idx):
+        (nSf, lSf, nFf, lFf), (nSq, lSq, nFq, lFq) = ([x[idx].sum(axis=-1) for x in V] for V in (F, Q))
+        pf, pq = nSf / (nSf + nFf), nSq / (nSq + nFq)
+        mSf, mFf, mSq, mFq = lSf / nSf, lFf / nFf, lSq / nSq, lFq / nFq
+        return {"reussites": (pf + pq) / 2 * (mSq - mSf), "echecs": (2 - pf - pq) / 2 * (mFq - mFf),
+                "composition": (pq - pf) * ((mSq + mSf) / 2 - (mFq + mFf) / 2)}
+
+    if min(x.sum() for x in (F[0], F[2], Q[0], Q[2])) == 0:
+        return None
+    with np.errstate(all="ignore"):
+        point, boot = termes(np.arange(len(F[0]))), termes(boot_strate.idx)
     out = {}
-    for nom, (a, b) in (("SS", (1, 1)), ("SF", (1, 0)), ("FS", (0, 1)), ("FF", (0, 0))):
-        m = (Sf == a) & (Sq == b)
-        out[nom] = {"courses": int(m.sum()), "contribution_log_M3": float(diff[m].sum() / n)}
+    for k in point:
+        b = boot[k][np.isfinite(boot[k])]
+        out[k] = {"moyenne": float(point[k]), "bas": float(np.percentile(b, 2.5)), "haut": float(np.percentile(b, 97.5))}
+    out["total"] = float(sum(point.values()))
+    out["taux_reussite"] = [float(F[0].sum() / (F[0].sum() + F[2].sum())), float(Q[0].sum() / (Q[0].sum() + Q[2].sum()))]
     return out
 
 
@@ -199,7 +237,7 @@ def comparer_version(f, q, bouge, inv, boot, boot_strate):
     return {"delta_reussite": float(x.mean() / 5), "delta_log_M3_bouge": float(d3[bouge].mean()),
             "episodes_bouge": int(bouge.sum()), **stat, "ecarts": ecarts,
             "sens_reussite": [signe_ic(ecarts["reussite"]), signe_ic(ecarts["reussite_bouge"])],
-            "physique_strate": physique, "decomposition_strate": decomposition_strate(f, q, bouge),
+            "physique_strate": physique, "decomposition_strate": decomposition_strate(f, q, bouge, boot_strate),
             "controle_tost_t": A.tost_t(x / 5)}
 
 
@@ -224,9 +262,11 @@ def analyser(grille, sanite_fin, exclure, exp003=None, effectifs=EFFECTIFS5):
     # progression selon les bits : écart apparié de log M3 entre 6 et 8 bits dans la strate (fp32 s'annule)
     d68 = (A.lg(T5["all:6"]["M3"]).mean(axis=0) - A.lg(T5["all:8"]["M3"]).mean(axis=0))[bouge]
     ic68 = boot_strate.ic(d68)
-    progression = {"ecart_6_moins_8": ic68, "p_unilaterale": inv.p(d68, "plus"), "etablie": bool(ic68["bas"] > 0)}
+    # décidée par l'intervalle (entièrement au-dessus de 0) ; la p par inversion de signe est rapportée sans valeur de décision
+    progression = {"ecart_6_moins_8": ic68, "p_unilaterale": inv.p(d68, "plus"), "sens": signe_ic(ic68),
+                   "etablie": signe_ic(ic68) == 1}
     h6["formulation"] = formulation_h6(h6["verdict"] == "établie", h6["ecarts"]["reussite"], h6["ecarts"]["reussite_bouge"],
-                                       progression["etablie"])
+                                       progression["sens"])
     f = T5["fp32"]
     paires = [(a, b) for a in range(5) for b in range(5) if a != b]
     discord = np.mean([f["S"][a] != f["S"][b] for a, b in paires], axis=0) * 50
@@ -243,7 +283,8 @@ def analyser(grille, sanite_fin, exclure, exp003=None, effectifs=EFFECTIFS5):
                           "episodes_bouge": int(bouge.sum()), "episodes_T_au_but": int(dep["au_but"].sum()),
                           "divergences": {v: t["divergences"] for v, t in T5.items()},
                           "cas_limites_arrondi": {v: t["limites"] for v, t in T5.items()}},
-            "H6": h6, "controle_8_bits": controle, "progression_8_vers_6": progression,
+            "H6": h6, "controle_8_bits": controle,
+            "progression_8_vers_6": progression if h6["verdict"] == "établie" else None,   # rapportée seulement si H6
             "descriptifs": desc, "comparaison_exp003": comparaison}
 
 
@@ -262,17 +303,19 @@ def rapport(r):
          f"| H6 (intersection-union) | | {h['p']:.4f} : **{h['verdict']}** |", "",
          f"Formulation retenue (règle fixée d'avance) : {h['formulation']}.",
          f"En unités physiques, dans la strate : position du T au plus près {A.ic_txt(h['physique_strate']['dT_min_px'], 1, 2)} px, "
-         f"angle au plus près {A.ic_txt(h['physique_strate']['dth_min_deg'], 1, 2)} degrés (seuils de succès : 20 px et 20 degrés).",
+         f"angle au plus près {A.ic_txt(h['physique_strate']['dth_min_deg'], 1, 2)} degrés (repères : la marge du T seul, M3, "
+         f"passe sous 1 à 20 px et 20 degrés ; le succès mesure les 20 px sur l'agent et le T ensemble).",
          f"Contrôle TOST t : p = {h['controle_tost_t']['p']:.4f}, intervalle à 90 % "
          f"[{100 * h['controle_tost_t']['ic90'][0]:+.2f}, {100 * h['controle_tost_t']['ic90'][1]:+.2f}] points.", "",
          "## Contrôle à 8 bits (descriptif, mêmes statistiques)", "",
          f"- Réussite : {A.ic_txt(k['ecarts']['reussite'], 100, 2)} points ; log M3 dans la strate : "
          f"{A.ic_txt(k['ecarts']['log_M3_bouge'], 1, 3)} (p unilatérale {k['p_b']:.4f})."]
-    if h["verdict"] == "établie":
+    if r["progression_8_vers_6"] is not None:
         g = r["progression_8_vers_6"]
-        L.append(f"- Progression selon les bits (écart de log M3 entre 6 et 8 bits dans la strate) : "
-                 f"{A.ic_txt(g['ecart_6_moins_8'], 1, 3)}, p unilatérale {g['p_unilaterale']:.4f} : "
-                 f"{'établie' if g['etablie'] else 'non établie'}.")
+        issue = {1: "établie", 0: "non établie", -1: "non établie, pose plus mauvaise à 8 bits qu'à 6 bits"}[g["sens"]]
+        L.append(f"- Progression selon les bits (écart de log M3 entre 6 et 8 bits dans la strate, décidée par l'intervalle) : "
+                 f"{A.ic_txt(g['ecart_6_moins_8'], 1, 3)} : {issue} (p unilatérale {g['p_unilaterale']:.4f}, "
+                 f"sans valeur de décision).")
     L += ["",
          "## Descriptif", ""]
     for v in ("fp32", "all:6", "all:8"):
@@ -281,8 +324,12 @@ def rapport(r):
                  + " / ".join(f"{100 * d['classes_bouge'][x]:.1f}" for x in A.CLASSES) + " (réussite / T placé seul / T jamais placé).")
     L.append(f"- Écart de log M2 à 6 bits : {A.ic_txt(h['ecarts']['log_M2'], 1, 3)} ; plancher de bruit : "
              f"{A.ic_txt(r['descriptifs']['plancher_discordants_par_50'], 1, 2, '')} épisodes discordants sur 50.")
-    L.append("- Décomposition de l'écart de log M3 à 6 bits dans la strate (fp32 puis 6 bits, par graine) : "
-             + " ; ".join(f"{n} {e['courses']} courses, {e['contribution_log_M3']:+.4f}" for n, e in h["decomposition_strate"].items()) + ".")
+    dc = h["decomposition_strate"]
+    if dc is not None:
+        L.append(f"- Décomposition de l'écart de log M3 à 6 bits dans la strate, sans appariement des graines : dans les "
+                 f"réussites {A.ic_txt(dc['reussites'], 1, 4)}, dans les échecs {A.ic_txt(dc['echecs'], 1, 4)} (ces deux "
+                 f"parts échappent au taux de réussite) ; part due au changement du taux de réussite "
+                 f"{A.ic_txt(dc['composition'], 1, 4)} ; total {dc['total']:+.4f}.")
     if r["comparaison_exp003"]:
         L += ["", "## À côté d'EXP-003 (sans regroupement)", ""]
         for v, e in r["comparaison_exp003"].items():
