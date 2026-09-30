@@ -108,8 +108,9 @@ def analyser(racine, verifier=True, calib_torch=True):
     for t in TACHES:
         for v in VERSIONS:
             g, r_, f = K[(t, v, "gptq")], K[(t, v, "rtn")], K[(t, "fp32")]
-            part = lambda i: (g[i].sum() - r_[i].sum()) / max(f[i].sum() - r_[i].sum(), 1)
-            parts = np.array([part(i) for i in boot.idx])
+            den = np.array([f[i].sum() - r_[i].sum() for i in boot.idx], dtype=np.float64)
+            num = np.array([g[i].sum() - r_[i].sum() for i in boot.idx], dtype=np.float64)
+            parts = num[den > 0] / den[den > 0]          # rapport seulement là où RTN perd quelque chose
             # part rattrapée : sans objet si RTN perd moins de 2 points (dénominateur trop petit pour un rapport)
             sens = f.sum() - r_.sum() >= 0.02 * 5 * len(f)
             desc[f"{t} {v}"] = {"reussite_gptq": float(g.mean() / 5), "reussite_rtn": float(r_.mean() / 5),

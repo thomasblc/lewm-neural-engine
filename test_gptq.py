@@ -129,6 +129,24 @@ def test_chemin_quant():
         w = c.encoder[0].weight.detach()
         assert torch.equal(w, (w / s32).round() * s32)                   # exactement k × s, comme les poids de RTN
         assert (w / s32).round().abs().max() <= 7 and not torch.equal(w, quant.rtn_par_canal(w0, 4))
+        # et les entiers sont exactement ceux que GPTQ a choisis (aucun réarrondi)
+        h0 = (x.T @ x) / 500
+        k_gptq = (gptq.gptq_couche(w0, h0, 4) / (w0.double().abs().amax(dim=1, keepdim=True) / 7)).round()
+        assert torch.equal((w / s32).round().double(), k_gptq)
+        # même chose pour une convolution (la projection des images en carrés), poids de forme (sortie, 3, 14, 14)
+        class Mc(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.encoder = torch.nn.Conv2d(3, 16, 14, stride=14)
+        mc = Mc()
+        wc0 = mc.encoder.weight.detach().clone().reshape(16, -1)
+        xc = torch.randn(2000, 588, dtype=torch.float64) @ torch.randn(588, 588, dtype=torch.float64) / 20
+        torch.save({"H": {"encoder": xc.T @ xc}, "n": {"encoder": 2000}}, f)
+        quant.quantifier(mc, "encoder:4:gptq")
+        wc = mc.encoder.weight.detach().reshape(16, -1)
+        sc = wc0.abs().amax(dim=1, keepdim=True) / 7
+        kc = (gptq.gptq_couche(wc0, xc.T @ xc / 2000, 4) / (wc0.double().abs().amax(dim=1, keepdim=True) / 7)).round()
+        assert torch.equal(wc, (wc / sc).round() * sc) and torch.equal((wc / sc).round().double(), kc)
         del os.environ["LEWM_GPTQ_CALIB"]
     print("ok chemin quant.py : H identité = RTN float32 exact ; sinon poids différents, exactement sur la grille float32")
 
