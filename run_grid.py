@@ -255,12 +255,18 @@ def main():
     ap.add_argument("--graine-episodes", type=int, default=None)
     ap.add_argument("--exclure", nargs="*", default=[])
     ap.add_argument("--tache", choices=sorted(TACHES), default="pusht")
+    ap.add_argument("--replan", type=int, default=None, help="blocs de 5 actions exécutés avant de replanifier (défaut 5)")
+    ap.add_argument("--cem-iter", type=int, default=None, help="itérations de la CEM par plan (défaut 30)")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     cfg = charger_config(args.chunk, args.device, args.tache)
+    if args.replan is not None:                              # Q4 : replanifier plus souvent (EXP-007)
+        cfg.plan_config.receding_horizon = args.replan
+    if args.cem_iter is not None:
+        cfg.solver.n_steps = args.cem_iter
     dataset, process, col, valid = preparer_donnees(cfg)
     exclus = lire_exclus(args.exclure)
     ep_all, st_all = tirer_episodes(cfg, dataset, col, valid, args.n, args.graine_episodes, exclus)
@@ -274,6 +280,9 @@ def main():
         protocole["regle_tirage"] = "trajectoires exclues entières, une position par trajectoire"
     if args.tache != "pusht":                                # absent du protocole des expériences sur PushT
         protocole["tache"] = args.tache
+    if args.replan is not None or args.cem_iter is not None:  # absent des protocoles précédents
+        protocole["planification"] = {"receding_horizon": int(cfg.plan_config.receding_horizon),
+                                      "cem_n_steps": int(cfg.solver.n_steps)}
     f_meta = out / "meta.json"
     if f_meta.exists():
         ancien = json.loads(f_meta.read_text())
