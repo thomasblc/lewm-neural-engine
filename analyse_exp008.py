@@ -16,7 +16,8 @@ import analyse_exp006 as A6
 
 VERSIONS8 = ("all:5", "encoder:3", "predictor:3", "autres:3", "encpred:4", "all:3:g64")
 COUCHES = {**A6.COUCHES, "encpred": 103}
-FICHIERS_ANALYSE = ("analyse_exp008.py", "analyse_exp006.py", "analyse_exp003.py", "PREREG-EXP008.md", "run_grid.py", "quant.py")
+FICHIERS_ANALYSE = ("analyse_exp008.py", "analyse_exp006.py", "analyse_exp003.py", "metriques.py", "PREREG-EXP008.md",
+                    "run_grid.py", "quant.py")
 ICI = Path(__file__).resolve().parent
 
 
@@ -41,8 +42,7 @@ def charger(racine, verifier=True):
     r = Path(racine)
     m6, m8 = (json.loads((r / d / "meta.json").read_text())["protocole"] for d in ("exp006", "exp008"))
     A.exiger(m8.get("tache") == "tworoom" and m8["n"] == A6.N6, "exp008 : pas le protocole TwoRoom de 500 épisodes")
-    for k in ("episodes_idx", "start_steps", "graine_episodes", "chunk"):
-        A.exiger(m8.get(k) == m6.get(k), f"exp008 : {k} différent d'EXP-006")
+    A.exiger(m8 == m6, "exp008 : protocole différent de celui d'EXP-006 (épisodes, tirage, réglages ou appareil)")
     ref = dict(np.load(r / "exp006" / "fp32_s42.npz"))
     res, shas = {}, set()
     for v in ("fp32",) + VERSIONS8:
