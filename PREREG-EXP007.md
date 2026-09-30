@@ -14,9 +14,9 @@ Rédigé par Claude le 30 septembre 2026 au matin, avant tout calcul d'EXP-007 (
 | r25 | 25 pas | 30 | 1 (2 plans) | fichiers d'EXP-003, graines 42 à 44 |
 | r5c6 | 5 pas | 6 | 1 (10 plans courts) | nouveau |
 | r5 | 5 pas | 30 | 5 | nouveau |
-| r10 | 10 pas | 30 | 2,5 | nouveau, descriptif |
 
-  18 fichiers nouveaux de 500 épisodes, plus une sanité de clôture (all:4 graine 42, r5c6, identique octet pour
+  12 fichiers nouveaux de 500 épisodes (une condition r10, descriptive, retirée avant le lancement pour gagner
+  2 h ; aucun test n'en dépendait), plus une sanité de clôture (all:4 graine 42, r5c6, identique octet pour
   octet). Réglages par les options `--replan` et `--cem-iter` de `run_grid.py` (receding_horizon, n_steps).
 
 ## Tests (Holm sur 3, inversion de signe comme EXP-003, unilatéraux « plus grand »)

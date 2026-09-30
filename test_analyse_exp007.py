@@ -62,7 +62,7 @@ def K(racine, dossier, v):
 def test_tests(tmp):
     base = {"all:4": (1.5, 1.0)}
     r = Path(tmp) / "effet"
-    fin = simuler(r, {"r25": base, "r5": {"all:4": (0.5, 1.0)}, "r5c6": {"all:4": (0.9, 1.0)}, "r10": base})
+    fin = simuler(r, {"r25": base, "r5": {"all:4": (0.5, 1.0)}, "r5c6": {"all:4": (0.9, 1.0)}})
     res = A7.analyser(r, fin, verifier=False)
     k = {(c, v): K(r, d, v) for c, (d, *_) in A7.CONDITIONS.items() for v in A7.VERSIONS}
     xs = {"Q4a": k[("r5", "all:4")] - k[("r25", "all:4")],
@@ -77,7 +77,7 @@ def test_tests(tmp):
         t = res["tests"][n]
         assert t["p"] == p and t["somme"] == int(x.sum()) and abs(t["p_holm"] - q) < 1e-12, (n, t, p)
         assert t["verdict"] == "soutenue", (n, t)
-    assert "Q4c" in A7.rapport(res) and res["controles"]["fichiers"] == 24
+    assert "Q4c" in A7.rapport(res) and res["controles"]["fichiers"] == 18
     r0 = Path(tmp) / "nul"
     fin0 = simuler(r0, {c: base for c in A7.CONDITIONS})
     res0 = A7.analyser(r0, fin0, verifier=False)
@@ -118,9 +118,9 @@ def test_refus(tmp, r, fin):
 
     cas = [
         ("planification", meta("exp007-r5", lambda p: p["config"]["plan_config"].update(receding_horizon=5))),
-        ("manquant", lambda rr, ff: (rr / "exp007-r10" / "fp32_s43.npz").unlink()),
+        ("manquant", lambda rr, ff: (rr / "exp007-r5" / "fp32_s43.npz").unlink()),
         ("différent d'EXP-003", champ("exp007-r5c6", "all-4_s44.npz", "start_steps", lambda x: x["start_steps"][::-1].copy())),
-        ("plusieurs commits", champ("exp007-r10", "all-4_s42.npz", "git", lambda x: np.str_("b" * 40))),
+        ("plusieurs commits", champ("exp007-r5c6", "all-4_s43.npz", "git", lambda x: np.str_("b" * 40))),
         ("couches quantifiées", champ("exp007-r5", "fp32_s42.npz", "n_couches", lambda x: np.int64(109))),
         ("sanité de clôture", lambda rr, ff: shutil.copy(rr / "exp007-r5" / "all-4_s42.npz", ff / "all-4_s42.npz")),
     ]

@@ -20,7 +20,6 @@ CONDITIONS = {                                  # nom : (dossier, blocs de 5 pas
     "r25": ("exp003", 5, 30),                   # référence d'EXP-003 : 2 plans par épisode
     "r5c6": ("exp007-r5c6", 1, 6),              # replanifier tous les 5 pas, CEM 5 fois plus courte : calcul égal
     "r5": ("exp007-r5", 1, 30),                 # replanifier tous les 5 pas, CEM complète : 5 fois plus de calcul
-    "r10": ("exp007-r10", 2, 30),               # tous les 10 pas, CEM complète (descriptif)
 }
 COUCHES = {"fp32": 0, "all:4": 109}
 FICHIERS_ANALYSE = ("analyse_exp007.py", "analyse_exp003.py", "PREREG-EXP007.md", "run_grid.py", "quant.py")

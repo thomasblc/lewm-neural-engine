@@ -1,7 +1,7 @@
 #!/bin/zsh
 # EXP-007 (PREREG-EXP007.md) : vérifications, attente qu'aucune autre grille ne tourne, test de fonctionnement sur GPU
-# (50 épisodes, all:4, replanification tous les 5 pas, bloquant), puis fp32 et all:4 × graines 42 à 44 dans trois
-# conditions de planification (r5c6, r5, r10), chacune avec sa garde de batterie, et la sanité de clôture. caffeinate empêche la mise en veille. Tout le corps est dans des fonctions, lues en entier avant d'être exécutées.
+# (50 épisodes, all:4, replanification tous les 5 pas, bloquant), puis fp32 et all:4 × graines 42 à 44 dans deux
+# conditions de planification (r5c6, r5), chacune avec sa garde de batterie, et la sanité de clôture. caffeinate empêche la mise en veille. Tout le corps est dans des fonctions, lues en entier avant d'être exécutées.
 # Relancer après une interruption avec >> pour garder le journal : ./lancer_exp007.sh >> ../resultats/exp007.log 2>&1
 set -e
 ICI="${0:A:h}"                 # dossier du script ; dans une fonction, $0 vaut le nom de la fonction
@@ -20,7 +20,7 @@ main() {
   echo "[info] code vérifié : $(git rev-parse --short HEAD)"
   # une grille commencée avec un autre commit ne se reprend pas : ses fichiers seraient de deux commits
   local d commit_grille
-  for d in exp007-r5c6 exp007-r5 exp007-r10; do
+  for d in exp007-r5c6 exp007-r5; do
     [ -f $R/$d/meta.json ] || continue
     commit_grille=$($PY -c 'import json, sys; print(json.load(open(sys.argv[1]))["git"])' $R/$d/meta.json)
     [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] $d commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
@@ -52,9 +52,6 @@ print("[test] contrôles passés sur 50 épisodes", flush=True)' $R/exp007-test
   verifier $PY
   garde exp007-r5 6
   caffeinate -i $PY run_grid.py --out $R/exp007-r5 $TIRAGE --n 500 --specs fp32 all:4 --seeds 42 43 44 --replan 1 --cem-iter 30
-  verifier $PY
-  garde exp007-r10 6
-  caffeinate -i $PY run_grid.py --out $R/exp007-r10 $TIRAGE --n 500 --specs fp32 all:4 --seeds 42 43 44 --replan 2 --cem-iter 30
 
   # 5. sanité de clôture : all:4 graine 42 en r5c6 recalculé doit redonner le fichier de la grille
   verifier $PY
