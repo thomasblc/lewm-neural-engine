@@ -28,12 +28,12 @@ def simuler(racine):
     A6.COUCHES["encpred"] = 103
     try:
         T6.simuler(r / "exp006")
-        A6.VERSIONS6 = A8.VERSIONS8
-        T6.simuler(r / "exp008", effets={**{v: -0.5 for v in A8.VERSIONS8}, "fp32": 0.0}, sha=TETE)
+        A6.VERSIONS6 = ("fp32", "all:4") + A8.VERSIONS8          # le simulateur écrit aussi fp32 et all:4, retirés ensuite
+        T6.simuler(r / "exp008", effets={**{v: -0.5 for v in A8.VERSIONS8}, "fp32": 0.0, "all:4": 0.0}, sha=TETE)
     finally:
         A6.VERSIONS6 = sauve[0]
         A6.COUCHES.clear(); A6.COUCHES.update(sauve[1])
-    for f in (r / "exp008").glob("fp32_*.npz"):
+    for f in list((r / "exp008").glob("fp32_*.npz")) + list((r / "exp008").glob("all-4_*.npz")):
         f.unlink()
     shutil.rmtree(r / "exp008-fin")
     (r / "exp008-repro").mkdir()
