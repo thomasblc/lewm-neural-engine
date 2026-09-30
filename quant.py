@@ -9,6 +9,10 @@ prédicteur) et la quantification par groupes de poids : "all:4:g64" donne une �
 de 64 poids consécutifs d'une ligne. Une couche dont l'entrée n'est pas divisible par la taille du groupe
 reste quantifiée par canal (2 couches de LeWM : la projection des images en carrés, 588 entrées, et une
 couche de l'encodeur d'action, 10 entrées). Les versions sans ":gN" passent par le code d'origine.
+
+EXP-009 ajoute GPTQ : "all:4:gptq" arrondit les mêmes couches, sur la même grille et avec les mêmes échelles que
+"all:4", mais choisit les arrondis avec gptq.py, à partir des statistiques de calibration désignées par la variable
+LEWM_GPTQ_CALIB (fichier écrit par run_grid.py --calibrer-gptq). Les autres versions ne changent pas.
 """
 import os
 import torch
@@ -62,11 +66,21 @@ def quantifier(model, spec=None):
     spec = spec if spec is not None else os.environ.get("LEWM_QUANT", "")
     if not spec:
         return model, []
-    groupe, bits, taille = lire_spec(spec)
+    avec_gptq = spec.endswith(":gptq")
+    groupe, bits, taille = lire_spec(spec[:-len(":gptq")] if avec_gptq else spec)
+    if avec_gptq:
+        import gptq
+        if taille is not None or not os.environ.get("LEWM_GPTQ_CALIB"):
+            raise ValueError(f"{spec} : GPTQ demande une version par canal et LEWM_GPTQ_CALIB")
+        calib = torch.load(os.environ["LEWM_GPTQ_CALIB"], map_location="cpu")
     touches, par_canal = [], []
     for nom, mod in model.named_modules():
         if nom.split(".")[0] in GROUPES[groupe] and isinstance(mod, (torch.nn.Linear, torch.nn.Conv2d)):
-            if taille is None:
+            if avec_gptq:
+                h = calib["H"][nom] / calib["n"][nom]
+                q = gptq.gptq_couche(mod.weight.reshape(mod.weight.shape[0], -1), h, bits)
+                mod.weight.copy_(q.reshape(mod.weight.shape).to(mod.weight.dtype))
+            elif taille is None:
                 mod.weight.copy_(rtn_par_canal(mod.weight, bits))
             else:
                 q, ok = rtn_par_groupe(mod.weight, bits, taille)

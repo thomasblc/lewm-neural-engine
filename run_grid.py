@@ -19,6 +19,7 @@ Usage :
     python run_grid.py --out ../resultats/exp003 --n 500 --chunk 50 --specs fp32 all:4 --seeds 42 43
 """
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -44,7 +45,7 @@ from stable_worldmodel.solver.cem import CEMSolver  # noqa: E402
 from stable_worldmodel.world.world import _apply_callables, _extract_init_goal  # noqa: E402
 from torchvision.transforms import v2 as transforms  # noqa: E402
 
-from quant import quantifier  # noqa: E402
+from quant import GROUPES, quantifier  # noqa: E402
 
 # ce que chaque tâche enregistre : dimension de l'état, clés de départ et de but (configs de le-wm/config/eval)
 TACHES = {"pusht": {"dim": 7, "depart": "state", "but": "goal_state", "pusht": True},
@@ -236,6 +237,51 @@ def evaluer_paquet(world, dataset, episodes_idx, start_steps, positions, cfg, ta
     return rec
 
 
+def calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform, solver_kw, out, sha):
+    """EXP-009 : planifie en pleine précision sur des épisodes de calibration et accumule, pour chaque couche que
+    quant.py arrondit, H = somme des x x^T de ses entrées (Conv2d : carrés dépliés). Sommes sur l'appareil en
+    float32, versées en float64 sur CPU après chaque paquet. Écrit out/calib.pt."""
+    assert args.specs == ["fp32"] and len(args.seeds) == 1, "calibration : --specs fp32 et une seule graine"
+    model = swm.wm.utils.load_pretrained(cfg.policy)
+    cibles = {nom: mod for nom, mod in model.named_modules()
+              if nom.split(".")[0] in GROUPES["all"] and isinstance(mod, (torch.nn.Linear, torch.nn.Conv2d))}
+    model = model.to(args.device).eval()
+    model.requires_grad_(False)
+    model.interpolate_pos_encoding = True
+    acc, H, n = {}, {}, {}
+
+    def crochet(nom):
+        def f(mod, entree):
+            x = entree[0].detach()
+            if isinstance(mod, torch.nn.Conv2d):
+                x = torch.nn.functional.unfold(x, mod.kernel_size, dilation=mod.dilation, padding=mod.padding,
+                                               stride=mod.stride).transpose(1, 2)
+            x = x.reshape(-1, x.shape[-1]).float()
+            acc[nom] = acc[nom] + x.T @ x if nom in acc else x.T @ x
+            n[nom] = n.get(nom, 0) + x.shape[0]
+        return f
+
+    poignees = [m.register_forward_pre_hook(crochet(nom)) for nom, m in cibles.items()]
+    for c in range(args.n // args.chunk):
+        sl = slice(c * args.chunk, (c + 1) * args.chunk)
+        solver = CEMParEpisode(model=model, graine=args.seeds[0], **solver_kw)
+        world.set_policy(swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
+                                                     process=process, transform=transform))
+        evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache)
+        for nom in list(acc):
+            H[nom] = H.get(nom, 0) + acc.pop(nom).double().cpu()
+        print(f"[calibration] paquet {c + 1} sur {args.n // args.chunk}", flush=True)
+    for p in poignees:
+        p.remove()
+    manque = sorted(set(cibles) - set(H))
+    assert not manque, f"calibration : couches jamais appelées {manque}"
+    tmp = out / "calib.tmp.pt"
+    torch.save({"H": H, "n": n, "episodes_idx": list(ep_all), "start_steps": list(st_all), "graine": args.seeds[0],
+                "git": sha, "tache": args.tache}, tmp)
+    os.replace(tmp, out / "calib.pt")
+    print(f"[calibration] {len(H)} couches, de {min(n.values())} à {max(n.values())} lignes", flush=True)
+
+
 def git_info():
     ici = Path(__file__).resolve().parent
     sha = subprocess.run(["git", "-C", str(ici), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -257,6 +303,8 @@ def main():
     ap.add_argument("--tache", choices=sorted(TACHES), default="pusht")
     ap.add_argument("--replan", type=int, default=None, help="blocs de 5 actions exécutés avant de replanifier (défaut 5)")
     ap.add_argument("--cem-iter", type=int, default=None, help="itérations de la CEM par plan (défaut 30)")
+    ap.add_argument("--calibrer-gptq", action="store_true", help="EXP-009 : calibre GPTQ au lieu d'évaluer")
+    ap.add_argument("--gptq-calib", default=None, help="EXP-009 : statistiques de calibration pour les versions :gptq")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
@@ -280,6 +328,12 @@ def main():
         protocole["regle_tirage"] = "trajectoires exclues entières, une position par trajectoire"
     if args.tache != "pusht":                                # absent du protocole des expériences sur PushT
         protocole["tache"] = args.tache
+    if args.gptq_calib:                                       # absent des protocoles précédents
+        os.environ["LEWM_GPTQ_CALIB"] = str(Path(args.gptq_calib).resolve())
+        protocole["gptq_calib"] = {"fichier": Path(args.gptq_calib).name,
+                                   "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
+    if args.calibrer_gptq:
+        protocole["calibration_gptq"] = True
     if args.replan is not None or args.cem_iter is not None:  # absent des protocoles précédents
         protocole["planification"] = {"receding_horizon": int(cfg.plan_config.receding_horizon),
                                       "cem_n_steps": int(cfg.solver.n_steps)}
@@ -298,6 +352,9 @@ def main():
     solver_kw = {k: v for k, v in OmegaConf.to_container(cfg.solver, resolve=True).items()
                  if k not in ("_target_", "model", "seed")}
 
+    if args.calibrer_gptq:
+        calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform, solver_kw, out, sha)
+        return
     for seed in args.seeds:
         for spec in args.specs:
             f = out / f"{spec.replace(':', '-')}_s{seed}.npz"
