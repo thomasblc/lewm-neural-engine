@@ -77,7 +77,9 @@ def test_tests(tmp):
     assert res["tests"]["G3"]["somme"] == 0 and res["tests"]["G4"]["p"] == 1.0
     d = res["descriptifs"]["pusht all:4"]
     assert abs(d["part_rattrapee"]["moyenne"] - 1.0) < 1e-12 and abs(d["reussite_gptq"] - d["reussite_fp32"]) < 1e-12
-    assert res["descriptifs"]["tworoom encoder:4"]["part_rattrapee"]["moyenne"] == 0
+    pr = res["descriptifs"]["tworoom encoder:4"]["part_rattrapee"]        # RTN y perd 9 points : rapport défini, nul
+    assert pr["moyenne"] == 0 and res["descriptifs"]["pusht autres:4"]["part_rattrapee"]["moyenne"] == 0
+    assert res["descriptifs"]["tworoom autres:4"]["part_rattrapee"] is None   # RTN n'y perd que 1,2 point
     assert "G4" in A9.rapport(res)
     print("ok tests : p et verdicts recomptés en numpy (G1, G2 soutenues ; G3, G4 nulles), part rattrapée 100 % et 0 %")
     return r

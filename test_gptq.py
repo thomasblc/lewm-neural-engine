@@ -98,7 +98,43 @@ def test_reference_naive():
     print("ok référence : version rapide identique à une implémentation naïve indépendante (blocs 128, 16, 300)")
 
 
+def test_chemin_quant():
+    """Par quant.quantifier : avec H identité, "encoder:4:gptq" redonne exactement le RTN float32 de "encoder:4"
+    (même grille, mêmes échelles), et une autre H donne des poids différents mais sur la même grille."""
+    import os, tempfile
+    torch.manual_seed(6)
+    class M(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.encoder = torch.nn.Sequential(torch.nn.Linear(40, 16), torch.nn.Linear(16, 8))
+    a, b = M(), M()
+    b.load_state_dict(a.state_dict())
+    noms = ["encoder.0", "encoder.1"]
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "calib.pt")
+        torch.save({"H": {n: torch.eye(m.in_features, dtype=torch.float64) * 5 for n, m in zip(noms, a.encoder)},
+                    "n": {n: 5 for n in noms}}, f)
+        os.environ["LEWM_GPTQ_CALIB"] = f
+        quant.quantifier(a, "encoder:4:gptq")
+        quant.quantifier(b, "encoder:4")
+        for ma, mb in zip(a.encoder, b.encoder):
+            assert torch.equal(ma.weight, mb.weight)
+        c = M()
+        c.load_state_dict(M().state_dict())
+        x = torch.randn(500, 40, dtype=torch.float64) @ torch.randn(40, 40, dtype=torch.float64)
+        torch.save({"H": {"encoder.0": x.T @ x, "encoder.1": torch.eye(16, dtype=torch.float64)}, "n": {n: 500 for n in noms}}, f)
+        w0 = c.encoder[0].weight.detach().clone()
+        quant.quantifier(c, "encoder:4:gptq")
+        s32 = w0.abs().amax(dim=1, keepdim=True) / 7
+        w = c.encoder[0].weight.detach()
+        assert torch.equal(w, (w / s32).round() * s32)                   # exactement k × s, comme les poids de RTN
+        assert (w / s32).round().abs().max() <= 7 and not torch.equal(w, quant.rtn_par_canal(w0, 4))
+        del os.environ["LEWM_GPTQ_CALIB"]
+    print("ok chemin quant.py : H identité = RTN float32 exact ; sinon poids différents, exactement sur la grille float32")
+
+
 if __name__ == "__main__":
+    test_chemin_quant()
     test_reference_naive()
     test_identite_egale_rtn()
     test_grille()

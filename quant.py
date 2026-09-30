@@ -78,8 +78,12 @@ def quantifier(model, spec=None):
         if nom.split(".")[0] in GROUPES[groupe] and isinstance(mod, (torch.nn.Linear, torch.nn.Conv2d)):
             if avec_gptq:
                 h = calib["H"][nom] / calib["n"][nom]
-                q = gptq.gptq_couche(mod.weight.reshape(mod.weight.shape[0], -1), h, bits)
-                mod.weight.copy_(q.reshape(mod.weight.shape).to(mod.weight.dtype))
+                w32 = mod.weight.reshape(mod.weight.shape[0], -1)
+                q = gptq.gptq_couche(w32, h, bits)
+                # retour exact sur la grille float32 de RTN : mêmes échelles, entiers de GPTQ
+                s32 = w32.abs().amax(dim=1, keepdim=True).clamp_min(1e-12) / (2 ** (bits - 1) - 1)
+                k = (q / s32.double()).round().clamp(-(2 ** (bits - 1) - 1), 2 ** (bits - 1) - 1).to(w32.dtype)
+                mod.weight.copy_((k * s32).reshape(mod.weight.shape))
             elif taille is None:
                 mod.weight.copy_(rtn_par_canal(mod.weight, bits))
             else:

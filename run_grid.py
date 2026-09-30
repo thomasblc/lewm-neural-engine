@@ -272,7 +272,7 @@ def calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform,
         evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache)
         Hm, nm = moities["a" if c % 2 == 0 else "b"]
         for nom in list(acc):
-            h = acc.pop(nom).double().cpu()
+            h = acc.pop(nom).cpu().double()               # MPS ne connaît pas le float64 : CPU d'abord
             H[nom] = H.get(nom, 0) + h
             Hm[nom] = Hm.get(nom, 0) + h
             nm[nom] = nm.get(nom, 0) + npaquet.pop(nom)

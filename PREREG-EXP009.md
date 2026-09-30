@@ -33,7 +33,8 @@ x(e) = K(e, GPTQ) - K(e, RTN), succès sur les 5 graines.
 - G1 : all:4, PushT. G2 : all:4, TwoRoom. G3 : all:3, PushT. G4 : all:3, TwoRoom.
 
 Soutenu si la p corrigée par Holm est sous 0,05. Descriptif : encoder:4 et autres:4 GPTQ contre RTN ; part de la
-perte de RTN rattrapée, (K GPTQ - K RTN) / (K fp32 - K RTN), avec intervalle bootstrap (`default_rng(2)`).
+perte de RTN rattrapée, (K GPTQ - K RTN) / (K fp32 - K RTN), avec intervalle bootstrap (`default_rng(2)`), sans
+objet quand RTN perd moins de 2 points.
 
 ## Contrôles bloquants
 

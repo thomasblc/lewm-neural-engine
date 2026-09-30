@@ -54,6 +54,12 @@ def main():
                 tg += gptq.perte(w, gptq.gptq_couche(w, ha, bits), hb)
                 tr += gptq.perte(w, gptq.rtn(w, bits), hb)
             print(f"[vérification GPTQ] {a.tache}, {bits} bits, hors échantillon : erreur GPTQ / RTN = {tg / tr:.3f}", flush=True)
+            for nom in pauvres:                          # couches à calibration mince : rapport couche par couche
+                m = couches[nom]
+                w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
+                ha, hb = calib["H_a"][nom] / calib["n_a"][nom], calib["H_b"][nom] / calib["n_b"][nom]
+                rg = gptq.perte(w, gptq.gptq_couche(w, ha, bits), hb) / gptq.perte(w, gptq.rtn(w, bits), hb)
+                print(f"[vérification GPTQ]   {nom} ({calib['n'][nom]} lignes), hors échantillon : {rg:.3f}", flush=True)
             ok &= tg < tr
     else:
         print("[vérification GPTQ] une seule moitié de calibration : pas de contrôle hors échantillon", flush=True)

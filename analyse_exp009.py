@@ -110,11 +110,13 @@ def analyser(racine, verifier=True, calib_torch=True):
             g, r_, f = K[(t, v, "gptq")], K[(t, v, "rtn")], K[(t, "fp32")]
             part = lambda i: (g[i].sum() - r_[i].sum()) / max(f[i].sum() - r_[i].sum(), 1)
             parts = np.array([part(i) for i in boot.idx])
+            # part rattrapée : sans objet si RTN perd moins de 2 points (dénominateur trop petit pour un rapport)
+            sens = f.sum() - r_.sum() >= 0.02 * 5 * len(f)
             desc[f"{t} {v}"] = {"reussite_gptq": float(g.mean() / 5), "reussite_rtn": float(r_.mean() / 5),
                                 "reussite_fp32": float(f.mean() / 5), "gptq_moins_rtn": boot.ic((g - r_) / 5),
-                                "part_rattrapee": {"moyenne": float((g.sum() - r_.sum()) / max(f.sum() - r_.sum(), 1)),
-                                                   "bas": float(np.percentile(parts, 2.5)),
-                                                   "haut": float(np.percentile(parts, 97.5))}}
+                                "part_rattrapee": None if not sens else
+                                {"moyenne": float((g.sum() - r_.sum()) / (f.sum() - r_.sum())),
+                                 "bas": float(np.percentile(parts, 2.5)), "haut": float(np.percentile(parts, 97.5))}}
     return {"controles": {"commit": sha}, "tests": tests, "descriptifs": desc}
 
 
@@ -128,7 +130,7 @@ def rapport(r):
     L += ["", "| Tâche, version | fp32 | RTN | GPTQ | GPTQ moins RTN | Part de la perte rattrapée |", "| --- | --- | --- | --- | --- | --- |"]
     for k, d in r["descriptifs"].items():
         L.append(f"| {k} | {100 * d['reussite_fp32']:.1f} % | {100 * d['reussite_rtn']:.1f} % | {100 * d['reussite_gptq']:.1f} % | "
-                 f"{t(d['gptq_moins_rtn'])} | {t(d['part_rattrapee'])} % |")
+                 f"{t(d['gptq_moins_rtn'])} | {t(d['part_rattrapee']) + ' %' if d['part_rattrapee'] else 'sans objet'} |")
     return "\n".join(L) + "\n"
 
 
