@@ -70,11 +70,17 @@ def charger(racine, verifier=True):
     return res, sha
 
 
-def verifier_sanite(racine, fin):
-    a, b = dict(np.load(Path(fin) / "all-4_s42.npz")), dict(np.load(Path(racine) / "exp007-r5c6" / "all-4_s42.npz"))
-    A.exiger(set(a) == set(b), "sanité de clôture : clés différentes")
+def identiques(fa, fb, nom):
+    a, b = dict(np.load(fa)), dict(np.load(fb))
+    A.exiger(set(a) == set(b), f"{nom} : clés différentes")
     for k in sorted(set(a) - {"git", "git_sale"}):
-        A.exiger(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f"), f"sanité de clôture : {k} diffère")
+        A.exiger(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f"), f"{nom} : {k} diffère")
+
+
+def verifier_sanite(racine, fin):
+    identiques(Path(fin) / "all-4_s42.npz", Path(racine) / "exp007-r5c6" / "all-4_s42.npz", "sanité de clôture")
+    identiques(Path(racine) / "exp007-sanite-r25" / "all-4_s42.npz", Path(racine) / "exp003" / "all-4_s42.npz",
+               "reproduction d'EXP-003")
 
 
 def analyser(racine, fin, verifier=True):

@@ -44,6 +44,8 @@ def simuler(racine, effets):
             (d / "meta.json").write_text(json.dumps(m))
     finally:
         A.N, A.VERSIONS, A.GA = sauve
+    (Path(racine) / "exp007-sanite-r25").mkdir()
+    shutil.copy(Path(racine) / "exp003" / "all-4_s42.npz", Path(racine) / "exp007-sanite-r25" / "all-4_s42.npz")
     fin = Path(racine) / "fin"
     fin.mkdir()
     shutil.copy(Path(racine) / "exp007-r5c6" / "all-4_s42.npz", fin / "all-4_s42.npz")
@@ -123,6 +125,8 @@ def test_refus(tmp, r, fin):
         ("plusieurs commits", champ("exp007-r5c6", "all-4_s43.npz", "git", lambda x: np.str_("b" * 40))),
         ("couches quantifiées", champ("exp007-r5", "fp32_s42.npz", "n_couches", lambda x: np.int64(109))),
         ("sanité de clôture", lambda rr, ff: shutil.copy(rr / "exp007-r5" / "all-4_s42.npz", ff / "all-4_s42.npz")),
+        ("reproduction d'EXP-003", lambda rr, ff: shutil.copy(rr / "exp007-r5" / "all-4_s42.npz",
+                                                              rr / "exp007-sanite-r25" / "all-4_s42.npz")),
     ]
     for motif, m in cas:
         essai(motif, m)

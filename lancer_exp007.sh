@@ -46,7 +46,14 @@ main() {
 A.controler_course(dict(np.load(sys.argv[1] + "/all-4_s42.npz")), "test")
 print("[test] contrôles passés sur 50 épisodes", flush=True)' $R/exp007-test
 
-  # 4. les trois conditions, 500 épisodes, fp32 et all:4, graines 42 à 44 ; la plus instructive d'abord
+  # 3 bis. la référence r25 vient d'EXP-003 : le code actuel, réglages par défaut, doit en redonner un fichier
+  #        octet pour octet (bloquant)
+  verifier $PY
+  rm -rf $R/exp007-sanite-r25
+  caffeinate -i $PY run_grid.py --out $R/exp007-sanite-r25 $TIRAGE --n 500 --specs all:4 --seeds 42
+  comparer $PY $R/exp007-sanite-r25/all-4_s42.npz $R/exp003/all-4_s42.npz "reproduction d'EXP-003"
+
+  # 4. les deux conditions, 500 épisodes, fp32 et all:4, graines 42 à 44 ; la plus instructive d'abord
   verifier $PY
   caffeinate -i $PY run_grid.py --out $R/exp007-r5c6 $TIRAGE --n 500 --specs fp32 all:4 --seeds 42 43 44 --replan 1 --cem-iter 6
   verifier $PY
@@ -56,6 +63,7 @@ print("[test] contrôles passés sur 50 épisodes", flush=True)' $R/exp007-test
   # 5. sanité de clôture : all:4 graine 42 en r5c6 recalculé doit redonner le fichier de la grille
   verifier $PY
   garde exp007-sanite-fin 1
+  rm -rf $R/exp007-sanite-fin               # toujours recalculée, jamais reprise
   caffeinate -i $PY run_grid.py --out $R/exp007-sanite-fin $TIRAGE --n 500 --specs all:4 --seeds 42 --replan 1 --cem-iter 6
   comparer $PY $R/exp007-sanite-fin/all-4_s42.npz $R/exp007-r5c6/all-4_s42.npz "sanité de clôture"
   echo "[info] EXP-007 finie à $(date '+%H:%M')"

@@ -18,6 +18,9 @@ Rédigé par Claude le 30 septembre 2026 au matin, avant tout calcul d'EXP-007 (
   12 fichiers nouveaux de 500 épisodes (une condition r10, descriptive, retirée avant le lancement pour gagner
   2 h ; aucun test n'en dépendait), plus une sanité de clôture (all:4 graine 42, r5c6, identique octet pour
   octet). Réglages par les options `--replan` et `--cem-iter` de `run_grid.py` (receding_horizon, n_steps).
+- Le planificateur démarre chaque nouveau plan à partir des blocs non exécutés du précédent (warm start, réglage
+  par défaut de stable-worldmodel) : en r5 et r5c6 il en reste 4, en r25 aucun. Les conditions diffèrent donc par
+  la fréquence de replanification et par ce démarrage à chaud ; les conclusions portent sur les deux ensemble.
 
 ## Tests (Holm sur 3, inversion de signe comme EXP-003, unilatéraux « plus grand »)
 
@@ -37,4 +40,5 @@ Soutenu si la p corrigée par Holm est sous 0,05. Descriptif : réussite par con
 Tous les fichiers présents ; protocole de chaque dossier (500 épisodes, PushT, receding_horizon et n_steps
 attendus) ; mêmes épisodes, départs et buts qu'EXP-003 ; couches quantifiées ; contrôles de course d'EXP-003 ;
 fichiers nouveaux d'un seul commit, dont le code d'analyse et de calcul est celui du dépôt ; sanité de clôture
-identique. Le journal du lancement n'est pas lu avant l'analyse.
+identique ; reproduction d'EXP-003 (all:4 graine 42 recalculé avec le code actuel et les réglages par défaut,
+identique au fichier d'EXP-003 octet pour octet), qui garantit la référence r25. Le journal du lancement n'est pas lu avant l'analyse.
