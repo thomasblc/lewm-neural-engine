@@ -39,7 +39,8 @@ perte de RTN rattrapée, (K GPTQ - K RTN) / (K fp32 - K RTN), avec intervalle bo
 
 Avant la grille, par tâche : reproduction de la pleine précision graine 42 (identique octet pour octet à EXP-003
 ou EXP-006, et référence de la sentinelle) ; calibration complète (toutes les couches vues) ; erreur de
-reconstruction totale de GPTQ sous celle de RTN à 4 et 3 bits (`verifier_gptq.py`). À l'analyse : tous les
+reconstruction totale de GPTQ sous celle de RTN à 4 et 3 bits, sur la calibration et hors échantillon (GPTQ réglé
+sur la moitié des paquets de calibration, erreur mesurée sur l'autre moitié ; `verifier_gptq.py`). À l'analyse : tous les
 fichiers ; mêmes épisodes, départs et buts que les références ; couches quantifiées ; contrôles de course ; un
 seul commit dont le code est celui du dépôt ; calibration disjointe des évaluations et de SHA-256 conforme. La
 sentinelle contrôle chaque fichier pendant le calcul. Le journal n'est pas lu avant l'analyse.

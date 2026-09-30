@@ -1,13 +1,18 @@
 """Vérification bloquante d'EXP-009, avant la grille : sur le vrai modèle et ses statistiques de calibration, GPTQ
 doit faire moins d'erreur de reconstruction des couches que RTN (somme sur les couches de trace((W-Q) H (W-Q)^T)),
-à chaque nombre de bits. Sinon, c'est une erreur de code : arrêt. Affiche aussi la part des couches améliorées et
+à chaque nombre de bits, sur la calibration et hors échantillon (GPTQ réglé sur les paquets pairs, erreur
+mesurée sur les impairs). Sinon, c'est une erreur de code : arrêt. Affiche aussi la part des couches améliorées et
 les couches calibrées avec moins de lignes que d'entrées.
 
 Usage :
     python verifier_gptq.py --tache pusht --calib ../resultats/exp009-calib-pusht/calib.pt
 """
 import argparse
+import os
 import sys
+from pathlib import Path
+
+os.environ.setdefault("STABLEWM_HOME", str(Path(os.environ.get("LEWM_DIR", "/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm")).parent / "stable-wm"))
 
 import torch
 
@@ -40,6 +45,18 @@ def main():
         print(f"[vérification GPTQ] {a.tache}, {bits} bits : erreur totale GPTQ / RTN = {tg / tr:.3f}, "
               f"{mieux} couches améliorées sur {len(couches)}", flush=True)
         ok &= tg < tr
+    if calib.get("H_b"):                              # hors échantillon : réglé sur une moitié, mesuré sur l'autre
+        for bits in (4, 3):
+            tg = tr = 0.0
+            for nom, m in couches.items():
+                w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
+                ha, hb = calib["H_a"][nom] / calib["n_a"][nom], calib["H_b"][nom] / calib["n_b"][nom]
+                tg += gptq.perte(w, gptq.gptq_couche(w, ha, bits), hb)
+                tr += gptq.perte(w, gptq.rtn(w, bits), hb)
+            print(f"[vérification GPTQ] {a.tache}, {bits} bits, hors échantillon : erreur GPTQ / RTN = {tg / tr:.3f}", flush=True)
+            ok &= tg < tr
+    else:
+        print("[vérification GPTQ] une seule moitié de calibration : pas de contrôle hors échantillon", flush=True)
     print(f"[vérification GPTQ] couches calibrées avec moins de lignes que d'entrées : {pauvres or 'aucune'}", flush=True)
     sys.exit(0 if ok else 1)
 

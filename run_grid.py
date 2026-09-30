@@ -248,7 +248,8 @@ def calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform,
     model = model.to(args.device).eval()
     model.requires_grad_(False)
     model.interpolate_pos_encoding = True
-    acc, H, n = {}, {}, {}
+    acc, npaquet, H, n = {}, {}, {}, {}
+    moities = {"a": ({}, {}), "b": ({}, {})}             # paquets pairs et impairs : contrôle hors échantillon
 
     def crochet(nom):
         def f(mod, entree):
@@ -259,6 +260,7 @@ def calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform,
             x = x.reshape(-1, x.shape[-1]).float()
             acc[nom] = acc[nom] + x.T @ x if nom in acc else x.T @ x
             n[nom] = n.get(nom, 0) + x.shape[0]
+            npaquet[nom] = npaquet.get(nom, 0) + x.shape[0]
         return f
 
     poignees = [m.register_forward_pre_hook(crochet(nom)) for nom, m in cibles.items()]
@@ -268,15 +270,20 @@ def calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform,
         world.set_policy(swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
                                                      process=process, transform=transform))
         evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache)
+        Hm, nm = moities["a" if c % 2 == 0 else "b"]
         for nom in list(acc):
-            H[nom] = H.get(nom, 0) + acc.pop(nom).double().cpu()
+            h = acc.pop(nom).double().cpu()
+            H[nom] = H.get(nom, 0) + h
+            Hm[nom] = Hm.get(nom, 0) + h
+            nm[nom] = nm.get(nom, 0) + npaquet.pop(nom)
         print(f"[calibration] paquet {c + 1} sur {args.n // args.chunk}", flush=True)
     for p in poignees:
         p.remove()
     manque = sorted(set(cibles) - set(H))
     assert not manque, f"calibration : couches jamais appelées {manque}"
     tmp = out / "calib.tmp.pt"
-    torch.save({"H": H, "n": n, "episodes_idx": list(ep_all), "start_steps": list(st_all), "graine": args.seeds[0],
+    torch.save({"H": H, "n": n, "H_a": moities["a"][0], "n_a": moities["a"][1], "H_b": moities["b"][0],
+                "n_b": moities["b"][1], "episodes_idx": list(ep_all), "start_steps": list(st_all), "graine": args.seeds[0],
                 "git": sha, "tache": args.tache}, tmp)
     os.replace(tmp, out / "calib.pt")
     print(f"[calibration] {len(H)} couches, de {min(n.values())} à {max(n.values())} lignes", flush=True)

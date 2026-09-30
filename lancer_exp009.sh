@@ -45,7 +45,7 @@ main() {
   rm -rf $R/exp009-repro-pusht
   caffeinate -i $PY run_grid.py --out $R/exp009-repro-pusht $PUSHT --n 500 --specs fp32 --seeds 42
   comparer $PY $R/exp009-repro-pusht/fp32_s42.npz $R/exp003/fp32_s42.npz "reproduction d'EXP-003"
-  calibrer pusht $PUSHT --exclure $R/exp003/meta.json $R/sanite-n50/meta.json $R/exp005/meta.json
+  calibrer pusht --chunk 32 --exclure $R/exp003/meta.json $R/sanite-n50/meta.json $R/exp005/meta.json
   $PY -B verifier_gptq.py --tache pusht --calib $R/exp009-calib-pusht/calib.pt
 
   # 4. PushT : la grille GPTQ
@@ -59,7 +59,7 @@ main() {
   rm -rf $R/exp009-repro-tworoom
   caffeinate -i $PY run_grid.py --out $R/exp009-repro-tworoom $TWOROOM --n 500 --specs fp32 --seeds 42
   comparer $PY $R/exp009-repro-tworoom/fp32_s42.npz $R/exp006/fp32_s42.npz "reproduction d'EXP-006"
-  calibrer tworoom --tache tworoom --chunk 50 --exclure $R/exp006/meta.json
+  calibrer tworoom --tache tworoom --chunk 32 --exclure $R/exp006/meta.json
   $PY -B verifier_gptq.py --tache tworoom --calib $R/exp009-calib-tworoom/calib.pt
   verifier $PY
   caffeinate -i $PY run_grid.py --out $R/exp009-tworoom $TWOROOM --n 500 --specs $VERSIONS --seeds 42 43 44 45 46 \
