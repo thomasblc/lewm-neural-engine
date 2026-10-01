@@ -173,8 +173,10 @@ class Puissance:
                     d[cle] = int(v)
         d["t"] = time.time()
         d["charge_moyenne_1min"] = os.getloadavg()[0]
-        d["processus_run_grid"] = len(subprocess.run(["pgrep", "-f", "[r]un_grid\\.py"], capture_output=True,
-                                                     text=True).stdout.split())   # le calcul en cours compris
+        # vrais calculs seulement (exécutable python suivi de run_grid.py, comme le lanceur), le calcul en cours compris ;
+        # une commande qui cite seulement le nom (grep, surveillance) ne compte pas
+        d["processus_run_grid"] = len(subprocess.run(["pgrep", "-f", "^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\\.py( |$)"],
+                                                     capture_output=True, text=True).stdout.split())
         d["thermique"] = subprocess.run(["pmset", "-g", "therm"], capture_output=True, text=True).stdout.strip()[:200]
         return d
 

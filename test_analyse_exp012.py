@@ -227,14 +227,26 @@ def test_refus(tmp, r):
            ("fichier de temps", champ("exp012-ne-pusht", "fp32_s46.npz", "git", lambda x: np.str_("d" * 40))),
            ("fichier de temps", temps("exp012-ne-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="torch"))),
            ("fichier de temps", temps("exp012-torch-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="coreml-ne"))),
-           ("aucune mesure de la puissance au repos", lambda rr: (rr / "exp012-repos-tworoom-1000.json").unlink()),
-           ("mesure au repos invalide", repos("pusht", lambda j: j.update(lectures=[{"processus_run_grid": 2}]))),
-           ("mesure au repos invalide", repos("tworoom", lambda j: j.update(git="e" * 40))),
-           ("mesure au repos invalide", repos("pusht", lambda j: j.update(secondes_couvertes=40))),
            ("sans lectures", temps("exp012-gpu-tworoom", "fp32_s44.temps.json", lambda j: j.update(lectures=[])))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")
+
+    def sans_energie(modifier, t, attendu):           # mesure au repos absente ou invalide : énergie indisponible, tests intacts
+        rr = Path(tmp) / "energie"
+        shutil.rmtree(rr, ignore_errors=True)
+        shutil.copytree(r, rr)
+        modifier(rr)
+        res = A12.analyser(rr, verifier=False)
+        d = res["descriptifs"][t]["temps"]
+        assert all(d[m]["energie_par_plan_j"] is None and d[m]["fichiers_sans_energie"] == attendu[m] for m in attendu), d
+        assert all(res["tests"][n]["verdict"] == "soutenue" for n in res["tests"])
+    tout = {"torch": 1, "ne": 5, "gpu": 5}
+    sans_energie(lambda rr: (rr / "exp012-repos-tworoom-1000.json").unlink(), "tworoom", tout)
+    sans_energie(repos("pusht", lambda j: j.update(lectures=[{"processus_run_grid": 2}])), "pusht", tout)
+    sans_energie(repos("tworoom", lambda j: j.update(git="e" * 40)), "tworoom", tout)
+    sans_energie(repos("pusht", lambda j: j.update(secondes_couvertes=40)), "pusht", tout)
+    print("ok mesure au repos absente ou invalide : énergie indisponible (4 cas), tests de réussite inchangés")
 
 
 def test_code():

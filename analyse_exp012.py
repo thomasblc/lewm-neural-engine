@@ -88,18 +88,17 @@ def niveaux_holm(ps, alpha=A.ALPHA):
 
 
 def repos_avant(r, t, debut, sha):
-    """Dernière mesure de la puissance au repos de la tâche faite avant debut : même commit, au moins 50 s couvertes,
-    aucun calcul run_grid pendant la mesure."""
+    """Dernière mesure valide de la puissance au repos de la tâche faite avant debut (même commit, au moins 50 s
+    couvertes, aucun calcul run_grid pendant la mesure). L'énergie est un descriptif : sans mesure valide, elle est
+    indisponible (None) et les tests ne sont pas touchés."""
     cand = []
     for f in sorted(r.glob(f"exp012-repos-{t}-*.json")):
         j = json.loads(f.read_text())
-        if j["fin"] <= debut:
-            cand.append((j["fin"], f, j))
-    A.exiger(cand, f"{t} : aucune mesure de la puissance au repos avant un fichier (début {debut:.0f})")
-    _, f, j = max(cand, key=lambda c: c[0])
-    A.exiger(j["git"] == sha and j["secondes_couvertes"] >= 50 and j["puissance_moyenne_w"] is not None
-             and max(x.get("processus_run_grid", 0) for x in j["lectures"]) == 0, f"{f.name} : mesure au repos invalide")
-    return j["puissance_moyenne_w"]
+        ok = (j["git"] == sha and j["secondes_couvertes"] >= 50 and j["puissance_moyenne_w"] is not None
+              and max(x.get("processus_run_grid", 0) for x in j["lectures"]) == 0)
+        if j["fin"] <= debut and ok:
+            cand.append((j["fin"], j))
+    return max(cand, key=lambda c: c[0])[1]["puissance_moyenne_w"] if cand else None
 
 
 def lire_temps(f, moteur, sha):
@@ -182,14 +181,15 @@ def resume_temps(fichiers):
     repos faite avant le fichier ; résumés par la médiane des fichiers, avec le minimum et le maximum."""
     pp = np.array([f["par_plan_s"] for f in fichiers])
     pw = np.array([f["puissance_w"] if f["puissance_w"] is not None else np.nan for f in fichiers])
-    rp = np.array([f["repos_w"] for f in fichiers])
-    en = (pw - rp) * pp
-    p_repos = float(np.median(rp))
+    rp = np.array([f["repos_w"] if f["repos_w"] is not None else np.nan for f in fichiers])
+    en = (pw - rp) * pp                              # nan si la puissance ou le repos manque : énergie indisponible
+    p_repos = None if np.all(np.isnan(rp)) else float(np.nanmedian(rp))
     med = lambda v: None if np.all(np.isnan(v)) else float(np.nanmedian(v))
     return {"fichiers": len(fichiers), "plans": int(sum(f["plans"] for f in fichiers)),
             "appels_ecartes": int(sum(f["appels_ecartes"] for f in fichiers)),
             "par_plan_ms": float(1000 * np.median(pp)), "par_plan_ms_min": float(1000 * pp.min()), "par_plan_ms_max": float(1000 * pp.max()),
-            "puissance_w": med(pw), "puissance_repos_w": p_repos, "energie_par_plan_j": med(en)}
+            "puissance_w": med(pw), "puissance_repos_w": p_repos, "energie_par_plan_j": med(en),
+            "fichiers_sans_energie": int(np.isnan(en).sum())}
 
 
 def analyser(racine, verifier=True):

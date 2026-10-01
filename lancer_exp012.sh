@@ -32,25 +32,23 @@ main() {
   done
 
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite (une grille, ou le lanceur d'une autre expérience
-  #    entre deux de ses étapes), 24 h au plus ; 2. garde de batterie, après la sortie de celle du calcul précédent.
+  #    entre deux de ses étapes), 24 h au plus. EXP-011 attend ce lanceur : aucun autre calcul ne peut démarrer ensuite.
   # une reproduction finale d'un lancement précédent ferait sortir la garde tout de suite : elle est refaite
   rm -rf $R/exp012-fin-pusht $R/exp012-fin-tworoom
   local debut=$(date +%s)
-  while true; do
-    attendre_gpu
-    garde exp012-fin-pusht 1
-    autre_calcul || break
-    echo "[info] un autre calcul a démarré pendant l'attente de la garde, nouvelle attente à $(date '+%H:%M')"
-  done
+  attendre_gpu
   echo "[info] GPU libre, lancement à $(date '+%H:%M')"
 
   local t opts ref g
   for t in pusht tworoom; do
     if [ $t = pusht ]; then opts=($PUSHT); ref=exp003; else opts=($TWOROOM); ref=exp006; fi
     verifier $PY
-    [ $t = pusht ] || garde exp012-fin-$t 1
-    # 3. puissance au repos (aucun calcul de l'expérience), référence de l'énergie par plan
-    $PY -B mesurer_repos.py $R $t 130     # une mesure par lancement, jamais écrasée ; la garde tolère 3 min sans calcul
+    # 2. puissance au repos (aucun calcul en cours), référence de l'énergie par plan : avant la garde de la tâche, qui
+    #    prendrait jusqu'à 3 essais de 130 s pour un calcul arrêté ; une mesure par essai, jamais écrasée
+    $PY -B mesurer_repos.py $R $t 130
+    # 3. garde de batterie de la tâche, après la sortie de celle du calcul précédent ; elle suit tous les calculs
+    #    d'exp012 et sort quand la reproduction finale de la tâche est écrite
+    garde exp012-fin-$t 1
     # 4. reproduction de la pleine précision PyTorch, graine 42 (bloquante, référence de la sentinelle)
     rm -rf $R/exp012-repro-$t
     caffeinate -i $PY run_grid.py --out $R/exp012-repro-$t $opts --n 500 --specs fp32 --seeds 42

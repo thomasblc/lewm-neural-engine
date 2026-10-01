@@ -14,12 +14,23 @@ from pathlib import Path
 
 import coreml_pred as C
 
+def valide(r):
+    """Mêmes critères que l'analyse (analyse_exp012.repos_avant)."""
+    return (r["puissance_moyenne_w"] is not None and r["secondes_couvertes"] >= 50
+            and max(x.get("processus_run_grid", 0) for x in r["lectures"]) == 0)
+
+
 dossier, tache, duree = Path(sys.argv[1]), sys.argv[2], float(sys.argv[3]) if len(sys.argv) > 3 else 130.0
-debut = time.time()
-with C.Puissance() as p:
-    time.sleep(duree)
 sha = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
-r = {"tache": tache, "debut": debut, "fin": time.time(), "duree_s": duree, "git": sha, **p.resume(), "lectures": p.lectures}
-sortie = dossier / f"exp012-repos-{tache}-{int(debut)}.json"
-sortie.write_text(json.dumps(r, indent=1))
-print(f"[repos] {r['puissance_moyenne_w']} W sur {r['secondes_couvertes']} s", flush=True)
+for essai in range(1, 4):                          # jusqu'à 3 essais ; une mesure ratée rend l'énergie indisponible, sans arrêt
+    debut = time.time()
+    with C.Puissance() as p:
+        time.sleep(duree)
+    r = {"tache": tache, "debut": debut, "fin": time.time(), "duree_s": duree, "git": sha, "essai": essai,
+         **p.resume(), "lectures": p.lectures}
+    sortie = dossier / f"exp012-repos-{tache}-{int(debut)}.json"
+    sortie.write_text(json.dumps(r, indent=1))
+    print(f"[repos] essai {essai} : {r['puissance_moyenne_w']} W sur {r['secondes_couvertes']} s, "
+          f"{'valide' if valide(r) else 'INVALIDE'}", flush=True)
+    if valide(r):
+        break

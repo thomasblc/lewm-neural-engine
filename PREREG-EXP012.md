@@ -33,6 +33,12 @@ déjà connues avant l'expérience (EXP-003 et EXP-006) : PushT, écart +0,16 po
 précision ne passeraient donc pas aux niveaux de Holm sous 0,025 : un N2 ou N4 « non soutenu » avec un écart estimé
 au-dessus de -1 point se lit comme « non montré », pas comme une perte. Le lanceur n'attend plus celui d'EXP-011 (qui
 l'attend), pour éviter une attente mutuelle.
+
+Amendement 4 (1er octobre, 14 h 15, avant tout calcul ; dernière relecture des corrections) : la mesure au repos ne
+compte que les vrais calculs run_grid (exécutable python, comme le lanceur), pas une commande qui cite le nom ; elle
+est refaite jusqu'à 3 fois si elle est invalide, avant la garde de batterie de la tâche ; l'énergie est un descriptif :
+sans mesure au repos valide avant un fichier, son énergie est « indisponible » et les tests N1 à N4 ne sont pas
+touchés.
 - Contrôle négatif rapporté : la deuxième série de la pleine précision (graines 47 à 51, déjà calculée) contre la
   première, par le même test. Sensibilité rapportée : référence sur la moyenne des 10 graines. La décision reste sur
   la référence à 5 graines (choix d'origine).
