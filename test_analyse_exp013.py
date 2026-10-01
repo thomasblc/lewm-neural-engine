@@ -62,7 +62,7 @@ def puissance(nom):
 
 def lignes_vision(debut, fin, cadence, lat=10.0, retard_tous=0, cible=0.0):
     """Lignes de 5 s d'une charge de vision ; cadence(t) en images par seconde ; une image sur retard_tous en retard."""
-    L, t, k = [{"pret": debut - 1.0, "ips_cible": cible}], debut, 0
+    L, t, k = [{"pret": debut, "ips_cible": cible}], debut, 0
     while t < fin:
         t1 = min(t + 5, fin)
         fins, x = [], t
