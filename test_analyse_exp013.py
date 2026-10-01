@@ -274,7 +274,9 @@ def test_signalements(tmp, r):
         s = A13.analyser(rr, verifier=False)["signalements"]
         assert any(attendu in x for x in s), (attendu, s)
     tps = lambda d: f"{d}/fp32_s42.temps.json"
-    essai("trajectoires différentes du run sans vision", champ("exp013-coreml-ne-vision-r2", "start_steps", lambda x: x["start_steps"] + 1))
+    essai("trajectoires différentes d'une répétition à l'autre", champ("exp013-coreml-ne-vision-r2", "start_steps", lambda x: x["start_steps"] + 1))
+    essai("trajectoires différentes du run sans vision", *[champ(f"exp013-coreml-ne-vision-r{k}", "start_steps", lambda x: x["start_steps"] + 1)
+                                                            for k in (1, 2, 3)])
     essai("GPU à", json_mod(tps("exp013-ne-complet-r2"), lambda j: j["energie_puce"]["joules_solve"].update(
         {"GPU Energy": j["energie_puce"]["joules_solve"]["GPU Energy"] + 0.5 * sum(a for a, _ in j["appels_solve"])})))
     essai("alerte thermique", json_mod(tps("exp013-coreml-gpu-r3"), lambda j: j["lectures"][2].update(thermique="CPU_Speed_Limit = 80")))
