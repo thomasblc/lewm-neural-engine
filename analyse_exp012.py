@@ -243,7 +243,7 @@ def rapport(r):
             L.append(f"- Attention, {n} : la borne inférieure et le verdict ne concordent pas (l'inversion de signe décide).")
     L.append("- Erreur de Monte-Carlo des p : " + " ; ".join(
         f"{n} {x['erreur_mc_p_signe']:.4f} (signe), {x['erreur_mc_p_bootstrap_t']:.4f} (bootstrap-t)" for n, x in r["tests"].items()))
-    L += ["", "Contrôle négatif (deuxième série de la pleine précision, graines 47 à 51, contre 42 à 46) :"]
+    L += ["", "Contrôle de la marge (deux séries de la pleine précision, graines 47 à 51 contre 42 à 46, écart vrai nul) :"]
     for k, c in r["controle_negatif"].items():
         L.append(f"- {k} : écart {t(c['ecart_points'])} points, p signe {c['p_signe']:.4f}, p bootstrap-t {c['p_bootstrap_t']:.4f}")
     L += ["", "Sensibilité, référence sur les 10 graines de la pleine précision :"]

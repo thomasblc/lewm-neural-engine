@@ -143,7 +143,7 @@ def test_scenario_a(tmp):
         assert res["tests"][nom]["borne_inferieure_points"] == 0.0 and res["tests"][nom]["borne_et_verdict_concordent"]
     niv = A12.niveaux_holm([0.02, 0.03, 0.03, 0.04])         # Holm s'arrête au premier test : tous au niveau 0,0125
     assert niv == [0.0125] * 4 and A12.niveaux_holm([0.001, 0.5, 0.01, 0.02]) == [0.0125, 0.05 / 1, 0.05 / 3, 0.05 / 2]
-    assert "Contrôle négatif" in A12.rapport(res)
+    assert "Contrôle de la marge" in A12.rapport(res)
     print("ok scénario A : 4 hypothèses soutenues, contrôle négatif et sensibilité recomptés, temps et énergie au-dessus "
           "du repos recomptés, appel allongé par une pause écarté")
     return r

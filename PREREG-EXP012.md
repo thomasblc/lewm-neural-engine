@@ -25,6 +25,14 @@ Amendement 2 (1er octobre, 13 h 55, avant tout calcul ; relecture des correction
 - Temps par plan : somme des durées des appels de solve, divisée par le nombre de plans (pas la durée du fichier).
 - Reproductions finales d'un lancement précédent effacées au lancement (la garde de batterie ne sort pas trop tôt).
 - Les descriptifs de la section « Tests » ci-dessous sont remplacés par ceux des amendements 1 et 2.
+
+Amendement 3 (1er octobre, 14 h 05, avant tout calcul) : le « contrôle négatif » de l'amendement 1 est un contrôle de
+la marge (deux séries de la pleine précision, écart vrai nul : le test doit conclure), sans décision attachée. Valeurs
+déjà connues avant l'expérience (EXP-003 et EXP-006) : PushT, écart +0,16 point, p 0,0006 (signe) et 0,0004
+(bootstrap-t) ; TwoRoom, écart -0,92 point, p 0,0228 et 0,0249. Sur TwoRoom, deux séries de 5 graines de la même pleine
+précision ne passeraient donc pas aux niveaux de Holm sous 0,025 : un N2 ou N4 « non soutenu » avec un écart estimé
+au-dessus de -1 point se lit comme « non montré », pas comme une perte. Le lanceur n'attend plus celui d'EXP-011 (qui
+l'attend), pour éviter une attente mutuelle.
 - Contrôle négatif rapporté : la deuxième série de la pleine précision (graines 47 à 51, déjà calculée) contre la
   première, par le même test. Sensibilité rapportée : référence sur la moyenne des 10 graines. La décision reste sur
   la référence à 5 graines (choix d'origine).
