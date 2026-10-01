@@ -84,8 +84,26 @@ def convertir(model, moteur, chemin):
     m = ct.models.MLModel(str(chemin), compute_units=cu)
     info = {"moteur": moteur, "disposition": disp or "origine", "precision": "float16", "lot": LOT, "t_fixe": T_FIXE,
             "coremltools": ct.__version__, "macos": platform.mac_ver()[0], "fichier": chemin.name,
-            "sha256_poids": _empreinte(chemin)}
+            "sha256_poids": _empreinte(chemin), "placement": placement(m, cu)}
     return m, info
+
+
+def placement(m, cu):
+    """Processeur préféré par Core ML pour chaque opération du modèle chargé (plan de calcul, sans exécution) :
+    nombre d'opérations par processeur. Un placement indisponible n'arrête pas le calcul."""
+    try:
+        from coremltools.models.compute_plan import MLComputePlan
+        plan = MLComputePlan.load_from_path(path=m.get_compiled_model_path(), compute_units=cu)
+        comptes = {}
+        for fn in plan.model_structure.program.functions.values():
+            for op in fn.block.operations:
+                u = plan.get_compute_device_usage_for_mlprogram_operation(op)
+                if u is not None:
+                    k = type(u.preferred_compute_device).__name__.replace("ML", "").replace("ComputeDevice", "")
+                    comptes[k] = comptes.get(k, 0) + 1
+        return comptes
+    except Exception as e:  # noqa: BLE001
+        return {"indisponible": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
 def brancher(model, moteur, chemin):
@@ -113,9 +131,11 @@ def brancher(model, moteur, chemin):
 
 
 class Puissance:
-    """Échantillonne la puissance consommée par le Mac (SystemLoad des capteurs de la batterie, en W) toutes les
-    2 s dans un fil à part. Mesure grossière, de tout le système : sert à comparer des moteurs dans les mêmes
-    conditions, pas à donner une énergie absolue."""
+    """Lit la puissance consommée par le Mac (SystemLoad des capteurs de la batterie, en W) toutes les 2 s dans un
+    fil à part. Mesure grossière, de tout le système : sert à comparer des moteurs dans les mêmes conditions, pas à
+    donner une énergie absolue. Le capteur ne se met à jour qu'environ toutes les 20 s : les lectures successives ne
+    sont pas indépendantes, et les premières d'un fichier peuvent encore refléter le calcul précédent (la médiane
+    sur un fichier de plusieurs minutes n'en dépend presque pas)."""
 
     def __init__(self, pas=2.0):
         self.pas, self.w, self._stop = pas, [], threading.Event()
@@ -151,7 +171,9 @@ class Puissance:
 
 def chronometrer(solver, temps):
     """Ajoute à la liste temps, pour chaque appel de solve (tous les épisodes encore en cours d'un paquet, planifiés
-    l'un après l'autre), le couple (durée en s, nombre de plans) ; temps par plan = durée / nombre."""
+    l'un après l'autre, 12 à 50 plans), le couple (durée en s, nombre de plans) ; temps moyen par plan de l'appel =
+    durée / nombre. Une pause de la garde de batterie (SIGSTOP) tombe dans la durée de l'appel en cours : à résumer
+    par la médiane des appels, pas par la moyenne."""
     solve = solver.solve
 
     def solve_chrono(*a, **k):

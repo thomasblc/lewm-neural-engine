@@ -33,7 +33,9 @@ PUISS = {"torch": 84.0, "ne": 93.0, "gpu": 66.0}
 def ecrire_temps(f, moteur, cle, g):
     rng = np.random.default_rng(g)
     tp = list(TEMPS[cle] + 0.01 * rng.standard_normal(100))
-    f.with_suffix(".temps.json").write_text(json.dumps({"moteur": moteur, "temps_par_plan_s": tp,
+    place = {"ne": {"NeuralEngine": 361}, "gpu": {"GPU": 197}, "torch": None}[cle]
+    f.with_suffix(".temps.json").write_text(json.dumps({"moteur": moteur, "temps_par_plan_s": tp, "plans": 600,
+                                                        "coreml": {"placement": place} if place else {},
                                                         "puissance_w": [PUISS[cle]] * 20, "git": TETE}))
 
 
@@ -103,7 +105,8 @@ def test_scenario_a(tmp):
             s = d["temps"][m]
             assert abs(s["mediane_ms"] / 1000 - TEMPS[m]) < 0.005 and s["puissance_mediane_w"] == PUISS[m], (t, m, s)
             assert abs(s["energie_par_plan_j"] - PUISS[m] * s["mediane_ms"] / 1000) < 1e-9
-        assert d["temps"]["ne"]["plans"] == 500 and d["temps"]["torch"]["plans"] == 100
+        assert d["temps"]["ne"]["appels"] == 500 and d["temps"]["ne"]["plans"] == 3000 and d["temps"]["torch"]["plans"] == 600
+        assert d["temps"]["ne"]["placement"] == {"NeuralEngine": 361} and d["temps"]["torch"]["placement"] is None
     assert "Neural Engine moins GPU" in A12.rapport(res)
     print("ok scénario A : 4 hypothèses soutenues, temps, puissance et énergie recomptés")
     return r
@@ -170,7 +173,9 @@ def test_refus(tmp, r):
                                              temps("exp012-gpu-tworoom", "fp32_s45.temps.json", lambda j: j.update(git="b" * 40))(rr))),
            ("fichier de temps", champ("exp012-ne-pusht", "fp32_s46.npz", "git", lambda x: np.str_("d" * 40))),
            ("fichier de temps", temps("exp012-ne-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="torch"))),
-           ("reproduction pusht : moteur", temps("exp012-repro-pusht", "fp32_s42.temps.json", lambda j: j.update(moteur="coreml-ne")))]
+           ("reproduction pusht : moteur", temps("exp012-repro-pusht", "fp32_s42.temps.json", lambda j: j.update(moteur="coreml-ne"))),
+           ("aucune opération placée sur le Neural Engine", temps("exp012-ne-tworoom", "fp32_s46.temps.json",
+                                                                  lambda j: j.update(coreml={"placement": {"CPU": 361}})))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")

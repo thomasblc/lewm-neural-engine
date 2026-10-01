@@ -403,12 +403,16 @@ def main():
             np.savez_compressed(tmp, spec=spec, seed=seed, n_couches=len(touches), git=sha, git_sale=sale,
                                 positions=np.arange(args.n), episodes_idx=np.array(ep_all), start_steps=np.array(st_all),
                                 chunk=args.chunk, **extra, **data)
-            os.replace(tmp, f)
-            # temps et puissance à part : les fichiers .npz du moteur torch restent identiques à ceux d'EXP-003
-            f.with_suffix(".temps.json").write_text(json.dumps({
+            # temps et puissance à part : les fichiers .npz du moteur torch restent identiques à ceux d'EXP-003 ;
+            # écrits avant le .npz, si bien qu'un .npz présent a toujours son fichier de temps
+            ft = f.with_suffix(".temps.json")
+            ft_tmp = f.with_suffix(".temps.tmp.json")
+            ft_tmp.write_text(json.dumps({
                 "moteur": args.moteur, "coreml": moteur, "appels_solve": temps,
                 "temps_par_plan_s": [d / n for d, n in temps if n > 0], "plans": sum(n for _, n in temps),
                 "puissance_w": puissance.w, "duree_s": time.time() - t0, "git": sha}, indent=1))
+            os.replace(ft_tmp, ft)
+            os.replace(tmp, f)
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "
                   f"({time.time() - t0:.0f} s)", flush=True)
 
