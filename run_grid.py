@@ -348,6 +348,8 @@ def main():
                                    "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
     if args.calibrer_gptq:
         protocole["calibration_gptq"] = True
+    if args.moteur == "ne-complet" and args.device != "cpu":
+        sys.exit("ne-complet : la CEM tourne sur le CPU, lancer avec --device cpu")
     if args.moteur == "torch-fp16":                           # EXP-013, absent des protocoles précédents
         protocole["moteur"] = {"nom": args.moteur, "macos": platform.mac_ver()[0], "precision": "float16 (autocast)"}
     elif args.moteur != "torch":                              # absent des protocoles précédents

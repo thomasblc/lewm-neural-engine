@@ -18,8 +18,8 @@ import vitesse as V
 
 COMPOSANTS = ("CPU Energy", "GPU Energy", "ANE", "DRAM")
 NOMS = {"CPU Energy": "CPU", "GPU Energy": "GPU", "ANE": "Neural Engine", "DRAM": "mémoire"}
-PLACEMENT = {"coreml-ne": "NeuralEngine", "coreml-gpu": "GPU"}
-FICHIERS_ANALYSE = ("analyse_exp013.py", "vitesse.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "energie_puce.py",
+PLACEMENT = {"coreml-ne": "NeuralEngine", "coreml-gpu": "GPU", "ne-complet": "NeuralEngine"}
+FICHIERS_ANALYSE = ("analyse_exp013.py", "vitesse.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "encodeur_ane.py", "energie_puce.py",
                     "repos_puce.py", "charge_vision.py", "quant.py", "PREREG-EXP013.md")
 ICI = Path(__file__).resolve().parent
 
@@ -124,7 +124,26 @@ def analyser(racine, verifier=True):
                     "octets_poids": lignes[0]["octets_poids"]}
     seule = resume([vision_pendant(lire_jsonl(r / f"exp013-vision-seule-r{rep}.jsonl"), 0, 1e12) for rep in range(1, V.REPETITIONS + 1)])
     return {"controles": {"commit": sha}, "configurations": res, "vision_seule_ips": seule,
-            "repos_w": {f"r{k}": v for k, v in repos.items()}}
+            "repos_w": {f"r{k}": v for k, v in repos.items()}, "reussite_ne_complet": reussite(r, sha)}
+
+
+def reussite(r, sha):
+    """Contrôle du planificateur hors du GPU sur les 500 épisodes d'EXP-003 : moyenne sur ses graines contre la pleine
+    précision d'EXP-003 (5 graines), par épisode (mêmes épisodes ; tirages de la CEM différents, sur le CPU), IC bootstrap."""
+    m, graines = V.REUSSITE
+    d = r / f"exp013-{m}-reussite"
+    ref = dict(np.load(r / "exp003" / "fp32_s42.npz"))
+    S = []
+    for g in graines:
+        x = dict(np.load(d / f"fp32_s{g}.npz"))
+        A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"{d.name} graine {g} : autre commit ou arbre modifié")
+        for k in ("episodes_idx", "start_steps", "init_state", "goal_state"):
+            A.exiger(np.array_equal(x[k], ref[k]), f"{d.name} graine {g} : {k} différent d'EXP-003")
+        A.controler_course(x, f"{d.name} graine {g}")
+        S.append(x["success"].astype(np.float64))
+    f = np.mean([np.load(r / "exp003" / f"fp32_s{g}.npz")["success"].astype(np.float64) for g in (42, 43, 44, 45, 46)], axis=0)
+    ecart = np.mean(S, axis=0) - f
+    return {"reussite": float(np.mean(S)), "reussite_fp32_exp003": float(f.mean()), "ecart": A.Bootstrap(n=500).ic(ecart)}
 
 
 def rapport(r):
@@ -139,6 +158,10 @@ def rapport(r):
         L.append(f"| {nom} | {f(c['temps_par_plan_ms'])} | {f(c['energie_puce_par_plan_j'], 2)} | {f(c['energie_GPU_j'], 2)} | "
                  f"{f(c['energie_Neural Engine_j'], 2)} | {f(c['energie_CPU_j'], 2)} | {f(c['vision_ips'], 1)} | {mo} | {f(c['succes'], 0, 100)} % |")
     L += ["", f"Vision seule : {f(r['vision_seule_ips'], 1)} images/s."]
+    rn = r["reussite_ne_complet"]
+    L += ["", f"Contrôle de réussite du planificateur entièrement sur le Neural Engine (500 épisodes d'EXP-003, 2 graines) : "
+          f"{100 * rn['reussite']:.1f} % contre {100 * rn['reussite_fp32_exp003']:.1f} % en pleine précision PyTorch, écart "
+          f"{A.ic_txt(rn['ecart'], 100, 1)} points (tirages de la CEM différents : sur le CPU)."]
     return "\n".join(L) + "\n"
 
 

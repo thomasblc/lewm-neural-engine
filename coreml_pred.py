@@ -28,7 +28,7 @@ import torch.nn.functional as F
 
 import predicteur_ane as P
 
-MOTEURS = ("torch", "torch-fp16", "coreml-gpu", "coreml-ne")
+MOTEURS = ("torch", "torch-fp16", "coreml-gpu", "coreml-ne", "ne-complet")
 CODAGES = ("fp16", "int8", "int4b32", "pal4")      # EXP-013 : codage des poids dans Core ML
 
 
@@ -138,10 +138,74 @@ def placement(m, cu):
         return {"indisponible": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
+def _module_coreml(module, entrees, chemin, cu, codage):
+    """Convertit un module (formes fixes, entrées {nom: tenseur}) en Core ML 16 bits avec le codage demandé ; rend le
+    MLModel chargé sur cu et les empreintes, la taille des poids et le placement."""
+    import coremltools as ct
+    with torch.no_grad():
+        trace = torch.jit.trace(module, tuple(entrees.values()))
+    ml = ct.convert(trace, inputs=[ct.TensorType(name=n, shape=tuple(t.shape)) for n, t in entrees.items()],
+                    convert_to="mlprogram", compute_precision=ct.precision.FLOAT16,
+                    minimum_deployment_target=ct.target.macOS15, skip_model_load=True)
+    ml = comprimer(ml, codage)
+    chemin = Path(chemin)
+    shutil.rmtree(chemin, ignore_errors=True)
+    ml.save(str(chemin))
+    m = ct.models.MLModel(str(chemin), compute_units=cu)
+    return m, {"sha256_poids": _empreinte(chemin), "sha256_modele": _empreinte_modele(m), "placement": placement(m, cu),
+               "octets_poids": sum(x.stat().st_size for x in chemin.rglob("weight.bin"))}
+
+
+def brancher_complet(model, chemin, codage="fp16"):
+    """EXP-013, moteur ne-complet : tout le world model sur le Neural Engine (prédicteur réécrit « 1ctb », encodeur
+    d'images réécrit en (B, C, 1, S) et encodeur d'actions réécrit, encodeur_ane.py), la CEM et le coût sur le CPU (le
+    calcul run_grid doit tourner avec --device cpu). L'encodeur d'images n'est appelé que 2 fois par plan (but et
+    observation de départ, gardés en cache par le modèle) ; l'encodeur d'actions une fois par itération."""
+    import coremltools as ct
+    import encodeur_ane as E
+    assert next(model.parameters()).device.type == "cpu", "ne-complet : modèle sur le CPU (--device cpu)"
+    cu = ct.ComputeUnit.CPU_AND_NE
+    m_pred, info = convertir(model, "coreml-ne", Path(str(chemin) + "-predicteur.mlpackage"), codage)
+    g = torch.Generator().manual_seed(0)
+    m_enc, i_enc = _module_coreml(E.CoeurEncodeurANE(model).eval(), {"pixels": torch.randn(1, 3, E.TAILLE, E.TAILLE, generator=g)},
+                                  Path(str(chemin) + "-encodeur.mlpackage"), cu, codage)
+    nb = model.action_encoder.patch_embed.in_channels
+    m_act, i_act = _module_coreml(E.CoeurActionsANE(model).eval(), {"act": torch.randn(1, nb, E.T_ACTIONS, E.LOT_ACTIONS, generator=g)},
+                                  Path(str(chemin) + "-actions.mlpackage"), cu, codage)
+    disp = info["disposition"]
+
+    def predict(emb, act_emb):
+        B, T, _ = emb.shape
+        assert B == LOT and T <= T_FIXE, (B, T)
+        if T < T_FIXE:
+            emb = F.pad(emb, (0, 0, 0, T_FIXE - T))
+            act_emb = F.pad(act_emb, (0, 0, 0, T_FIXE - T))
+        e, a = P.vers_disposition(emb.detach().float().numpy(), disp), P.vers_disposition(act_emb.detach().float().numpy(), disp)
+        y = P.depuis_disposition(list(m_pred.predict({"emb": np.ascontiguousarray(e), "act": np.ascontiguousarray(a)}).values())[0], disp)
+        return torch.from_numpy(np.ascontiguousarray(y[:, :T], dtype=np.float32))
+
+    model.predict = predict
+    model.action_encoder.forward = E.actions_coreml(m_act)
+    model.encode = E.encode_coreml(model, m_enc)
+    placements = {}
+    for d in (info["placement"], i_enc["placement"], i_act["placement"]):
+        for k, v in d.items():
+            placements[k] = placements.get(k, 0) + v
+    return {"moteur": "ne-complet", "disposition": "1ctb, (B, C, 1, S), 1ctb", "precision": "float16", "codage": codage,
+            "coremltools": info["coremltools"], "macos": info["macos"], "fichier": Path(chemin).name,
+            "sha256_poids": "|".join(x["sha256_poids"] for x in (info, i_enc, i_act)),
+            "sha256_modele": "|".join(x["sha256_modele"] for x in (info, i_enc, i_act)),
+            "placement": placements, "placement_par_modele": {"predicteur": info["placement"], "encodeur": i_enc["placement"],
+                                                               "actions": i_act["placement"]},
+            "octets_poids": info["octets_poids"] + i_enc["octets_poids"] + i_act["octets_poids"]}
+
+
 def brancher(model, moteur, chemin, codage="fp16"):
     """Remplace model.predict par l'appel Core ML. Rend la description (vide pour les moteurs PyTorch)."""
     if moteur in ("torch", "torch-fp16"):
         return {}
+    if moteur == "ne-complet":
+        return brancher_complet(model, str(chemin).removesuffix(".mlpackage"), codage)
     m, info = convertir(model, moteur, chemin, codage)
     disp = None if info["disposition"] == "origine" else info["disposition"]
 

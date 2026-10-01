@@ -27,7 +27,7 @@ REPOS = {"CPU Energy": 2.0, "GPU Energy": 1.0, "ANE": 0.0, "DRAM": 0.5}         
 
 def puissance(nom):                                    # W pendant le run, par composant
     gpu = 30.0 if "torch" in nom or "coreml-gpu" in nom else 1.0
-    ane = 4.0 if "coreml-ne" in nom else 0.0
+    ane = 4.0 if "coreml-ne" in nom or "ne-complet" in nom else 0.0
     return {"CPU Energy": 6.0, "GPU Energy": gpu + (20.0 if nom.endswith("-vision") else 0.0), "ANE": ane, "DRAM": 1.5}
 
 
@@ -63,8 +63,8 @@ def fabriquer(racine):
             duree = 120.0
             j = {k: w * duree for k, w in puissance(nom).items()}
             coreml = {}
-            if nom.startswith("coreml"):
-                coreml = {"placement": {"NeuralEngine" if "coreml-ne" in nom else "GPU": 300},
+            if nom.startswith("coreml") or nom.startswith("ne-complet"):
+                coreml = {"placement": {"GPU" if "coreml-gpu" in nom else "NeuralEngine": 300},
                           "octets_poids": {"int8": 11e6, "int4b32": 6e6, "pal4": 5.5e6}.get(nom.split("-")[2] if nom.count("-") >= 2 and "vision" not in nom else "", 21.5e6)}
             (d / "fp32_s42.temps.json").write_text(json.dumps({
                 "moteur": nom.replace("-vision", "").rsplit("-int", 1)[0].rsplit("-pal", 1)[0], "git": TETE, "appels_solve": appels,
@@ -73,6 +73,12 @@ def fabriquer(racine):
                 lv = [{"t0": t + 5 * i, "t1": t + 5 * (i + 1), "images": 300 if "coreml-ne" in nom else 200} for i in range(24)]
                 (r / f"exp013-vision-{nom}-r{rep}.jsonl").write_text("\n".join(json.dumps(x) for x in lv) + "\n")
             t += 150
+    shutil.copytree(RES / "exp003", r / "exp003", ignore=shutil.ignore_patterns("*.log", "all-*", "encoder-*", "predictor-*"))
+    (r / "exp013-ne-complet-reussite").mkdir()
+    for g, src in ((42, "fp32_s47"), (43, "fp32_s48")):          # deux graines de la pleine précision : écart connu
+        x = dict(np.load(r / "exp003" / f"{src}.npz"))
+        x.update(git=np.str_(TETE), git_sale=np.bool_(False))
+        np.savez_compressed(r / "exp013-ne-complet-reussite" / f"fp32_s{g}.npz", **x)
     (r / "exp013-fin").mkdir()
     x = dict(np.load(pil))
     x.update(git=np.str_(TETE), git_sale=np.bool_(False))
@@ -94,6 +100,11 @@ def test_valeurs(tmp):
     assert abs(res["vision_seule_ips"]["mediane"] - 100.0) < 1e-9
     assert c["coreml-ne-int8"]["octets_poids"] == 11e6 and c["torch"]["vision_ips"] is None
     assert "Vision seule" in A13.rapport(res)
+    f5 = np.mean([np.load(r / "exp003" / f"fp32_s{g}.npz")["success"].astype(float) for g in (42, 43, 44, 45, 46)], axis=0)
+    n2 = np.mean([np.load(r / "exp003" / f"fp32_s{g}.npz")["success"].astype(float) for g in (47, 48)], axis=0)
+    rn = res["reussite_ne_complet"]
+    assert abs(rn["ecart"]["moyenne"] - (n2 - f5).mean()) < 1e-12 and abs(rn["reussite"] - n2.mean()) < 1e-12
+    assert c["ne-complet"]["energie_Neural Engine_j"]["mediane"] > 0 and c["ne-complet-vision"]["vision_ips"]["mediane"] == 40.0
     print("ok valeurs : temps (appel allongé écarté), énergie au-dessus du repos, vision, poids")
     return r
 
@@ -137,7 +148,10 @@ def test_refus(tmp, r):
                                              json_mod("exp013-torch-fp16-r1/fp32_s42.temps.json", lambda j: j.update(git="b" * 40))(rr))),
            ("fichier de temps", json_mod("exp013-coreml-gpu-int8-r3/fp32_s42.temps.json", lambda j: j.update(energie_puce=None))),
            ("arbre modifié", champ("exp013-coreml-ne-int8-r1", "git_sale", lambda x: np.bool_(True))),
-           ("configurations différentes", json_mod("exp013-ordre.json", lambda j: j.update(configs=j["configs"][:5])))]
+           ("configurations différentes", json_mod("exp013-ordre.json", lambda j: j.update(configs=j["configs"][:5]))),
+           ("init_state différent d'EXP-003", champ("exp013-ne-complet-reussite", "init_state", lambda x: x["init_state"] + 1) if False else
+            (lambda rr: (lambda f: np.savez_compressed(f, **{**dict(np.load(f)), "init_state": np.load(f)["init_state"] + 1}))(rr / "exp013-ne-complet-reussite" / "fp32_s43.npz"))),
+           ("hors du processeur demandé", json_mod("exp013-ne-complet-r2/fp32_s42.temps.json", lambda j: j["coreml"].update(placement={"NeuralEngine": 200, "GPU": 5})))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")

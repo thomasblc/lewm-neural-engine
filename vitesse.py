@@ -21,8 +21,9 @@ import numpy as np
 PY = sys.executable
 SANS_CHARGE = [("torch", "fp16"), ("torch-fp16", "fp16"), ("coreml-gpu", "fp16"), ("coreml-ne", "fp16"),
                ("coreml-gpu", "int8"), ("coreml-gpu", "int4b32"), ("coreml-gpu", "pal4"),
-               ("coreml-ne", "int8"), ("coreml-ne", "int4b32"), ("coreml-ne", "pal4")]
-AVEC_CHARGE = [("torch", "fp16"), ("coreml-gpu", "fp16"), ("coreml-ne", "fp16")]
+               ("coreml-ne", "int8"), ("coreml-ne", "int4b32"), ("coreml-ne", "pal4"), ("ne-complet", "fp16")]
+AVEC_CHARGE = [("torch", "fp16"), ("coreml-gpu", "fp16"), ("coreml-ne", "fp16"), ("ne-complet", "fp16")]
+REUSSITE = ("ne-complet", (42, 43))              # contrôle de réussite du planificateur hors du GPU, 500 épisodes
 REPETITIONS = 3
 
 
@@ -36,13 +37,13 @@ def dire(*a):
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
-def run(racine, dossier, moteur, codage):
-    f = racine / dossier / "fp32_s42.npz"
-    if f.exists():
+def run(racine, dossier, moteur, codage, n=50, graines=(42,)):
+    if all((racine / dossier / f"fp32_s{g}.npz").exists() for g in graines):
         dire(f"[saut] {dossier}")
         return
-    cmd = [PY, "run_grid.py", "--out", str(racine / dossier), "--n", "50", "--chunk", "50", "--specs", "fp32",
-           "--seeds", "42", "--moteur", moteur, "--energie-puce"] + ([] if moteur.startswith("torch") else ["--codage", codage])
+    cmd = [PY, "run_grid.py", "--out", str(racine / dossier), "--n", str(n), "--chunk", "50", "--specs", "fp32",
+           "--seeds", *map(str, graines), "--moteur", moteur, "--energie-puce"] + \
+        ([] if moteur.startswith("torch") else ["--codage", codage]) + (["--device", "cpu"] if moteur == "ne-complet" else [])
     dire(f"[run] {dossier}")
     subprocess.run(["caffeinate", "-i"] + cmd, check=True, stdout=subprocess.DEVNULL)
 
@@ -100,6 +101,8 @@ def main():
                     arreter(p)
             else:
                 run(racine, dossier, m, c)
+    m, graines = REUSSITE
+    run(racine, f"exp013-{m}-reussite", m, "fp16", n=500, graines=graines)
     run(racine, "exp013-fin", "torch", "fp16")
     ref = racine / "pilote-exp012" / "torch" / "fp32_s42.npz"
     torch_runs = [racine / f"exp013-torch-r{r}" / "fp32_s42.npz" for r in range(1, REPETITIONS + 1)] + [racine / "exp013-fin" / "fp32_s42.npz"]
