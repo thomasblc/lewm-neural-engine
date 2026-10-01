@@ -64,7 +64,7 @@ def test_sequences(tmp):
     assert abs(res["descriptifs"]["all:4:gptq"]["ecart_reussite"]["moyenne"]) < 1e-12 and "T4" in A10.rapport(res)
     r2 = fabriquer(Path(tmp) / "b", {"all:4:gptq": "all-6", "all:3:gptq": "fp32"})
     res2 = A10.analyser(r2, verifier=False)
-    assert [res2["tests"][n]["verdict"] for n in ("T1", "T2", "T3", "T4")] == \\
+    assert [res2["tests"][n]["verdict"] for n in ("T1", "T2", "T3", "T4")] == \
         ["établie", "non établie", "non testée (séquence arrêtée)", "non testée (séquence arrêtée)"], res2["tests"]
     print("ok séquence : p recomptés en numpy ; T1 à T3 établies et T4 non (6 bits, -1,26 point) ; arrêt après un échec")
     return r
