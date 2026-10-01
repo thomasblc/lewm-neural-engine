@@ -20,6 +20,7 @@ Usage :
 """
 import argparse
 import hashlib
+import platform
 import json
 import os
 import subprocess
@@ -46,6 +47,7 @@ from stable_worldmodel.world.world import _apply_callables, _extract_init_goal  
 from torchvision.transforms import v2 as transforms  # noqa: E402
 
 from quant import GROUPES, quantifier  # noqa: E402
+import coreml_pred  # noqa: E402
 
 # ce que chaque tâche enregistre : dimension de l'état, clés de départ et de but (configs de le-wm/config/eval)
 TACHES = {"pusht": {"dim": 7, "depart": "state", "but": "goal_state", "pusht": True},
@@ -312,6 +314,8 @@ def main():
     ap.add_argument("--cem-iter", type=int, default=None, help="itérations de la CEM par plan (défaut 30)")
     ap.add_argument("--calibrer-gptq", action="store_true", help="EXP-009 : calibre GPTQ au lieu d'évaluer")
     ap.add_argument("--gptq-calib", default=None, help="EXP-009 : statistiques de calibration pour les versions :gptq")
+    ap.add_argument("--moteur", choices=("torch", "coreml-gpu", "coreml-ne"), default="torch",
+                    help="EXP-012 : prédicteur en PyTorch (défaut) ou en Core ML 16 bits sur le GPU ou le Neural Engine")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
@@ -341,6 +345,10 @@ def main():
                                    "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
     if args.calibrer_gptq:
         protocole["calibration_gptq"] = True
+    if args.moteur != "torch":                                # absent des protocoles précédents
+        import coremltools
+        protocole["moteur"] = {"nom": args.moteur, "coremltools": coremltools.__version__,
+                               "macos": platform.mac_ver()[0], "precision": "float16"}
     if args.replan is not None or args.cem_iter is not None:  # absent des protocoles précédents
         protocole["planification"] = {"receding_horizon": int(cfg.plan_config.receding_horizon),
                                       "cem_n_steps": int(cfg.solver.n_steps)}
@@ -374,14 +382,16 @@ def main():
             model = model.to(args.device).eval()
             model.requires_grad_(False)
             model.interpolate_pos_encoding = True
-            recs = []
-            for c in range(args.n // args.chunk):
-                sl = slice(c * args.chunk, (c + 1) * args.chunk)
-                solver = CEMParEpisode(model=model, graine=seed, **solver_kw)
-                policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
-                                                     process=process, transform=transform)
-                world.set_policy(policy)
-                recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache))
+            moteur = coreml_pred.brancher(model, args.moteur, out / f"{f.stem}.mlpackage")   # {} pour torch
+            recs, temps = [], []
+            with coreml_pred.Puissance() as puissance:
+                for c in range(args.n // args.chunk):
+                    sl = slice(c * args.chunk, (c + 1) * args.chunk)
+                    solver = coreml_pred.chronometrer(CEMParEpisode(model=model, graine=seed, **solver_kw), temps)
+                    policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
+                                                         process=process, transform=transform)
+                    world.set_policy(policy)
+                    recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache))
             data = {}
             for k in recs[0]:
                 if k in ("init_state", "goal_state") or recs[0][k].ndim < 2:
@@ -389,10 +399,16 @@ def main():
                 else:
                     data[k] = np.concatenate([r[k] for r in recs], axis=1)
             tmp = f.with_suffix(".tmp.npz")
+            extra = {"moteur": args.moteur, "coreml_sha256": moteur["sha256_poids"]} if moteur else {}
             np.savez_compressed(tmp, spec=spec, seed=seed, n_couches=len(touches), git=sha, git_sale=sale,
                                 positions=np.arange(args.n), episodes_idx=np.array(ep_all), start_steps=np.array(st_all),
-                                chunk=args.chunk, **data)
+                                chunk=args.chunk, **extra, **data)
             os.replace(tmp, f)
+            # temps et puissance à part : les fichiers .npz du moteur torch restent identiques à ceux d'EXP-003
+            f.with_suffix(".temps.json").write_text(json.dumps({
+                "moteur": args.moteur, "coreml": moteur, "appels_solve": temps,
+                "temps_par_plan_s": [d / n for d, n in temps if n > 0], "plans": sum(n for _, n in temps),
+                "puissance_w": puissance.w, "duree_s": time.time() - t0, "git": sha}, indent=1))
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "
                   f"({time.time() - t0:.0f} s)", flush=True)
 
