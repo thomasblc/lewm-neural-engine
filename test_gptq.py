@@ -12,14 +12,14 @@ import quant
 def test_identite_egale_rtn():
     """Avec H proportionnelle à l'identité, GPTQ ne propage aucune erreur : il doit redonner RTN exactement."""
     g = torch.Generator().manual_seed(0)
-    for bits in (3, 4, 8):
+    for bits in (2, 3, 4, 8):
         w = torch.randn(64, 300, generator=g, dtype=torch.float64)
         q = gptq.gptq_couche(w, 3.7 * torch.eye(300, dtype=torch.float64), bits)
         assert torch.equal(q, gptq.rtn(w, bits)), bits
     # et gptq.rtn est bien le RTN de quant.py (même grille, même échelle)
     w32 = torch.randn(64, 300, generator=g)
     assert torch.equal(gptq.rtn(w32, 4), quant.rtn_par_canal(w32, 4))
-    print("ok H = identité : GPTQ redonne RTN exactement (3, 4, 8 bits) ; même RTN que quant.py")
+    print("ok H = identité : GPTQ redonne RTN exactement (2, 3, 4, 8 bits) ; même RTN que quant.py")
 
 
 def test_grille():
@@ -43,7 +43,7 @@ def test_erreur_plus_faible():
     xc = torch.randn(20000, 256, generator=g, dtype=torch.float64) @ A
     xt = torch.randn(5000, 256, generator=g, dtype=torch.float64) @ A
     w = torch.randn(128, 256, generator=g, dtype=torch.float64)
-    for bits in (3, 4):
+    for bits in (2, 3, 4):
         hc, ht = xc.T @ xc / len(xc), xt.T @ xt / len(xt)
         qg, qr = gptq.gptq_couche(w, hc, bits), gptq.rtn(w, bits)
         rc, rt = gptq.perte(w, qg, hc) / gptq.perte(w, qr, hc), gptq.perte(w, qg, ht) / gptq.perte(w, qr, ht)
@@ -91,11 +91,12 @@ def test_reference_naive():
     g = torch.Generator().manual_seed(5)
     x = torch.randn(4000, 300, generator=g, dtype=torch.float64) @ torch.randn(300, 300, generator=g, dtype=torch.float64)
     w, h = torch.randn(32, 300, generator=g, dtype=torch.float64), x.T @ x / len(x)
-    ref = gptq_naif(w, h, 4)
-    for bloc in (128, 16, 300):
-        q = gptq.gptq_couche(w, h, 4, bloc=bloc)
-        assert torch.allclose(q, ref, atol=1e-9, rtol=0), (bloc, float((q - ref).abs().max()))
-    print("ok référence : version rapide identique à une implémentation naïve indépendante (blocs 128, 16, 300)")
+    for bits in (4, 2):
+        ref = gptq_naif(w, h, bits)
+        for bloc in (128, 16, 300):
+            q = gptq.gptq_couche(w, h, bits, bloc=bloc)
+            assert torch.allclose(q, ref, atol=1e-9, rtol=0), (bits, bloc, float((q - ref).abs().max()))
+    print("ok référence : version rapide identique à une implémentation naïve indépendante (4 et 2 bits, blocs 128, 16, 300)")
 
 
 def test_chemin_quant():
@@ -151,6 +152,40 @@ def test_chemin_quant():
     print("ok chemin quant.py : H identité = RTN float32 exact ; sinon poids différents, exactement sur la grille float32")
 
 
+
+def test_chemin_quant_2_bits():
+    """À 2 bits (qmax = 1), "predictor:2:gptq" donne au plus trois niveaux par ligne (-s, 0, +s), échelles de RTN,
+    entiers exactement ceux de GPTQ ; avec H identité, exactement "predictor:2"."""
+    import os, tempfile
+    torch.manual_seed(7)
+    class M(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = torch.nn.Sequential(torch.nn.Linear(48, 24), torch.nn.Linear(24, 12))
+    noms = ["predictor.0", "predictor.1"]
+    a, b, c = M(), M(), M()
+    b.load_state_dict(a.state_dict()); c.load_state_dict(a.state_dict())
+    w0 = a.predictor[0].weight.detach().clone()
+    with tempfile.TemporaryDirectory() as d:
+        f = os.path.join(d, "calib.pt")
+        torch.save({"H": {n: torch.eye(m.in_features, dtype=torch.float64) for n, m in zip(noms, a.predictor)},
+                    "n": {n: 1 for n in noms}}, f)
+        os.environ["LEWM_GPTQ_CALIB"] = f
+        quant.quantifier(a, "predictor:2:gptq")
+        quant.quantifier(b, "predictor:2")
+        assert all(torch.equal(ma.weight, mb.weight) for ma, mb in zip(a.predictor, b.predictor))
+        x = torch.randn(800, 48, dtype=torch.float64) @ torch.randn(48, 48, dtype=torch.float64)
+        torch.save({"H": {"predictor.0": x.T @ x, "predictor.1": torch.eye(24, dtype=torch.float64)}, "n": {n: 800 for n in noms}}, f)
+        quant.quantifier(c, "predictor:2:gptq")
+        s32 = w0.abs().amax(dim=1, keepdim=True)
+        w = c.predictor[0].weight.detach()
+        k = (w / s32).round()
+        assert torch.equal(w, k * s32) and set(k.unique().tolist()) <= {-1.0, 0.0, 1.0}
+        k_gptq = (gptq.gptq_couche(w0, (x.T @ x) / 800, 2) / w0.double().abs().amax(dim=1, keepdim=True)).round()
+        assert torch.equal(k.double(), k_gptq) and not torch.equal(w, b.predictor[0].weight)
+    print("ok chemin quant à 2 bits : trois niveaux par ligne, entiers de GPTQ, H identité = RTN")
+
+
 if __name__ == "__main__":
     test_chemin_quant()
     test_reference_naive()
@@ -159,4 +194,5 @@ if __name__ == "__main__":
     test_erreur_plus_faible()
     test_perte_egale_calcul_direct()
     test_entree_morte()
+    test_chemin_quant_2_bits()
     print("tous les tests passent")

@@ -6,6 +6,7 @@ les couches calibrées avec moins de lignes que d'entrées.
 
 Usage :
     python verifier_gptq.py --tache pusht --calib ../resultats/exp009-calib-pusht/calib.pt
+    python verifier_gptq.py --tache pusht --calib ../resultats/exp009-calib-pusht/calib.pt --bits 2 --groupe predictor
 """
 import argparse
 import os
@@ -24,6 +25,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tache", required=True)
     ap.add_argument("--calib", required=True)
+    ap.add_argument("--bits", nargs="+", type=int, default=[4, 3])
+    ap.add_argument("--groupe", default="all", help="partie du modèle vérifiée (clé de quant.GROUPES)")
     a = ap.parse_args()
     import stable_worldmodel as swm
     calib = torch.load(a.calib, map_location="cpu")
@@ -32,9 +35,10 @@ def main():
     couches = {nom: m for nom, m in model.named_modules()
                if nom.split(".")[0] in GROUPES["all"] and isinstance(m, (torch.nn.Linear, torch.nn.Conv2d))}
     assert set(couches) == set(calib["H"]), "couches de la calibration différentes de celles de quant.py"
+    couches = {nom: m for nom, m in couches.items() if nom.split(".")[0] in GROUPES[a.groupe]}
     pauvres = [nom for nom, m in couches.items() if calib["n"][nom] < m.weight[0].numel()]
     ok = True
-    for bits in (4, 3):
+    for bits in a.bits:
         tg = tr = 0.0
         mieux = 0
         for nom, m in couches.items():
@@ -42,18 +46,18 @@ def main():
             h = calib["H"][nom] / calib["n"][nom]
             eg, er = gptq.perte(w, gptq.gptq_couche(w, h, bits), h), gptq.perte(w, gptq.rtn(w, bits), h)
             tg, tr, mieux = tg + eg, tr + er, mieux + (eg < er)
-        print(f"[vérification GPTQ] {a.tache}, {bits} bits : erreur totale GPTQ / RTN = {tg / tr:.3f}, "
+        print(f"[vérification GPTQ] {a.tache}, {a.groupe}, {bits} bits : erreur totale GPTQ / RTN = {tg / tr:.3f}, "
               f"{mieux} couches améliorées sur {len(couches)}", flush=True)
         ok &= tg < tr
     if calib.get("H_b"):                              # hors échantillon : réglé sur une moitié, mesuré sur l'autre
-        for bits in (4, 3):
+        for bits in a.bits:
             tg = tr = 0.0
             for nom, m in couches.items():
                 w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
                 ha, hb = calib["H_a"][nom] / calib["n_a"][nom], calib["H_b"][nom] / calib["n_b"][nom]
                 tg += gptq.perte(w, gptq.gptq_couche(w, ha, bits), hb)
                 tr += gptq.perte(w, gptq.rtn(w, bits), hb)
-            print(f"[vérification GPTQ] {a.tache}, {bits} bits, hors échantillon : erreur GPTQ / RTN = {tg / tr:.3f}", flush=True)
+            print(f"[vérification GPTQ] {a.tache}, {a.groupe}, {bits} bits, hors échantillon : erreur GPTQ / RTN = {tg / tr:.3f}", flush=True)
             for nom in pauvres:                          # couches à calibration mince : rapport couche par couche
                 m = couches[nom]
                 w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
