@@ -1,6 +1,8 @@
-"""Analyse pré-enregistrée d'EXP-012 (PREREG-EXP012.md) : le prédicteur en Core ML 16 bits, sur le GPU et sur le
-Neural Engine, contre la pleine précision PyTorch, sur PushT et TwoRoom. Contrôles bloquants, 4 tests de
-non-infériorité appariés par inversion de signe (Holm), descriptifs dont le temps par plan et la puissance.
+"""Analyse pré-enregistrée d'EXP-012 (PREREG-EXP012.md, amendement 1) : le prédicteur en Core ML 16 bits, sur le GPU
+et sur le Neural Engine, contre la pleine précision PyTorch, sur PushT et TwoRoom. Contrôles bloquants (dont trois
+reproductions PyTorch octet pour octet), 4 tests de non-infériorité (inversion de signe et bootstrap-t concordants,
+Holm), contrôle négatif (deuxième série de la pleine précision), sensibilité à 10 graines de référence, temps par
+plan, puissance et énergie par plan au-dessus du repos.
 
 Usage :
     python analyse_exp012.py --racine ../resultats --sortie ../resultats/analyse-exp012
@@ -17,12 +19,15 @@ import analyse_exp006 as A6
 import analyse_exp009 as A9
 
 GRAINES = (42, 43, 44, 45, 46)
+REPLIQUE = (47, 48, 49, 50, 51)                     # deuxième série de la pleine précision, déjà calculée
 MOTEURS = {"ne": "coreml-ne", "gpu": "coreml-gpu"}
+PLACEMENT = {"ne": "NeuralEngine", "gpu": "GPU"}
 MARGE = 2                                           # points
+B_BOOT, GRAINE_BOOT = 10_000, 4
 TACHES = {"pusht": "exp003", "tworoom": "exp006"}  # référence fp32 PyTorch
 TESTS = (("N1", "pusht", "ne"), ("N2", "tworoom", "ne"), ("N3", "pusht", "gpu"), ("N4", "tworoom", "gpu"))
 FICHIERS_ANALYSE = ("analyse_exp012.py", "analyse_exp009.py", "analyse_exp006.py", "analyse_exp003.py", "metriques.py",
-                    "quant.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "PREREG-EXP012.md")
+                    "quant.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "mesurer_repos.py", "PREREG-EXP012.md")
 ICI = Path(__file__).resolve().parent
 
 
@@ -40,14 +45,38 @@ def dossier(t, m):
     return f"exp012-{m}-{t}"
 
 
+def p_bootstrap_t(y, b=B_BOOT, graine=GRAINE_BOOT):
+    """p unilatérale (moyenne de y positive) d'un bootstrap-t : épisodes rééchantillonnés, statistique studentisée."""
+    y = np.asarray(y, dtype=np.float64)
+    n = len(y)
+    m, se = y.mean(), y.std(ddof=1) / np.sqrt(n)
+    t = m / se if se > 0 else (np.inf if m > 0 else -np.inf)
+    yb = y[np.random.default_rng(graine).integers(0, n, size=(b, n))]
+    seb = yb.std(axis=1, ddof=1) / np.sqrt(n)
+    tb = (yb.mean(axis=1) - m) / np.where(seb > 0, seb, np.inf)
+    return float((1 + int((tb >= t).sum())) / (b + 1))
+
+
+def lire_temps(f, moteur, sha):
+    j = json.loads(f.read_text())
+    A.exiger(j["moteur"] == moteur and j["git"] == sha, f"{f.parent.name}/{f.name} : fichier de temps")
+    d = np.array([x[0] for x in j["appels_solve"]], dtype=np.float64)
+    n = np.array([x[1] for x in j["appels_solve"]], dtype=np.float64)
+    pp = d / np.maximum(n, 1)
+    garde = pp <= 3 * np.median(pp)                   # un appel allongé par une pause de batterie est écarté
+    return {"par_plan_s": float(d[garde].sum() / n[garde].sum()), "plans": int(n.sum()), "appels_ecartes": int((~garde).sum()),
+            "puissance_w": j["puissance"]["puissance_moyenne_w"], "coreml": j["coreml"]}
+
+
 def charger(racine, verifier=True):
     r = Path(racine)
-    K, temps, shas = {}, {}, set()
+    K, temps, repos, shas = {}, {}, {}, set()
     for t, ref_d in TACHES.items():
         controler = A6.controler if t == "tworoom" else (lambda d, nom: A.controler_course(d, nom))
         ref = dict(np.load(r / ref_d / "fp32_s42.npz"))
         proto_ref = json.loads((r / ref_d / "meta.json").read_text())["protocole"]
-        A9.identiques(r / f"exp012-repro-{t}" / "fp32_s42.npz", r / ref_d / "fp32_s42.npz", f"reproduction {t}")
+        for d, g in ((f"exp012-repro-{t}", 42), (f"exp012-torch-{t}", 43), (f"exp012-fin-{t}", 46)):
+            A9.identiques(r / d / f"fp32_s{g}.npz", r / ref_d / f"fp32_s{g}.npz", f"reproduction {t} graine {g}")
 
         def lire(d, g, moteur=None):
             f = r / d / f"fp32_s{g}.npz"
@@ -63,6 +92,7 @@ def charger(racine, verifier=True):
             controler(x, f"{d}/{f.name}")
             return x
         K[(t, "fp32")] = sum(lire(ref_d, g)["success"].astype(np.int64) for g in GRAINES)
+        K[(t, "replique")] = sum(lire(ref_d, g)["success"].astype(np.int64) for g in REPLIQUE)
         for m, moteur in MOTEURS.items():
             d = dossier(t, m)
             proto = json.loads((r / d / "meta.json").read_text())["protocole"]
@@ -70,83 +100,110 @@ def charger(racine, verifier=True):
                      f"{d} : protocole différent de celui de la référence {ref_d}")
             mo = proto.get("moteur", {})
             A.exiger(mo.get("nom") == moteur and mo.get("precision") == "float16", f"{d} : moteur {mo}")
-            S, empreintes, tp, pw, npl, place = 0, set(), [], [], 0, []
+            S, empreintes, fichiers = 0, set(), []
             for g in GRAINES:
                 x = lire(d, g, moteur)
-                empreintes.add(str(x["coreml_sha256"]))
                 shas.add(str(x["git"]))
                 S = S + x["success"].astype(np.int64)
-                j = json.loads((r / d / f"fp32_s{g}.temps.json").read_text())
-                A.exiger(j["moteur"] == moteur and j["git"] == str(x["git"]), f"{d} graine {g} : fichier de temps")
-                tp += j["temps_par_plan_s"]
-                pw += j["puissance_w"]
-                npl += j["plans"]
-                A.exiger(moteur != "coreml-ne" or j["coreml"].get("placement", {}).get("NeuralEngine", 0) > 0,
-                         f"{d} graine {g} : aucune opération placée sur le Neural Engine")
-                place.append(j["coreml"].get("placement"))
-            A.exiger(len(empreintes) == 1, f"{d} : poids Core ML différents selon les graines")
+                tf = lire_temps(r / d / f"fp32_s{g}.temps.json", moteur, str(x["git"]))
+                A.exiger(set(tf["coreml"].get("placement", {})) == {PLACEMENT[m]},
+                         f"{d} graine {g} : opérations hors du processeur demandé {tf['coreml'].get('placement')}")
+                A.exiger(tf["coreml"].get("sha256_poids") == str(x["coreml_sha256"]), f"{d} graine {g} : empreintes")
+                empreintes.add((str(x["coreml_sha256"]), tf["coreml"].get("sha256_modele")))
+                fichiers.append(tf)
+            A.exiger(len(empreintes) == 1, f"{d} : modèle Core ML différent selon les graines")
             K[(t, m)] = S
-            temps[(t, m)] = (np.array(tp), np.array(pw), npl, place[0])
-        j = json.loads((r / f"exp012-repro-{t}" / "fp32_s42.temps.json").read_text())
-        A.exiger(j["moteur"] == "torch", f"reproduction {t} : moteur {j['moteur']}")
-        temps[(t, "torch")] = (np.array(j["temps_par_plan_s"]), np.array(j["puissance_w"]), j["plans"], None)
+            temps[(t, m)] = fichiers
+        j = json.loads((r / f"exp012-repos-{t}.json").read_text())
+        repos[t] = j["puissance_moyenne_w"]
     A.exiger(len(shas) == 1, f"EXP-012 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
     for t in TACHES:
-        x = np.load(r / f"exp012-repro-{t}" / "fp32_s42.npz")
-        A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"reproduction {t} : autre commit ou arbre modifié")
+        for d, g in ((f"exp012-repro-{t}", 42), (f"exp012-torch-{t}", 43), (f"exp012-fin-{t}", 46)):
+            x = np.load(r / d / f"fp32_s{g}.npz")
+            A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"reproduction {t} graine {g} : autre commit ou arbre modifié")
+        temps[(t, "torch")] = [lire_temps(r / f"exp012-torch-{t}" / "fp32_s43.temps.json", "torch", sha)]
     if verifier:
         verifier_code(sha)
-    return K, temps, sha
+    return K, temps, repos, sha
 
 
-def resume_temps(tp, pw, plans, placement):
-    """tp : temps moyen par plan de chaque appel de solve (12 à 50 plans par appel) ; médiane et quartiles sur les
-    appels, robustes à un appel allongé par une pause de batterie."""
-    return {"appels": int(len(tp)), "plans": int(plans), "placement": placement,
-            "mediane_ms": float(1000 * np.median(tp)), "q1_ms": float(1000 * np.percentile(tp, 25)),
-            "q3_ms": float(1000 * np.percentile(tp, 75)), "puissance_mediane_w": float(np.median(pw)) if len(pw) else None,
-            "energie_par_plan_j": float(np.median(pw) * np.median(tp)) if len(pw) else None}
+def resume_temps(fichiers, p_repos):
+    """Par fichier : temps total sur nombre de plans (appels allongés par une pause écartés), puissance moyenne,
+    énergie par plan au-dessus du repos ; résumés par la médiane des fichiers, avec le minimum et le maximum."""
+    pp = np.array([f["par_plan_s"] for f in fichiers])
+    pw = np.array([f["puissance_w"] if f["puissance_w"] is not None else np.nan for f in fichiers])
+    en = (pw - p_repos) * pp if p_repos is not None else np.full(len(pp), np.nan)
+    med = lambda v: None if np.all(np.isnan(v)) else float(np.nanmedian(v))
+    return {"fichiers": len(fichiers), "plans": int(sum(f["plans"] for f in fichiers)),
+            "appels_ecartes": int(sum(f["appels_ecartes"] for f in fichiers)),
+            "par_plan_ms": float(1000 * np.median(pp)), "par_plan_ms_min": float(1000 * pp.min()), "par_plan_ms_max": float(1000 * pp.max()),
+            "puissance_w": med(pw), "puissance_repos_w": p_repos, "energie_par_plan_j": med(en)}
 
 
 def analyser(racine, verifier=True):
-    K, temps, sha = charger(racine, verifier)
+    K, temps, repos, sha = charger(racine, verifier)
     inv, boot = A.Inversion(n=500), A.Bootstrap(n=500)
+
+    def test_ni(x):
+        y = 20 * x + MARGE                            # moyenne de y positive ssi écart de réussite > -2 points
+        ps, pb = inv.p(y, "plus"), p_bootstrap_t(y)
+        return {"somme": float(x.sum()), "ecart_points": boot.ic(x / 5), "p_signe": ps, "p_bootstrap_t": pb,
+                "erreur_mc_p_signe": float(np.sqrt(ps * (1 - ps) / A.B)), "p": max(ps, pb)}
     tests = {}
     for nom, t, m in TESTS:
-        x = K[(t, m)] - K[(t, "fp32")]
-        tests[nom] = {"tache": t, "moteur": MOTEURS[m], "somme": int(x.sum()), "ecart_points": boot.ic(x / 5),
-                      "p": inv.p(20 * x + MARGE, "plus")}   # moyenne de y positive ssi écart de réussite > -2 points
-    for (nom, *_), q in zip(TESTS, A.holm([x["p"] for x in tests.values()])):
+        tests[nom] = {"tache": t, "moteur": MOTEURS[m], **test_ni(K[(t, m)] - K[(t, "fp32")])}
+    ordre = np.argsort([tests[n]["p"] for n, *_ in TESTS])
+    for (nom, *_), q in zip(TESTS, A.holm([tests[n]["p"] for n, *_ in TESTS])):
         tests[nom]["p_holm"] = float(q)
         tests[nom]["verdict"] = "soutenue" if q < A.ALPHA else "non soutenue"
+    for rang, i in enumerate(ordre):                  # borne inférieure unilatérale au niveau de Holm de chaque test
+        nom, t, m = TESTS[i]
+        niveau = A.ALPHA / (len(TESTS) - rang)
+        x = (K[(t, m)] - K[(t, "fp32")]) / 5
+        tests[nom]["niveau_holm"] = float(niveau)
+        tests[nom]["borne_inferieure_points"] = float(100 * np.percentile(np.array([x[j].mean() for j in boot.idx]), 100 * niveau))
+    controle = {t: test_ni(K[(t, "replique")] - K[(t, "fp32")]) for t in TACHES}
+    sensibilite = {}
+    for nom, t, m in TESTS:                           # référence : moyenne des 10 graines de la pleine précision
+        x = K[(t, m)] - (K[(t, "fp32")] + K[(t, "replique")]) / 2
+        sensibilite[nom] = test_ni(x)
     desc = {}
     for t in TACHES:
-        desc[t] = {"reussite_fp32": float(K[(t, "fp32")].mean() / 5),
+        desc[t] = {"reussite_fp32": float(K[(t, "fp32")].mean() / 5), "reussite_replique": float(K[(t, "replique")].mean() / 5),
                    **{f"reussite_{m}": float(K[(t, m)].mean() / 5) for m in MOTEURS},
                    "ne_moins_gpu": boot.ic((K[(t, "ne")] - K[(t, "gpu")]) / 5),
-                   "temps": {m: resume_temps(*temps[(t, m)]) for m in ("torch", *MOTEURS)}}
-    return {"controles": {"commit": sha}, "tests": tests, "descriptifs": desc}
+                   "temps": {m: resume_temps(temps[(t, m)], repos[t]) for m in ("torch", *MOTEURS)}}
+    return {"controles": {"commit": sha}, "tests": tests, "controle_negatif": controle, "sensibilite_10_graines": sensibilite,
+            "descriptifs": desc}
 
 
 def rapport(r):
     t = lambda e, f=100: A.ic_txt(e, f, 1)
     L = ["# EXP-012 : analyse pré-enregistrée (le prédicteur en Core ML 16 bits, GPU et Neural Engine)", "",
-         f"Contrôles passés, commit {r['controles']['commit'][:7]}.", "",
-         f"| Test | Tâche | Moteur | Écart à la pleine précision (points) | p | p Holm | Perte de moins de {MARGE} points |",
-         "| --- | --- | --- | --- | --- | --- | --- |"]
+         f"Contrôles passés, commit {r['controles']['commit'][:7]} ; reproductions PyTorch des graines 42, 43 et 46 identiques.", "",
+         f"| Test | Tâche | Moteur | Écart (points, IC 95 %) | Borne inférieure au niveau de Holm | p signe | p bootstrap-t | p Holm | Perte de moins de {MARGE} points |",
+         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for n, x in r["tests"].items():
-        L.append(f"| {n} | {x['tache']} | {x['moteur']} | {t(x['ecart_points'])} | {x['p']:.4f} | {x['p_holm']:.4f} | {x['verdict']} |")
-    L += ["", "| Tâche | Moteur | Réussite | Temps par plan (ms, médiane et quartiles sur les appels de solve) | Puissance (W) | Énergie par plan (J) |",
-          "| --- | --- | --- | --- | --- | --- |"]
-    for k, d in r["descriptifs"].items():  # temps : médiane et quartiles, sur les appels de solve, du temps moyen par plan
-        for m, nom in (("torch", "PyTorch float32 (réussite : 5 graines ; temps : graine 42)"), ("gpu", "Core ML GPU"), ("ne", "Core ML Neural Engine")):
+        L.append(f"| {n} | {x['tache']} | {x['moteur']} | {t(x['ecart_points'])} | {x['borne_inferieure_points']:.1f} "
+                 f"(niveau {x['niveau_holm']:.4f}) | {x['p_signe']:.4f} | {x['p_bootstrap_t']:.4f} | {x['p_holm']:.4f} | {x['verdict']} |")
+    L += ["", "Contrôle négatif (deuxième série de la pleine précision, graines 47 à 51, contre 42 à 46) :"]
+    for k, c in r["controle_negatif"].items():
+        L.append(f"- {k} : écart {t(c['ecart_points'])} points, p signe {c['p_signe']:.4f}, p bootstrap-t {c['p_bootstrap_t']:.4f}")
+    L += ["", "Sensibilité, référence sur les 10 graines de la pleine précision :"]
+    for n, c in r["sensibilite_10_graines"].items():
+        L.append(f"- {n} : écart {t(c['ecart_points'])} points, p {c['p']:.4f}")
+    L += ["", "| Tâche | Moteur | Réussite | Temps par plan (ms, médiane des fichiers, min à max) | Puissance (W) | Repos (W) | Énergie par plan au-dessus du repos (J) |",
+          "| --- | --- | --- | --- | --- | --- | --- |"]
+    for k, d in r["descriptifs"].items():
+        for m, nom in (("torch", "PyTorch float32 (réussite : 5 graines ; temps : graine 43)"), ("gpu", "Core ML GPU"),
+                       ("ne", "Core ML Neural Engine")):
             s = d["temps"][m]
             reu = d["reussite_fp32"] if m == "torch" else d[f"reussite_{m}"]
-            pw = f"{s['puissance_mediane_w']:.1f}" if s["puissance_mediane_w"] is not None else "?"
-            en = f"{s['energie_par_plan_j']:.1f}" if s["energie_par_plan_j"] is not None else "?"
-            L.append(f"| {k} | {nom} | {100 * reu:.1f} % | {s['mediane_ms']:.0f} ({s['q1_ms']:.0f} à {s['q3_ms']:.0f}) | {pw} | {en} |")
-        L.append(f"| {k} | Neural Engine moins GPU | {t(d['ne_moins_gpu'])} points | | | |")
+            f = lambda v, n=1: "?" if v is None else f"{v:.{n}f}"
+            L.append(f"| {k} | {nom} | {100 * reu:.1f} % | {s['par_plan_ms']:.0f} ({s['par_plan_ms_min']:.0f} à {s['par_plan_ms_max']:.0f}) | "
+                     f"{f(s['puissance_w'])} | {f(s['puissance_repos_w'])} | {f(s['energie_par_plan_j'], 2)} |")
+        L.append(f"| {k} | Neural Engine moins GPU | {t(d['ne_moins_gpu'])} points | | | | |")
     return "\n".join(L) + "\n"
 
 

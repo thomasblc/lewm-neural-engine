@@ -6,6 +6,32 @@ sortie à PyTorch float32 de 1,3e-3 à 2,4e-3 sur le GPU et de 2,7e-3 à 8,3e-3 
 TwoRoom, T = 1 à 3) et un pilote de 50 épisodes de PushT, graine 42, sur les trois moteurs (`resultats/pilote-exp012/`,
 réussite et temps lus, pour vérifier que le calcul tourne). Figé par le commit enregistré dans les fichiers.
 
+Amendement 1 (1er octobre, 13 h 37, avant tout calcul de l'expérience ; lanceur pas encore démarré). Suite à deux
+relectures scientifiques (statistique ; protocole et reproductibilité) :
+- Décision de non-infériorité : soutenue seulement si la p par inversion de signe (inchangée) et la p d'un
+  bootstrap-t (épisodes rééchantillonnés, B = 10 000, `default_rng(4)`) sont toutes deux sous le seuil ; Holm sur la
+  plus grande des deux. Raison : le test par inversion de signe de la statistique décalée n'est pas exact et penche
+  vers « non inférieur » (4,7 à 6,3 % pour 5 % nominal en simulation). Erreur de Monte-Carlo de la p rapportée ; borne
+  inférieure unilatérale de l'écart rapportée au niveau de Holm de chaque test.
+- Contrôle négatif rapporté : la deuxième série de la pleine précision (graines 47 à 51, déjà calculée) contre la
+  première, par le même test. Sensibilité rapportée : référence sur la moyenne des 10 graines. La décision reste sur
+  la référence à 5 graines (choix d'origine).
+- Ordre des calculs : moteurs alternés graine par graine (Neural Engine puis GPU à chaque graine), PyTorch en plus à
+  la graine 43, pour mesurer les temps dans les mêmes conditions ; reproductions bloquantes PyTorch octet pour octet des
+  graines 42 (au début), 43 (au milieu) et 46 (à la fin) de chaque tâche.
+- Énergie : puissance moyenne lue sur le compteur cumulé des capteurs de la batterie (mises à jour faites pendant le
+  calcul seulement), puissance au repos mesurée 130 s avant chaque tâche, énergie par plan au-dessus du repos ; temps
+  par plan = temps total / nombre de plans par fichier, appels allongés par une pause de batterie écartés (plus de
+  3 fois la médiane) ; conditions enregistrées (charge du système, batterie, état thermique).
+- Contrôles ajoutés : toutes les opérations Core ML sur le processeur demandé (plan de calcul enregistré par fichier) ;
+  empreinte du programme Core ML (spécification sans date) en plus de celle des poids, constante sur les graines.
+- Une modification du code après une ANOMALIE de la sentinelle annule les fichiers du moteur concerné : tout est
+  recalculé.
+- Formulations : « perte de moins de 2 points, test unilatéral », pas « aucun changement » ; « identique octet pour
+  octet sur la même machine et la même pile logicielle », pas « reproductible » en général ; l'écart Neural Engine
+  moins GPU mêle le processeur et la réécriture du graphe (exacte en float32, 2,1e-6) et le 16 bits n'est pas isolé
+  (pas de témoin PyTorch en 16 bits) : aucune affirmation générale sur le coût du 16 bits ou du Neural Engine.
+
 ## Question
 
 Faire tourner le prédicteur de LeWM (prédicteur et pred_proj) en Core ML, en 16 bits, sur le GPU ou sur le Neural
@@ -21,7 +47,7 @@ restent en PyTorch sur le GPU (un planificateur entièrement hors du GPU est l'o
   Core ML dans chaque fichier. macOS 26.6.2, coremltools 9.0.
 - Version du modèle : pleine précision (aucune quantification) ; le calcul du prédicteur se fait en 16 bits.
 - PushT sur les 500 épisodes d'EXP-003, TwoRoom sur les 500 d'EXP-006 ; graines 42 à 46 ; référence appariée : la
-  pleine précision PyTorch float32 d'EXP-003 et d'EXP-006. 20 fichiers, environ 3 h.
+  pleine précision PyTorch float32 d'EXP-003 et d'EXP-006. 20 fichiers et 6 reproductions, environ 4 h.
 
 ## Tests (4 tests de non-infériorité, Holm, inversion de signe comme EXP-003, unilatéraux)
 

@@ -1,8 +1,10 @@
 #!/bin/zsh
-# EXP-012 (PREREG-EXP012.md) : le prédicteur en Core ML 16 bits, sur le Neural Engine puis sur le GPU. Par tâche
-# (PushT puis TwoRoom) : reproduction bloquante de la pleine précision PyTorch, puis pleine précision × graines 42 à
-# 46 avec le moteur coreml-ne, puis coreml-gpu. caffeinate empêche la mise en veille. Tout le corps est dans des
-# fonctions, lues en entier avant d'être exécutées.
+# EXP-012 (PREREG-EXP012.md, amendement 1) : le prédicteur en Core ML 16 bits, sur le Neural Engine et sur le GPU.
+# Par tâche (PushT puis TwoRoom) : puissance au repos, reproduction bloquante de la pleine précision PyTorch (graine
+# 42), puis graines 42 à 46 avec les moteurs alternés (coreml-ne puis coreml-gpu à chaque graine, PyTorch en plus à
+# la graine 43, reproduction bloquante), enfin reproduction finale de la graine 46. La garde de batterie suit tous les
+# calculs d'exp012 et sort quand la reproduction finale de la tâche est écrite. caffeinate empêche la mise en veille.
+# Tout le corps est dans des fonctions, lues en entier avant d'être exécutées.
 # Relancer après une interruption avec >> pour garder le journal : ./lancer_exp012.sh >> ../resultats/exp012.log 2>&1
 set -e
 ICI="${0:A:h}"                 # dossier du script ; dans une fonction, $0 vaut le nom de la fonction
@@ -22,7 +24,7 @@ main() {
   echo "[info] code vérifié : $(git rev-parse --short HEAD)"
   # une grille commencée avec un autre commit ne se reprend pas : ses fichiers seraient de deux commits
   local d commit_grille
-  for d in exp012-ne-pusht exp012-gpu-pusht exp012-ne-tworoom exp012-gpu-tworoom; do
+  for d in exp012-ne-pusht exp012-gpu-pusht exp012-torch-pusht exp012-ne-tworoom exp012-gpu-tworoom exp012-torch-tworoom; do
     [ -f $R/$d/meta.json ] || continue
     commit_grille=$($PY -c 'import json, sys; print(json.load(open(sys.argv[1]))["git"])' $R/$d/meta.json)
     [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] $d commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
@@ -33,27 +35,38 @@ main() {
   local debut=$(date +%s)
   while true; do
     attendre_gpu
-    garde exp012-ne-pusht 5
+    garde exp012-fin-pusht 1
     autre_calcul || break
     echo "[info] un autre calcul a démarré pendant l'attente de la garde, nouvelle attente à $(date '+%H:%M')"
   done
   echo "[info] GPU libre, lancement à $(date '+%H:%M')"
 
-  local t opts ref
+  local t opts ref g
   for t in pusht tworoom; do
     if [ $t = pusht ]; then opts=($PUSHT); ref=exp003; else opts=($TWOROOM); ref=exp006; fi
-    # 3. reproduction de la pleine précision PyTorch (bloquante, référence de la sentinelle)
     verifier $PY
-    [ $t = pusht ] || garde exp012-ne-$t 5
+    [ $t = pusht ] || garde exp012-fin-$t 1
+    # 3. puissance au repos (aucun calcul de l'expérience), référence de l'énergie par plan
+    $PY -B mesurer_repos.py $R/exp012-repos-$t.json 130     # moins de 4 min : la garde ne croit pas le calcul arrêté
+    # 4. reproduction de la pleine précision PyTorch, graine 42 (bloquante, référence de la sentinelle)
     rm -rf $R/exp012-repro-$t
     caffeinate -i $PY run_grid.py --out $R/exp012-repro-$t $opts --n 500 --specs fp32 --seeds 42
-    comparer $PY $R/exp012-repro-$t/fp32_s42.npz $R/$ref/fp32_s42.npz "reproduction de $ref"
-    # 4. Neural Engine, puis GPU
+    comparer $PY $R/exp012-repro-$t/fp32_s42.npz $R/$ref/fp32_s42.npz "reproduction de $ref, graine 42"
+    # 5. moteurs alternés graine par graine (temps et puissance dans les mêmes conditions) ; PyTorch à la graine 43
+    #    (temps dans les mêmes conditions, deuxième reproduction bloquante)
+    for g in 42 43 44 45 46; do
+      verifier $PY
+      caffeinate -i $PY run_grid.py --out $R/exp012-ne-$t $opts --n 500 --specs fp32 --seeds $g --moteur coreml-ne
+      caffeinate -i $PY run_grid.py --out $R/exp012-gpu-$t $opts --n 500 --specs fp32 --seeds $g --moteur coreml-gpu
+      if [ $g = 43 ]; then
+        caffeinate -i $PY run_grid.py --out $R/exp012-torch-$t $opts --n 500 --specs fp32 --seeds 43
+        comparer $PY $R/exp012-torch-$t/fp32_s43.npz $R/$ref/fp32_s43.npz "reproduction de $ref, graine 43"
+      fi
+    done
+    # 6. reproduction finale, graine 46 : rien n'a dérivé pendant le calcul
     verifier $PY
-    caffeinate -i $PY run_grid.py --out $R/exp012-ne-$t $opts --n 500 --specs fp32 --seeds 42 43 44 45 46 --moteur coreml-ne
-    verifier $PY
-    garde exp012-gpu-$t 5
-    caffeinate -i $PY run_grid.py --out $R/exp012-gpu-$t $opts --n 500 --specs fp32 --seeds 42 43 44 45 46 --moteur coreml-gpu
+    caffeinate -i $PY run_grid.py --out $R/exp012-fin-$t $opts --n 500 --specs fp32 --seeds 46
+    comparer $PY $R/exp012-fin-$t/fp32_s46.npz $R/$ref/fp32_s46.npz "reproduction finale de $ref, graine 46"
   done
   echo "[info] EXP-012 finie à $(date '+%H:%M')"
 }

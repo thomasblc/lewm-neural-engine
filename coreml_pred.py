@@ -14,6 +14,7 @@ Le modèle Core ML est converti au lancement depuis les poids du modèle chargé
 quantification), enregistré à côté des résultats, et son empreinte SHA-256 (fichier des poids) est rendue.
 """
 import hashlib
+import os
 import platform
 import shutil
 import threading
@@ -46,6 +47,16 @@ def _empreinte(paquet):
     for x in f:
         h.update(x.read_bytes())
     return h.hexdigest()
+
+
+def _empreinte_modele(m):
+    """Empreinte du programme Core ML (spécification sérialisée de façon déterministe, sans la date de conversion) :
+    le fichier model.mlmodel change d'une conversion à l'autre (ordre de sérialisation), pas son contenu."""
+    spec = m.get_spec()
+    for k in list(spec.description.metadata.userDefined.keys()):
+        if "date" in k.lower():
+            del spec.description.metadata.userDefined[k]
+    return hashlib.sha256(spec.SerializeToString(deterministic=True)).hexdigest()
 
 
 def convertir(model, moteur, chemin):
@@ -84,7 +95,7 @@ def convertir(model, moteur, chemin):
     m = ct.models.MLModel(str(chemin), compute_units=cu)
     info = {"moteur": moteur, "disposition": disp or "origine", "precision": "float16", "lot": LOT, "t_fixe": T_FIXE,
             "coremltools": ct.__version__, "macos": platform.mac_ver()[0], "fichier": chemin.name,
-            "sha256_poids": _empreinte(chemin), "placement": placement(m, cu)}
+            "sha256_poids": _empreinte(chemin), "sha256_modele": _empreinte_modele(m), "placement": placement(m, cu)}
     return m, info
 
 
@@ -131,33 +142,48 @@ def brancher(model, moteur, chemin):
 
 
 class Puissance:
-    """Lit la puissance consommée par le Mac (SystemLoad des capteurs de la batterie, en W) toutes les 2 s dans un
-    fil à part. Mesure grossière, de tout le système : sert à comparer des moteurs dans les mêmes conditions, pas à
-    donner une énergie absolue. Le capteur ne se met à jour qu'environ toutes les 20 s : les lectures successives ne
-    sont pas indépendantes, et les premières d'un fichier peuvent encore refléter le calcul précédent (la médiane
-    sur un fichier de plusieurs minutes n'en dépend presque pas)."""
+    """Mesure la puissance consommée par le Mac pendant un calcul, avec les compteurs des capteurs de la batterie
+    (PowerTelemetryData) : AccumulatedSystemLoad ajoute la puissance du système en mW une fois par seconde
+    (SystemLoadAccumulatorCount), si bien que (accumulé fin - début) / (compte fin - début) est la puissance moyenne
+    exacte entre deux mises à jour du capteur (toutes les 50 à 60 s environ). Mesure de tout le système : sert à
+    comparer des moteurs dans les mêmes conditions, avec la puissance au repos mesurée à part. Une lecture toutes les
+    5 s dans un fil, avec les conditions : charge moyenne du système, batterie, autres calculs run_grid."""
 
-    def __init__(self, pas=2.0):
-        self.pas, self.w, self._stop = pas, [], threading.Event()
+    def __init__(self, pas=5.0):
+        self.pas, self.lectures, self._stop = pas, [], threading.Event()
         self._fil = threading.Thread(target=self._boucle, daemon=True)
 
     @staticmethod
     def lire():
         s = subprocess.run(["ioreg", "-rn", "AppleSmartBattery"], capture_output=True, text=True).stdout
-        i = s.find('"SystemLoad"=')
-        if i < 0:
-            return None
-        j = i + len('"SystemLoad"=')
-        k = j
-        while k < len(s) and s[k].isdigit():
-            k += 1
-        return int(s[j:k]) / 1000 if k > j else None
+        i = s.find('"PowerTelemetryData"')
+        bloc = s[i:s.find("}", i)] if i >= 0 else ""
+        d = {}
+        for cle in ("AccumulatedSystemLoad", "SystemLoadAccumulatorCount", "SystemLoad", "SystemPowerIn"):
+            k = bloc.find(f'"{cle}"=')
+            if k >= 0:
+                v = bloc[k + len(cle) + 3:].split(",")[0].strip()
+                if v.isdigit():
+                    d[cle] = int(v)
+        for cle in ("UpdateTime", "CurrentCapacity"):
+            k = s.find(f'"{cle}" = ')
+            if k >= 0:
+                v = s[k + len(cle) + 5:].split("\n")[0].strip()
+                if v.isdigit():
+                    d[cle] = int(v)
+        d["t"] = time.time()
+        d["charge_moyenne_1min"] = os.getloadavg()[0]
+        d["processus_run_grid"] = len(subprocess.run(["pgrep", "-f", "[r]un_grid\\.py"], capture_output=True,
+                                                     text=True).stdout.split())   # le calcul en cours compris
+        d["thermique"] = subprocess.run(["pmset", "-g", "therm"], capture_output=True, text=True).stdout.strip()[:200]
+        return d
 
     def _boucle(self):
         while not self._stop.is_set():
-            v = self.lire()
-            if v is not None:
-                self.w.append(v)
+            try:
+                self.lectures.append(self.lire())
+            except Exception:  # noqa: BLE001  une lecture manquée ne doit pas arrêter le calcul
+                pass
             self._stop.wait(self.pas)
 
     def __enter__(self):
@@ -167,6 +193,28 @@ class Puissance:
     def __exit__(self, *a):
         self._stop.set()
         self._fil.join()
+
+    def resume(self):
+        """Puissance moyenne (W) entre la première et la dernière mise à jour du capteur vues pendant le calcul, et
+        durée couverte (s)."""
+        return resume_puissance(self.lectures)
+
+
+def resume_puissance(lectures):
+    """Ne garde que les mises à jour du capteur faites pendant le calcul : la valeur vue à la première lecture date
+    d'avant le début (calcul précédent) et sert seulement à repérer la première vraie mise à jour. Il en faut au moins
+    deux après elle."""
+    v = [x for x in lectures if "AccumulatedSystemLoad" in x and "SystemLoadAccumulatorCount" in x]
+    maj = []
+    for x in v:
+        if x["SystemLoadAccumulatorCount"] != (maj[-1] if maj else v[0])["SystemLoadAccumulatorCount"] or not maj:
+            maj.append(x)
+    maj = maj[1:]                                    # la première valeur est antérieure au calcul
+    if len(maj) < 2:
+        return {"puissance_moyenne_w": None, "secondes_couvertes": 0}
+    dn = maj[-1]["SystemLoadAccumulatorCount"] - maj[0]["SystemLoadAccumulatorCount"]
+    return {"puissance_moyenne_w": (maj[-1]["AccumulatedSystemLoad"] - maj[0]["AccumulatedSystemLoad"]) / dn / 1000,
+            "secondes_couvertes": dn}
 
 
 def chronometrer(solver, temps):

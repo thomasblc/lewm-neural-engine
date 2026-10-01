@@ -410,7 +410,8 @@ def main():
             ft_tmp.write_text(json.dumps({
                 "moteur": args.moteur, "coreml": moteur, "appels_solve": temps,
                 "temps_par_plan_s": [d / n for d, n in temps if n > 0], "plans": sum(n for _, n in temps),
-                "puissance_w": puissance.w, "duree_s": time.time() - t0, "git": sha}, indent=1))
+                "puissance": puissance.resume(), "lectures": puissance.lectures, "duree_s": time.time() - t0,
+                "git": sha}, indent=1))
             os.replace(ft_tmp, ft)
             os.replace(tmp, f)
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "
