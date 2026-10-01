@@ -1,15 +1,18 @@
 """EXP-013 : appels isolés du prédicteur de LeWM selon la taille du lot (1, 8, 32, 100, 300 candidats, T = 3), le codage
 des poids Core ML (fp16, int8, int4b32, pal4) et le processeur (Neural Engine, graphe réécrit « 1ctb » ; GPU, graphe
-d'origine). Pour chaque cas : conversion, 10 appels de mise en route, puis temps de 50 appels (médiane et quartiles) et
-énergie de la puce par composant sur ces 50 appels ; placement des opérations. Teste la prédiction pré-enregistrée :
-à 300 candidats le calcul limite (environ 900 opérations par octet de poids), les codages des poids n'accélèrent pas ;
-aux petits lots, la lecture des poids peut compter.
+d'origine) : 40 cas. Conversion et chargement des 40 cas d'abord (placement, détail du placement par type d'opération,
+taille des poids) ; puis puissance au repos de la puce (30 s) ; puis 3 répétitions, chacune dans un ordre tiré au hasard
+(default_rng(17)) : pour chaque cas, 10 appels de mise en route, puis des appels en boucle pendant au moins 3 s (temps
+de chaque appel ; énergie de la puce sur la boucle, moins le repos). Appels isolés, caches chauds, même entrée.
+Teste la prédiction pré-enregistrée (amendement 3) : au lot de 300, aucun codage n'est plus rapide que fp16 de plus de
+5 %, sur l'un ou l'autre processeur. Fichier écrit en entier à la fin seulement (jamais de fichier partiel).
 
 Usage :
-    python balayage_lot.py SORTIE.json
+    python balayage_lot.py SORTIE.json [--essai]
 """
 import json
 import os
+import subprocess
 import sys
 import tempfile
 import time
@@ -25,16 +28,22 @@ import coreml_pred as C
 import energie_puce
 import predicteur_ane as P
 
-LOTS, T = (1, 8, 32, 100, 300), 3
+ESSAI = "--essai" in sys.argv
+LOTS, T = ((1, 300) if ESSAI else (1, 8, 32, 100, 300)), 3
+CODAGES = ("fp16", "int8") if ESSAI else C.CODAGES
+REPETITIONS, BOUCLE_S, REPOS_S = (1, 0.3, 3.0) if ESSAI else (3, 3.0, 30.0)
 sortie = Path(sys.argv[1])
+ICI = Path(__file__).resolve().parent
+sha = subprocess.run(["git", "-C", str(ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 torch.manual_seed(0)
 model = swm.wm.utils.load_pretrained("pusht/lewm").eval()
 D = model.predictor.pos_embedding.shape[-1]
 compteur = energie_puce.Compteur()
-res = []
+UNITES = {"ne": ct.ComputeUnit.CPU_AND_NE, "gpu": ct.ComputeUnit.CPU_AND_GPU}
 with tempfile.TemporaryDirectory() as d:
-    for unite, cu in (("ne", ct.ComputeUnit.CPU_AND_NE), ("gpu", ct.ComputeUnit.CPU_AND_GPU)):
-        for codage in C.CODAGES:
+    cas = []
+    for unite, cu in UNITES.items():
+        for codage in CODAGES:
             for B in LOTS:
                 g = torch.Generator().manual_seed(1)
                 emb, act = torch.randn(B, T, D, generator=g), torch.randn(B, T, D, generator=g)
@@ -46,18 +55,36 @@ with tempfile.TemporaryDirectory() as d:
                     ex = {"emb": emb, "act": act}
                 m, info = C._module_coreml(module, ex, Path(d) / f"{unite}-{codage}-{B}.mlpackage", cu, codage)
                 x = {k: v.numpy() for k, v in ex.items()}
-                for _ in range(10):
-                    m.predict(x)
-                e0, t = compteur.lire(), []
-                for _ in range(50):
-                    a = time.perf_counter()
-                    m.predict(x)
-                    t.append(time.perf_counter() - a)
-                j, dt = compteur.ecart(e0, compteur.lire())
-                t = np.array(t) * 1000
-                ligne = {"unite": unite, "codage": codage, "lot": B, "mediane_ms": float(np.median(t)),
-                         "q1_ms": float(np.percentile(t, 25)), "q3_ms": float(np.percentile(t, 75)),
-                         "joules_50_appels": j, "duree_s": dt, "placement": info["placement"], "octets_poids": info["octets_poids"]}
-                res.append(ligne)
-                print(f"{unite} {codage:8s} lot {B:3d} : {ligne['mediane_ms']:7.2f} ms, placement {info['placement']}", flush=True)
-                sortie.write_text(json.dumps(res, indent=1))
+                m.predict(x)
+                cas.append({"unite": unite, "codage": codage, "lot": B, "placement": info["placement"],
+                            "placement_detail": C.placement_detail(m, cu), "octets_poids": info["octets_poids"],
+                            "mesures": [], "_m": m, "_x": x})
+                print(f"[conversion] {unite} {codage:8s} lot {B:3d} : placement {info['placement']}", flush=True)
+    e0 = compteur.lire()
+    time.sleep(REPOS_S)
+    j, dt = compteur.ecart(e0, compteur.lire())
+    repos_w = {k: v / dt for k, v in j.items()}
+    rng = np.random.default_rng(17)
+    for r in range(1, REPETITIONS + 1):
+        for i in rng.permutation(len(cas)):
+            c = cas[i]
+            m, x = c["_m"], c["_x"]
+            for _ in range(10):
+                m.predict(x)
+            t, e0 = [], compteur.lire()
+            debut = time.perf_counter()
+            while time.perf_counter() - debut < BOUCLE_S:
+                a = time.perf_counter()
+                m.predict(x)
+                t.append(time.perf_counter() - a)
+            j, dt = compteur.ecart(e0, compteur.lire())
+            t = np.array(t) * 1000
+            c["mesures"].append({"repetition": r, "mediane_ms": float(np.median(t)), "q1_ms": float(np.percentile(t, 25)),
+                                 "q3_ms": float(np.percentile(t, 75)), "appels": len(t), "duree_s": dt, "joules": j,
+                                 "joules_nets_par_appel": {k: (v - repos_w.get(k, 0) * dt) / len(t) for k, v in j.items()}})
+            print(f"[r{r}] {c['unite']} {c['codage']:8s} lot {c['lot']:3d} : {np.median(t):7.2f} ms ({len(t)} appels)", flush=True)
+    res = {"git": sha, "essai": ESSAI, "lots": list(LOTS), "codages": list(CODAGES), "repetitions": REPETITIONS,
+           "boucle_s": BOUCLE_S, "repos_w": repos_w, "cas": [{k: v for k, v in c.items() if not k.startswith("_")} for c in cas]}
+tmp = sortie.with_suffix(".tmp.json")
+tmp.write_text(json.dumps(res, indent=1))
+os.replace(tmp, sortie)

@@ -398,21 +398,26 @@ def main():
             model.interpolate_pos_encoding = True
             if args.moteur == "torch-fp16":                   # EXP-013 : poids en float16 une fois pour toutes
                 model = model.half()
-            moteur = coreml_pred.brancher(model, args.moteur, out / f"{f.stem}.mlpackage", args.codage)   # {} pour torch
-            recs, temps, energie_solve = [], [], {}
+            # EXP-013 : paquets Core ML dans un dossier .noindex (Spotlight ne les indexe pas pendant la mesure suivante)
+            paquets = out / "modeles.noindex" if args.energie_puce else out
+            paquets.mkdir(exist_ok=True)
+            octets_modules = {n: sum(q.numel() * q.element_size() for q in c.parameters()) for n, c in model.named_children()}
+            moteur = coreml_pred.brancher(model, args.moteur, paquets / f"{f.stem}.mlpackage", args.codage)   # {} pour torch
+            recs, temps, energie_solve, fenetres = [], [], {}, []
             if args.energie_puce:                          # EXP-013 : mise en route hors mesure, compteurs à zéro
                 coreml_pred.echauffer(model, args.moteur)
                 coreml_pred.remise_a_zero_appels()
             octets_torch = sum(q.numel() * q.element_size() for q in model.parameters()) if not moteur else None
             ru0 = resource.getrusage(resource.RUSAGE_SELF)
             e0 = compteur.lire() if compteur else None
+            conditions_debut = coreml_pred.Puissance.lire() if compteur else None
             with coreml_pred.Puissance() as puissance:
                 for c in range(args.n // args.chunk):
                     sl = slice(c * args.chunk, (c + 1) * args.chunk)
                     solver = CEMParEpisode(model=model, graine=seed, **solver_kw)
                     if args.moteur == "torch-fp16":
                         solver = coreml_pred.autocast_fp16(solver)
-                    solver = coreml_pred.chronometrer(solver, temps, compteur, energie_solve)
+                    solver = coreml_pred.chronometrer(solver, temps, compteur, energie_solve, fenetres, args.device == "mps")
                     policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
                                                          process=process, transform=transform)
                     world.set_policy(policy)
@@ -424,7 +429,11 @@ def main():
                 energie_fichier = {"joules": j, "duree_s": dt, "debut": e0[0], "joules_solve": energie_solve,
                                    "cpu_s": (ru1.ru_utime + ru1.ru_stime) - (ru0.ru_utime + ru0.ru_stime),
                                    "maxrss_octets": ru1.ru_maxrss, "appels_predict": dict(coreml_pred.APPELS),
-                                   "octets_modele_torch": octets_torch}
+                                   "octets_modele_torch": octets_torch, "octets_modules_torch": octets_modules,
+                                   "fenetres_solve": fenetres, "fils_torch": torch.get_num_threads(),
+                                   "omp": {k: v for k, v in os.environ.items() if k.startswith("OMP_")},
+                                   "priorite": os.getpriority(os.PRIO_PROCESS, 0),
+                                   "conditions_debut": conditions_debut, "conditions_fin": coreml_pred.Puissance.lire()}
             data = {}
             for k in recs[0]:
                 if k in ("init_state", "goal_state") or recs[0][k].ndim < 2:

@@ -25,7 +25,11 @@ main() {
   rm -rf $R/exp013-fin                       # le run final d'un lancement précédent ferait sortir la garde tout de suite
   local debut=$(date +%s)
   attendre_gpu
-  echo "[info] GPU libre, lancement à $(date '+%H:%M')"
+  attendre_batterie
+  if pgrep -f '(charge_vision|regulateur_batterie)\.py' > /dev/null; then
+    echo "[arrêt] une charge de vision ou le régulateur de batterie tourne : il fausserait les temps"; exit 1
+  fi
+  echo "[info] GPU libre, batterie à $(batterie) %, lancement à $(date '+%H:%M')"
   garde exp013-fin 1
   verifier $PY
   $PY -B vitesse.py --racine $R
@@ -42,6 +46,20 @@ attendre_gpu() {
     fi
     [ $(( $(date +%s) - debut )) -lt 86400 ] || { echo "[arrêt] une autre grille tourne encore après 24 h"; exit 1; }
     [ $vides -ge 3 ] || sleep 60
+  done
+}
+
+batterie() {
+  pmset -g batt | grep -o '[0-9]*%' | head -1 | tr -d '%'
+}
+
+# au moins 60 % de batterie au départ (le seuil de reprise de la garde) : une pause de la garde au milieu de l'expérience
+# changerait l'état de la machine (une heure de repos et de recharge) ; 4 h d'attente au plus
+attendre_batterie() {
+  local t0=$(date +%s)
+  while [ "$(batterie)" -lt 60 ]; do
+    [ $(( $(date +%s) - t0 )) -lt 14400 ] || { echo "[arrêt] batterie sous 60 % après 4 h d'attente"; exit 1; }
+    sleep 60
   done
 }
 

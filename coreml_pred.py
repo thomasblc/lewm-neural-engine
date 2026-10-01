@@ -143,6 +143,31 @@ def placement(m, cu):
         return {"indisponible": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
+def processus_actifs(n=4):
+    """EXP-013 : les n processus qui prennent le plus de CPU (pourcentage, nom), pour repérer un calcul de fond."""
+    try:
+        out = subprocess.run(["ps", "-Ao", "pcpu=,comm=", "-r"], capture_output=True, text=True, timeout=5).stdout
+        return [[float(l.split(None, 1)[0]), l.split(None, 1)[1].strip().split("/")[-1]] for l in out.splitlines()[:n] if l.strip()]
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def placement_detail(m, cu):
+    """EXP-013, essai de placement des codages : pour chaque type d'opération, le nombre d'opérations par processeur
+    préféré, « aucun » compris (opérations sans usage de processeur, comme les constantes et la décompression des poids
+    faite au chargement)."""
+    from coremltools.models.compute_plan import MLComputePlan
+    plan = MLComputePlan.load_from_path(path=m.get_compiled_model_path(), compute_units=cu)
+    d = {}
+    for fn in plan.model_structure.program.functions.values():
+        for op in fn.block.operations:
+            u = plan.get_compute_device_usage_for_mlprogram_operation(op)
+            k = "aucun" if u is None else type(u.preferred_compute_device).__name__.replace("ML", "").replace("ComputeDevice", "")
+            d.setdefault(op.operator_name, {}).setdefault(k, 0)
+            d[op.operator_name][k] += 1
+    return d
+
+
 def _module_coreml(module, entrees, chemin, cu, codage):
     """Convertit un module (formes fixes, entrées {nom: tenseur}) en Core ML 16 bits avec le codage demandé ; rend le
     MLModel chargé sur cu et les empreintes, la taille des poids et le placement."""
@@ -213,7 +238,8 @@ def brancher_complet(model, chemin, codage="fp16", unite="ne"):
             "sha256_modele": "|".join(x["sha256_modele"] for x in (info, i_enc, i_act)),
             "placement": placements, "placement_par_modele": {"predicteur": info["placement"], "encodeur": i_enc["placement"],
                                                                "actions": i_act["placement"]},
-            "octets_poids": info["octets_poids"] + i_enc["octets_poids"] + i_act["octets_poids"]}
+            "octets_poids": info["octets_poids"] + i_enc["octets_poids"] + i_act["octets_poids"],
+            "octets_par_modele": {"predicteur": info["octets_poids"], "encodeur": i_enc["octets_poids"], "actions": i_act["octets_poids"]}}
 
 
 def brancher(model, moteur, chemin, codage="fp16"):
@@ -273,12 +299,14 @@ class Puissance:
                 v = bloc[k + len(cle) + 3:].split(",")[0].strip()
                 if v.isdigit():
                     d[cle] = int(v)
-        for cle in ("UpdateTime", "CurrentCapacity"):
+        for cle in ("UpdateTime", "CurrentCapacity", "InstantAmperage", "Voltage", "ExternalConnected"):
             k = s.find(f'"{cle}" = ')
             if k >= 0:
                 v = s[k + len(cle) + 5:].split("\n")[0].strip()
                 if v.isdigit():
-                    d[cle] = int(v)
+                    d[cle] = int(v) - (2 ** 64 if int(v) >= 2 ** 63 else 0)   # InstantAmperage : entier signé sur 64 bits
+                elif v in ("Yes", "No"):
+                    d[cle] = v == "Yes"
         d["t"] = time.time()
         d["charge_moyenne_1min"] = os.getloadavg()[0]
         # vrais calculs seulement (exécutable python suivi de run_grid.py, comme le lanceur), le calcul en cours compris ;
@@ -286,6 +314,7 @@ class Puissance:
         d["processus_run_grid"] = len(subprocess.run(["pgrep", "-f", "^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\\.py( |$)"],
                                                      capture_output=True, text=True).stdout.split())
         d["thermique"] = subprocess.run(["pmset", "-g", "therm"], capture_output=True, text=True).stdout.strip()[:200]
+        d["processus"] = processus_actifs()                # EXP-013 : un calcul de fond qui ne suivrait qu'un moteur
         return d
 
     def _boucle(self):
@@ -339,22 +368,26 @@ def resume_puissance(lectures, pas=5.0):
             "segments": len(segments)}
 
 
-def chronometrer(solver, temps, compteur=None, energie=None):
+def chronometrer(solver, temps, compteur=None, energie=None, fenetres=None, mps=True):
     """Ajoute à la liste temps, pour chaque appel de solve (tous les épisodes encore en cours d'un paquet, planifiés
     l'un après l'autre, 12 à 50 plans), le couple (durée en s, nombre de plans) ; temps moyen par plan de l'appel =
     durée / nombre. Une pause de la garde de batterie (SIGSTOP) tombe dans la durée de l'appel en cours : à résumer
     par la médiane des appels, pas par la moyenne."""
     solve = solver.solve
 
+    sync = mps and torch.backends.mps.is_available()   # EXP-013 : un calcul sur le CPU ne réveille pas le GPU
+
     def solve_chrono(*a, **k):
-        if torch.backends.mps.is_available():
+        if sync:
             torch.mps.synchronize()
         e0 = compteur.lire() if compteur else None
-        t0 = time.perf_counter()
+        h0, t0 = time.time(), time.perf_counter()
         r = solve(*a, **k)
-        if torch.backends.mps.is_available():
+        if sync:
             torch.mps.synchronize()
         temps.append((time.perf_counter() - t0, int(r["actions"].shape[0])))
+        if fenetres is not None:                       # EXP-013 : fenêtre d'horloge (time.time, comme la vision)
+            fenetres.append((h0, time.time()))
         if compteur:                                   # EXP-013 : énergie pendant la planification seule
             j, _ = compteur.ecart(e0, compteur.lire())
             for k_, v in j.items():
@@ -379,8 +412,9 @@ def autocast_fp16(solver):
 
 
 def echauffer(model, moteur):
-    """EXP-013 : mise en route avant la mesure (compilation des noyaux du GPU, premier appel Core ML) : un appel du
-    prédicteur, de l'encodeur d'actions et de l'encodeur sur des entrées de la bonne forme, hors des mesures."""
+    """EXP-013 : mise en route avant la mesure (compilation des noyaux du GPU, premier appel Core ML) : deux appels du
+    prédicteur à chacune des trois longueurs du déroulé, un de l'encodeur d'actions et un de l'encodeur, sur des entrées
+    de la bonne forme, hors des mesures."""
     dev = next(model.parameters()).device
     dt = next(model.parameters()).dtype
     D = model.predictor.pos_embedding.shape[-1]
@@ -388,7 +422,9 @@ def echauffer(model, moteur):
     with torch.no_grad(), torch.autocast(device_type="mps", dtype=torch.float16, enabled=moteur == "torch-fp16"):
         emb = torch.zeros(LOT, T_FIXE, D, device=dev, dtype=torch.float32 if moteur != "torch-fp16" else dt)
         act = model.action_encoder(torch.zeros(LOT, 5, nb, device=dev, dtype=emb.dtype))
-        model.predict(emb, act[:, :T_FIXE])
+        for t in range(1, T_FIXE + 1):                 # le déroulé appelle le prédicteur avec T = 1, 2 puis 3
+            for _ in range(2):
+                model.predict(emb[:, :t], act[:, :t])
         model.encode({"pixels": torch.zeros(1, 1, 3, 224, 224, device=dev, dtype=emb.dtype)})
     if dev.type == "mps":
         torch.mps.synchronize()

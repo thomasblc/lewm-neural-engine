@@ -78,6 +78,110 @@ ainsi. Ce qui suit remplace les sections Plan, Mesures et Contrôles bloquants l
 10. Durée estimée : environ 2 h (3 répétitions d'environ 28 min, contrôle de réussite d'environ 25 min, balayage
     d'environ 10 min), à confirmer par l'essai court.
 
+Amendement 3 (1er octobre, 19 h 14, avant tout calcul d'EXP-013). Relecture des corrections par deux sous-agents
+(code : 11 P1 ; méthode : « prêt avec corrections », 1 P0 et 23 P1). Ce qui suit complète et corrige l'amendement 2 ;
+en cas de contradiction, cet amendement l'emporte.
+
+1. Question 2, contrastes pré-enregistrés (P0). Pour chaque moteur e et mode de vision, par répétition k :
+   ralentissement S = temps par plan avec charge / temps par plan sans charge ; part de la vision V = images par seconde
+   pendant la planification / images par seconde de la vision seule de la même répétition. Contrastes : `coreml-ne` et
+   `ne-complet` contre `torch` et contre `coreml-gpu`, sur S, V et la latence p99 de la vision, par la règle de
+   constance à 5 %. À 30 images par seconde, la cadence est dite gardée si les images par seconde pendant la
+   planification sont au moins 29,7 et les échéances manquées au plus 0,3 par seconde, dans les 3 répétitions.
+2. Vision mesurée sur les fenêtres de planification : chaque appel de solve enregistre son début et sa fin (horloge
+   `time.time`, la même que la vision) ; la vision enregistre la fin, la latence et le retard de chaque image ; images
+   par seconde, latences médiane et 99e centile (sur toutes les images, plus le maximum des centiles par tranche de 5 s)
+   et échéances manquées sont calculés sur les images finies dans ces fenêtres. Contrôle bloquant : aucun trou de plus
+   de 2 s sans image dans une fenêtre ; la vision a écrit sa ligne « prête » avant le run ; sa cadence visée est celle du
+   mode. La vision démarre, attend d'être prête, puis 10 s de chauffe avant le run.
+3. Énergie à 30 images par seconde : estimée seulement si la cadence est gardée dans cette répétition ; sinon « non
+   attribuable » (la vision en retard fait moins de travail, la soustraction serait fausse). Sensibilité : repos de la
+   répétition, plus l'énergie d'une image de la vision seule ((puissance de la vision seule moins repos) / ses images par
+   seconde) multipliée par les images produites pendant la planification. Formulation : énergie marginale de la puce pour
+   planifier en plus d'une charge ResNet-50 à 30 images par seconde.
+4. Vision seule : mesure d'énergie (35 s) après la ligne « prête » et 10 s de chauffe ; images par seconde sur exactement
+   la même fenêtre ; fichier neuf à chaque lancement (jamais de mélange avec un lancement interrompu) ; commit et cadence
+   enregistrés et vérifiés.
+5. Contrôles bloquants ajoutés : canaux IOReport de la puce tous présents et finis (runs, repos, vision seule) ; moteur et
+   codage enregistrés égaux au nom du dossier ; ordre réel des runs égal à l'ordre tiré, recalculé par l'analyse ;
+   chaque mesure au repos placée entre les runs qu'elle encadre ; trou de plus de 7,5 s entre deux lectures (au lieu de
+   12,5 s : pauses courtes du régulateur de batterie comprises) ou un autre calcul run_grid pendant le run : run refait
+   par vitesse.py, refusé par l'analyse ; mesure au repos refaite sur-le-champ si un calcul ou une charge de vision
+   tournait ; balayage du lot complet (40 cas, 3 répétitions) et du même commit ; run torch final présent.
+6. Signalements (rapportés, non bloquants) : déterminisme par configuration (identique d'une répétition à l'autre et
+   avec ou sans vision ; le contrôle bloquant reste l'identité des runs torch au pilote d'EXP-012, car Core ML et les
+   calculs sur CPU n'ont jamais été vérifiés en répétition) ; puissance du GPU au-dessus du repos supérieure à 0,3 W pour
+   `ne-complet` et `coreml-cpu` (question 3 : planificateur hors du GPU) ; énergie par plan au-dessus du repos négative ou
+   nulle ; alerte thermique ou de performance (`pmset -g therm`, lue toutes les 5 s) ; chargeur débranché ; processus
+   autre que le calcul à plus de 50 % d'un cœur ; écart des 3 runs torch de plus de 2,5 % (règle du temps alors dite peu
+   informative). Le contrôle du Neural Engine (supérieur à 1,0 W, ou inférieur à 0,3 W) s'applique aussi aux runs avec
+   vision.
+7. Contrastes sans charge (temps et énergie, règle de constance) : chaque configuration contre `torch` ; `coreml-ne`,
+   `ne-complet` et `coreml-cpu` contre `coreml-gpu` ; `coreml-gpu` contre `torch-fp16` (le cadre à précision égale) ;
+   `ne-complet` contre `coreml-ne` (encodeur et CEM hors du GPU) ; `ne-complet` contre `coreml-cpu` (Neural Engine contre
+   CPU pour les mêmes graphes Core ML) ; chaque codage contre fp16 sur le même processeur. L'énergie brute par plan
+   (sans soustraction du repos) est rapportée à côté.
+8. Règle de constance, formulation : « plus bas (ou plus haut) dans les 3 répétitions » si les 3 rapports appariés sont
+   tous sous 0,95 (ou au-dessus de 1,05) pour le temps, la latence et la part de la vision, 0,90 et 1,10 pour l'énergie ;
+   sinon « non constant ». Critère descriptif, sans taux d'erreur, sur une machine et une session, pour environ 40
+   comparaisons et 3 variantes du repos. Une dérive linéaire pousse les répétitions 1 et 2 en sens contraires (ordre
+   inverse) : elle ne peut pas passer la règle seule.
+9. Mise en route : deux appels du prédicteur à chacune des longueurs T = 1, 2 et 3 du déroulé (au lieu de T = 3
+   seulement), un de l'encodeur d'actions, un de l'encodeur.
+10. Fils et OpenMP : PyTorch 2.14 utilise OpenMP (6 fils par défaut, `OMP_NUM_THREADS` non fixé) ; réglage par défaut
+    retenu comme partie de l'implémentation, fils et variables `OMP_*` enregistrés par run. Sensibilité ajoutée après la
+    répétition 3 : `ne-complet` avec `OMP_WAIT_POLICY` par défaut et `PASSIVE`, 2 runs chacun, ordre ABBA, entre deux
+    mesures au repos ; descriptive.
+11. Batterie, chargeur, état de la machine : départ seulement avec au moins 60 % de batterie (4 h d'attente au plus) ;
+    pendant une pause de la garde, la charge de vision est gelée avec le calcul ; courant, tension, charge et chargeur
+    enregistrés toutes les 5 s ; `pmset -g`, `pmset -g custom`, `pmset -g therm`, fils, canaux IOReport et processus
+    actifs écrits au début et à la fin ; départ refusé si une charge de vision ou le régulateur de batterie tourne. Les
+    paquets Core ML sont écrits dans un dossier `.noindex` (Spotlight ne les indexe pas pendant la mesure suivante).
+    Processus les plus actifs enregistrés à chaque lecture et dans les mesures au repos. À Thomas, s'il le veut bien :
+    luminosité automatique et True Tone coupés, pas d'usage du Mac pendant l'expérience.
+12. Arrêts propres : vitesse.py arrête la vision et le calcul en cours sur SIGTERM ; la vision s'arrête seule si son
+    parent disparaît ; un fichier de plan (`exp013-ordre.json`) différent du code arrête la reprise.
+13. Balayage du lot, refait : les 40 cas convertis et chargés d'abord (détail du placement par type d'opération) ;
+    puissance au repos de la puce 30 s ; 3 répétitions, chacune dans un ordre tiré au hasard (`default_rng(17)`) ; par
+    cas, 10 appels de mise en route puis des appels en boucle pendant au moins 3 s, énergie nette du repos. Prédiction
+    reformulée : au lot de 300, aucun codage n'est plus rapide que fp16 de plus de 5 % dans les 3 répétitions, sur l'un ou
+    l'autre processeur ; les ralentissements sont rapportés à part. Justification corrigée : à 300 candidats et T = 3,
+    chaque poids sert 900 fois par appel, et la lecture des poids (23 Mo en fp16) n'est qu'une petite part du trafic
+    mémoire (les activations des couches linéaires font environ 5 fois les poids) ; l'argument « le calcul limite »
+    n'est pas établi et n'est pas avancé. Formulation : appels isolés, caches chauds, même entrée ; aux petits lots, la
+    disposition « 1ctb » aligne mal le dernier axe (2 octets au lot de 1), si bien que les temps du Neural Engine y
+    mesurent aussi la disposition.
+14. Essai de placement des codages (`essai_placement_codages.py`, avant le lancement) : détail du placement par type
+    d'opération, « aucun » compris, et mémoire du processus (empreinte physique, RSS) avant et après chargement, pour
+    fp16, int8, int4b32 et pal4 sur les deux processeurs. Si la décompression se fait au chargement, le papier dit qu'un
+    codage ne change que la taille du fichier des poids, pas la lecture des poids pendant le calcul.
+15. Poids : la colonne compare le seul prédicteur (prédicteur et projection de sortie), de la même façon pour tous
+    (fichier weight.bin du prédicteur Core ML, ou paramètres PyTorch au type utilisé) ; la taille de chaque réseau est
+    rapportée à part ; « taille du fichier des poids », pas mémoire à l'exécution.
+16. Codages, formulations : int8 linéaire symétrique par canal ; int4b32 arrondi par blocs de 32 sans calibration (le
+    schéma qui perdait environ 14 points à 4 bits dans EXP-003 est de cette famille) ; pal4 une palette de 16 valeurs par
+    tenseur (réglage par défaut de coremltools 9.0). La réussite sur 50 épisodes est affichée avec son intervalle de
+    Wilson à côté de chaque codage, avec la mention « réussite non établie, mesurée par une autre expérience ». Le coût
+    par plan ne dépend pas des valeurs des poids (la CEM n'a pas d'arrêt anticipé) : temps et énergie d'un codage sont
+    des mesures de coût valides sans sa réussite.
+17. `coreml-cpu`, formulation corrigée : il fait tourner les mêmes graphes Core ML que `ne-complet` sur le CPU seul ; le
+    contraste `ne-complet` contre `coreml-cpu` isole le Neural Engine contre le CPU pour ces graphes. Il n'isole ni Core
+    ML contre PyTorch (aucun run PyTorch sur CPU) ni le meilleur déploiement sur CPU.
+18. Question 3, contrôle de réussite : descriptif, sans marge ni affirmation de non-infériorité ; le contrôle de pause
+    n'y est pas appliqué (la réussite ne dépend pas du temps).
+19. Validation des compteurs (remplace l'amendement 2, point 9), faite seulement si Thomas débranche le chargeur : sur
+    batterie, trois segments d'environ 5 min (repos, `coreml-gpu` en boucle, `ne-complet` en boucle) ; puissance de la
+    batterie intégrée (InstantAmperage fois Voltage) ; constante du reste du Mac estimée sur le segment au repos seul,
+    puis prédiction des deux segments chargés. Acceptation fixée d'avance : chaque prédiction à 10 % près, et le rapport
+    entre les deux configurations à 10 % près (les affirmations du papier sont des rapports). Sinon : « estimée par les
+    compteurs de la puce, non validée ». Un recoupement avec `sudo powermetrics` (par Thomas) vérifierait le choix des
+    canaux, pas le modèle d'énergie.
+20. Corrections du texte : l'exclusion des appels de plus de 3 fois la médiane (Mesures) n'est pas appliquée, la règle
+    « run refait après une pause » la remplace ; « mêmes tirages » est faux pour `coreml-cpu` comme pour `ne-complet`
+    (CEM sur le CPU) ; les appels de solve durent de 5 à 130 s.
+21. Essai de bout en bout avant le lancement : `vitesse.py --essai` (10 épisodes, mesures brèves, dossier de travail hors
+    de resultats/) puis `analyse_exp013.py --essai` sur ses fichiers.
+
 ## Questions
 
 1. Que fait gagner chaque choix de déploiement, en temps par plan, en énergie par plan et en mémoire des poids : le
