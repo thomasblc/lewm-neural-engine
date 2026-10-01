@@ -14,6 +14,7 @@ import time
 from pathlib import Path
 
 import energie_puce
+from coreml_pred import processus_actifs               # importé avant la stabilisation, jamais pendant la mesure
 
 dossier, etiquette = Path(sys.argv[1]), sys.argv[2]
 duree = float(sys.argv[3]) if len(sys.argv) > 3 else 90.0
@@ -27,7 +28,6 @@ def compter():
 
 
 def actifs():
-    from coreml_pred import processus_actifs
     return processus_actifs(4)
 
 
