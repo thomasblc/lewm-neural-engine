@@ -4,6 +4,15 @@ Brouillon rédigé par Claude le 1er octobre 2026 à partir de 18 h 02 (heure du
 d'EXP-013. Figé par le commit enregistré dans les fichiers. Les mesures d'EXP-012 (temps par plan, 50 épisodes de pilote,
 journal d'énergie par composant pendant TwoRoom) sont connues et ont motivé ce plan ; aucun fichier d'EXP-013 n'existe.
 
+Amendement 1 (1er octobre, 18 h 25, avant tout calcul) : la question 3 est retenue. L'essai de faisabilité de l'encodeur
+(`essais/encodeur_ane.py`, `test_encodeur_ane.py`, `essai_encodeur_placement.py`) montre l'encodeur d'images réécrit en
+(B, C, 1, S) équivalent à 1,9e-6 en float32 et ses 323 opérations toutes sur le Neural Engine (plan de calcul), de même
+que l'encodeur d'actions ; l'encodeur d'images n'est appelé que 2 fois par plan (but et départ, en cache). Configuration
+ajoutée : `ne-complet` (encodeur, encodeur d'actions et prédicteur sur le Neural Engine, en 16 bits ; CEM et coût sur le
+CPU, `--device cpu`), sans et avec la charge de vision. Contrôle de réussite ajouté : `ne-complet` sur les 500 épisodes
+d'EXP-003, graines 42 et 43, comparé par épisode à la pleine précision d'EXP-003 (5 graines), intervalle bootstrap ;
+descriptif, les tirages de la CEM étant faits sur le CPU (différents de ceux du GPU). Environ 25 min de plus.
+
 ## Questions
 
 1. Que fait gagner chaque choix de déploiement, en temps par plan, en énergie par plan et en mémoire des poids : le
@@ -28,11 +37,11 @@ Neural Engine, les codages Core ML, la charge de vision, l'énergie par composan
   avant codage.
 - Configurations sans charge : `torch` (float32, GPU), `torch-fp16` (autocast float16, GPU), `coreml-gpu` et `coreml-ne`
   en 16 bits (prédicteur en Core ML, le reste en PyTorch sur le GPU, comme EXP-012), et `coreml-gpu`, `coreml-ne` avec les
-  codages `int8`, `int4b32`, `pal4` : 10 configurations.
+  codages `int8`, `int4b32`, `pal4`, et `ne-complet` (amendement 1) : 11 configurations.
 - Configurations avec charge de vision (`charge_vision.py` : ResNet-50 à poids aléatoires, 224 x 224, lot de 1, float16,
-  en boucle sur le GPU, démarré 30 s avant le calcul) : `torch`, `coreml-gpu`, `coreml-ne` en 16 bits, et la charge seule
+  en boucle sur le GPU, démarré 30 s avant le calcul) : `torch`, `coreml-gpu`, `coreml-ne`, `ne-complet` en 16 bits, et la charge seule
   pendant 60 s (sa vitesse de référence, placée au hasard dans l'ordre comme une configuration) : 3 configurations et une
-  mesure de référence.
+  mesure de référence (4 configurations avec l'amendement 1).
 - Trois répétitions ; dans chaque répétition, ordre des configurations tiré au hasard (`default_rng(13)`), pour que
   l'ordre et la chaleur ne se confondent pas avec la configuration. Avant chaque répétition : énergie au repos par
   composant (`repos_puce.py`, 45 s de stabilisation puis 75 s de mesure, aucun calcul en cours ; moins de 3 min sans
