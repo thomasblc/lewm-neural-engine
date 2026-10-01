@@ -13,6 +13,71 @@ CPU, `--device cpu`), sans et avec la charge de vision. Contrôle de réussite a
 d'EXP-003, graines 42 et 43, comparé par épisode à la pleine précision d'EXP-003 (5 graines), intervalle bootstrap ;
 descriptif, les tirages de la CEM étant faits sur le CPU (différents de ceux du GPU). Environ 25 min de plus.
 
+Amendement 2 (1er octobre, 18 h 37, avant tout calcul d'EXP-013 ; code aux commits 069f7f2 à 195a035, tests passés,
+16 refus vérifiés). Deux relectures du plan (code ; méthode, verdict « à retravailler », 2 P0 et 13 P1) le changent
+ainsi. Ce qui suit remplace les sections Plan, Mesures et Contrôles bloquants là où il les contredit.
+
+1. Configurations (22 par répétition). Sans charge, 12 : les 11 précédentes et le témoin `coreml-cpu` (prédicteur et
+   encodeurs en Core ML sur le CPU seul, `--device cpu`), qui sépare l'effet de Core ML de celui du processeur.
+   `torch-fp16` : poids convertis une fois en float16 (`model.half()`) et autocast, au lieu de l'autocast seul. Avec
+   charge : `torch`, `coreml-gpu`, `coreml-ne`, `ne-complet` en 16 bits, dans deux modes de vision : pleine vitesse
+   (saturation) et 30 images par seconde (une caméra, travail fixe) ; et la vision seule dans chaque mode (45 s : 10 s
+   de chauffe, 35 s de mesure d'énergie). La vision démarre 15 s avant chaque run avec charge.
+2. Ordre contrebalancé : répétition 1 tirée au hasard (`default_rng(13)`), répétition 2 dans l'ordre inverse (la dérive
+   lente, chaleur ou charge de la batterie, s'annule en moyenne), répétition 3 tirée au hasard ; la vision seule jamais en
+   tête. Mise en route hors mesure avant chaque run (`echauffer` : appels du prédicteur et des encodeurs, puis compteurs
+   remis à zéro). Un run pendant lequel le fil de lecture a été gelé plus de 12,5 s (pause de la garde de batterie) est
+   effacé et refait, 3 essais au plus ; l'analyse refuse tout run avec un tel trou.
+3. Énergie. Canaux IOReport « Energy Model » lus par `energie_puce.py` (sans droits administrateur) : CPU, GPU, ANE,
+   DRAM, AMCC, DCS, FAB, AFR, ISP, AVE, MSR, DISP, DISPEXT (le canal « GPU », double de « GPU Energy », est écarté).
+   Groupes : calcul (CPU, GPU, ANE), mémoire (DRAM, AMCC, DCS, FAB), puce (tous sauf l'affichage DISP et DISPEXT, qui ne
+   calcule pas le plan). Mesure principale : énergie de la puce pendant la planification seule (compteurs lus avant et
+   après chaque appel de solve, hors du temps chronométré ; une lecture coûte environ 5 ms pour des appels de 10 à 130
+   s), moins la puissance au repos multipliée par la durée de planification, divisée par le nombre de plans. Repos :
+   4 mesures (avant la répétition 1, entre 1 et 2, entre 2 et 3, après 3 ; 30 s de stabilisation, 60 s de mesure, aucun
+   calcul run_grid) ; chaque run utilise la moyenne des repos qui encadrent sa répétition. Sensibilité : repos d'avant
+   seul et repos d'après seul ; une comparaison d'énergie n'est dite robuste au repos que si les trois calculs donnent
+   le même verdict. L'énergie du run entier (simulation et rendu compris) est rapportée, descriptive. Écran allumé
+   pendant tout le calcul, repos compris (`caffeinate -d -i` sur tout le lanceur), luminosité au minimum, inchangée. Le
+   journal d'énergie exploratoire et la sentinelle tournent pendant toute l'expérience (charge constante, soustraite par
+   le repos).
+4. Avec charge de vision. À pleine vitesse, la vision prend tout le GPU laissé libre : son travail varie avec la
+   configuration, donc aucune énergie par plan n'est attribuée ; on rapporte le temps par plan, les images par seconde,
+   leur part de la vision seule de la même répétition (référence principale), les latences médiane et 99e centile et la
+   puissance de la puce. À 30 images par seconde (travail fixe) : échéances manquées par seconde, latences, et énergie de
+   planification estimée = (énergie de la puce pendant la planification moins la puissance de la vision seule à 30
+   images par seconde de la même répétition multipliée par la durée de planification) divisée par le nombre de plans ;
+   estimation valable seulement si la vision garde ses 30 images par seconde, ce qui est rapporté à côté. Les mesures de
+   la vision dans les 60 s avant un run (chargement et mise en route du run compris) sont descriptives.
+5. Contrôles bloquants ajoutés. Usage réel du Neural Engine, à l'exécution : puissance de l'ANE au-dessus du repos
+   pendant la planification supérieure à 1,0 W pour `coreml-ne`, ses codages et `ne-complet`, inférieure à 0,3 W pour les
+   autres moteurs (un repli silencieux de Core ML vers le CPU ou le GPU, que le plan de calcul ne montre pas, est ainsi
+   refusé). Déterminisme : chaque configuration donne des fichiers identiques (hors champs git) d'une répétition à
+   l'autre et avec ou sans vision ; les runs torch sont identiques au pilote d'EXP-012. Placement : toutes les
+   opérations sur le processeur demandé, CPU pour `coreml-cpu` ; pour les codages compressés, le placement des opérations
+   de décompression des poids est vérifié par un essai avant le lancement, et si certaines tombent sur le CPU la règle
+   est ajustée par un amendement daté, avant tout calcul. Configurations, ordre et commit uniques vérifiés.
+6. Règle de décision (n = 3, aucun test, aucune valeur p) : une différence de temps par plan est dite établie si les 3
+   rapports appariés (même répétition) sont tous sous 0,95 ou tous au-dessus de 1,05 ; pour l'énergie par plan, 0,90 et
+   1,10. Comparaisons : chaque configuration sans charge contre `torch` (temps et énergie) et contre `coreml-gpu`
+   (énergie). Sinon : « non établi ». Rapportée comme une règle de constance, pas comme un test.
+7. Balayage de la taille du lot (`balayage_lot.py`, après les runs) : appels isolés du prédicteur, lots de 1, 8, 32,
+   100 et 300 candidats (T = 3), 4 codages, Neural Engine (graphe « 1ctb ») et GPU (graphe d'origine) ; 10 appels de
+   mise en route, puis médiane et quartiles de 50 appels, énergie de la puce sur ces 50 appels, placement. Prédiction
+   enregistrée : au lot de 300, le calcul limite (environ 900 opérations par octet de poids en 16 bits), et les codages
+   des poids n'accélèrent pas le prédicteur (écart sous 5 % contre fp16, sur les deux processeurs). Aux petits lots, la
+   lecture des poids peut compter : aucune prédiction de sens.
+8. Codages des poids : fonctions de coremltools appliquées aux poids 16 bits (int8 linéaire symétrique par canal, int4
+   par blocs de 32, palettes de 16 valeurs par k-moyennes), sans calibration. Leur réussite n'est pas établie ici (50
+   épisodes de contrôle) ; aucun chiffre de vitesse d'un codage n'est présenté sans cette mention ; une autre expérience
+   mesure leur réussite.
+9. Validation des compteurs : IOReport donne l'estimation d'énergie de la puce, pas une mesure à la prise. Plan : sur
+   batterie, environ 20 min, une charge fixe ; comparer la décharge de la batterie (mWh) à la somme IOReport plus une
+   constante pour le reste du Mac. Faite si Thomas débranche le chargeur ; sinon le papier écrit « énergie estimée par
+   les compteurs de la puce (IOReport), non validée contre une mesure externe ».
+10. Durée estimée : environ 2 h (3 répétitions d'environ 28 min, contrôle de réussite d'environ 25 min, balayage
+    d'environ 10 min), à confirmer par l'essai court.
+
 ## Questions
 
 1. Que fait gagner chaque choix de déploiement, en temps par plan, en énergie par plan et en mémoire des poids : le
