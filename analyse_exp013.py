@@ -1,4 +1,4 @@
-"""Analyse pré-enregistrée d'EXP-013 (PREREG-EXP013.md, amendements 2 et 3) : vitesse, énergie de la puce et mémoire de
+"""Analyse pré-enregistrée d'EXP-013 (PREREG-EXP013.md, amendements 2 à 6) : vitesse, énergie de la puce et mémoire de
 la planification selon le moteur, le codage des poids et une charge de vision. Descriptive, avec une règle de constance
 fixée d'avance (les 3 répétitions du même côté, au-delà d'une marge) ; ce n'est pas un test. Contrôles bloquants (données
 incohérentes) et signalements (mesures valides mais à lire avec prudence).
@@ -32,7 +32,6 @@ MARGE_TEMPS, MARGE_ENERGIE = 0.05, 0.10
 SEUIL_ANE_ACTIF, SEUIL_ANE_INACTIF, SEUIL_GPU_HORS = 1.0, 0.3, 0.3     # W au-dessus du repos
 GARDE_30 = (29.7, 0.3)                    # 30 images/s gardées : au moins 29,7 images/s, au plus 0,3 échéance manquée/s
 BRUIT_TORCH = 0.025                       # écart des 3 runs torch au-delà duquel la règle du temps est peu informative
-COUVERTURE_S = 1.0                        # lignes de la vision : écart permis entre deux lignes et aux bords d'une fenêtre
 SEUIL_FOND = 20.0                         # % d'un cœur : processus de fond pendant une mesure au repos
 # placement attendu de chaque codage (essai de placement, resultats/preparation-exp013/placement-codages-70ecada.json)
 PLACEMENT_CODAGE = {("coreml-ne", "int4b32"): {"CPU": 211, "NeuralEngine": 150}}
@@ -79,13 +78,7 @@ def images(lignes):
     return np.array(f, dtype=np.float64), np.array(l, dtype=np.float64), np.array(r, dtype=bool)
 
 
-def couverture(lignes, fenetres):
-    """Vrai si les lignes de la vision (contiguës, [t0, t1]) couvrent toutes les fenêtres : la vision tournait et a tout
-    écrit. Un trou sans image dans une fenêtre couverte est un résultat (la vision affamée), pas une panne."""
-    L = sorted((x["t0"], x["t1"]) for x in lignes if "fins" in x)
-    if not L or any(b0 - a1 > COUVERTURE_S for (_, a1), (b0, _) in zip(L, L[1:])):
-        return False
-    return all(L[0][0] <= h0 + COUVERTURE_S and L[-1][1] >= h1 - COUVERTURE_S for h0, h1 in fenetres)
+couverture = V.couverture                 # source unique : vitesse.py refait un run que l'analyse refuserait
 
 
 def p99_tranches(lignes, fenetres):
@@ -106,8 +99,10 @@ def vision_fenetres(img, fenetres):
         dans = (f >= h0) & (f <= h1)
         m |= dans
         trou = max(trou, float(np.diff(np.concatenate([[h0], np.sort(f[dans]), [h1]])).max()))
-    if not m.any() or duree <= 0:
+    if duree <= 0:
         return None
+    if not m.any():                                    # aucune image finie dans les fenêtres : vision affamée, un résultat
+        return {"ips": 0.0, "images": 0, "latence_p50_ms": None, "latence_p99_ms": None, "manquees_par_s": 0.0, "trou_max_s": trou}
     return {"ips": float(m.sum() / duree), "images": int(m.sum()), "latence_p50_ms": float(np.median(l[m])),
             "latence_p99_ms": float(np.percentile(l[m], 99)), "manquees_par_s": float(r[m].sum() / duree), "trou_max_s": trou}
 
@@ -272,7 +267,7 @@ def par_run(run, repos_avant, repos_apres, lignes_vision=None, seule30=None, bor
         s["vision"] = vision_fenetres(img, fenetres)
         if s["vision"]:
             s["vision"]["latence_p99_max_tranches_ms"] = p99_tranches(lignes_vision, fenetres)
-        s["vision_avant"] = vision_fenetres(img, [(e["debut"] - 60, e["debut"])])
+        s["vision_avant"] = vision_fenetres(img, [(lignes_vision[0]["pret"], e["debut"])]) if e["debut"] > lignes_vision[0]["pret"] else None
         s["energie_solve"] = None                      # avec charge : pas d'énergie par plan au sens sans charge
     if seule30 is not None:                            # cadence fixe : énergie de planification au-dessus de la vision seule
         s["garde_30"] = garde_30(s["vision"])
@@ -299,6 +294,23 @@ def decision(rapports, marge):
     if all(x > 1 + marge for x in rapports):
         return "plus haut dans les 3 répétitions"
     return "non constant"
+
+
+def reponse_q2(s, v, g_ne, g_ref, interp30=True):
+    """Réponse à la question 2 (amendement 6). s, v : verdicts de la règle de constance pour le ralentissement S (plus
+    bas = en faveur de ne-complet) et la part de la vision V (plus haute = en faveur) ; g_ne, g_ref : 30 images/s gardées.
+    « compromis » si un critère est en faveur et un autre contre ; « oui » si S et V sont en faveur et si ne-complet
+    garde les 30 images/s (ou si le bras à 30 images/s n'est pas interprétable) ; « non » si aucun critère n'est en
+    faveur ; « en partie » sinon."""
+    pour = [s == "plus bas dans les 3 répétitions", v == "plus haut dans les 3 répétitions", interp30 and g_ne and not g_ref]
+    contre = [s == "plus haut dans les 3 répétitions", v == "plus bas dans les 3 répétitions", interp30 and g_ref and not g_ne]
+    if any(pour) and any(contre):
+        return "compromis"
+    if pour[0] and pour[1] and (g_ne or not interp30):
+        return "oui"
+    if not any(pour):
+        return "non"
+    return "en partie"
 
 
 def wilson(p, n, z=1.96):
@@ -344,7 +356,10 @@ def analyser(racine, verifier=True, essai=False):
                          f"{nom} r{k} : la charge de vision ne couvre pas les fenêtres de planification (arrêtée ou absente)")
                 x["vision_part_seule"] = x["vision"]["ips"] / seules[(mode, k)]["vision"]["ips"]   # référence : vision seule, même répétition
             w = x["composants_solve_w"]["Neural Engine"]           # repli silencieux de Core ML : le Neural Engine calcule-t-il ?
-            if runs[(nom, k)]["moteur"] in SUR_ANE and runs[(nom, k)]["codage"] == "fp16":
+            if runs[(nom, k)]["moteur"] in SUR_ANE and mode:  # sous charge, la puissance du Neural Engine baisse : signalé
+                if w <= SEUIL_ANE_ACTIF:
+                    signalements.append(f"{nom} r{k} : Neural Engine à {w:.2f} W sous charge de vision")
+            elif runs[(nom, k)]["moteur"] in SUR_ANE and runs[(nom, k)]["codage"] == "fp16":
                 A.exiger(w > SEUIL_ANE_ACTIF, f"{nom} r{k} : Neural Engine presque inactif ({w:.2f} W)")
             elif (runs[(nom, k)]["moteur"], runs[(nom, k)]["codage"]) in REPLI_CPU:   # int4 par blocs : repli connu sur le CPU
                 if w <= SEUIL_ANE_ACTIF:
@@ -387,11 +402,11 @@ def analyser(racine, verifier=True, essai=False):
         if "garde_30" in L[0]:
             c["garde_30_par_repetition"] = [x["garde_30"] for x in L]
             c["garde_30"] = all(c["garde_30_par_repetition"])
-            c["energie_planification_30_j"] = resume([x["energie_planification_30_j"] for x in L])
-            c["energie_planification_30_n"] = sum(x["energie_planification_30_j"] is not None for x in L)
-            c["energie_planification_30_bornes_j"] = ([min(x["energie_planification_30_bornes_j"][1] for x in L if x["garde_30"]),
-                                                       max(x["energie_planification_30_bornes_j"][0] for x in L if x["garde_30"])]
-                                                      if c["garde_30"] else None)
+            G = [x for x in L if x["garde_30"]]        # estimée sur les répétitions qui gardent la cadence, avec leur nombre
+            c["energie_planification_30_j"] = resume([x["energie_planification_30_j"] for x in G])
+            c["energie_planification_30_n"] = len(G)
+            c["energie_planification_30_bornes_j"] = ([min(x["energie_planification_30_bornes_j"][1] for x in G),
+                                                       max(x["energie_planification_30_bornes_j"][0] for x in G)] if G else None)
         res[nom] = c
 
     def rapports(a, b, val):                           # rapport non défini si une valeur est nulle ou négative
@@ -420,9 +435,10 @@ def analyser(racine, verifier=True, essai=False):
              "contrastes": {}}
         for e in ("coreml-ne", "ne-complet"):
             for ref in ("torch", "coreml-gpu"):
-                rr = [a / b for a, b in zip(ral[e], ral[ref])]
-                rv = [a / b for a, b in zip(part[e], part[ref])]
-                rp = [a / b for a, b in zip(p99[e], p99[ref])]
+                div = lambda a, b: a / b if a is not None and b is not None and a > 0 and b > 0 else None
+                rr = [div(a, b) for a, b in zip(ral[e], ral[ref])]
+                rv = [div(a, b) for a, b in zip(part[e], part[ref])]
+                rp = [div(a, b) for a, b in zip(p99[e], p99[ref])]
                 q["contrastes"][f"{e} contre {ref}"] = {
                     "ralentissement": {"rapports": rr, "verdict": decision(rr, MARGE_TEMPS)},
                     "part_vision": {"rapports": rv, "verdict": decision(rv, MARGE_TEMPS)},
@@ -430,20 +446,18 @@ def analyser(racine, verifier=True, essai=False):
         if mode == "vision30":
             q["garde_30"] = {e: res[f"{e}-{mode}"]["garde_30"] for e, _ in V.AVEC_CHARGE}
         q2[mode] = q
-    # réponse pré-enregistrée (amendement 5) : contrastes principaux ne-complet contre torch, à pleine vitesse (S, V) et
-    # à 30 images/s (cadence gardée) ; « oui » si S plus bas et V plus haut dans les 3 répétitions et si ne-complet garde
-    # 30 images/s quand torch ne les garde pas (ou les deux les gardent) ; « non » si aucun des deux contrastes S, V n'est
-    # en faveur de ne-complet et que la cadence n'est pas mieux gardée ; « en partie » sinon
-    k = q2["vision"]["contrastes"]["ne-complet contre torch"]
-    s_ok = k["ralentissement"]["verdict"] == "plus bas dans les 3 répétitions"
-    v_ok = k["part_vision"]["verdict"] == "plus haut dans les 3 répétitions"
+    # réponse pré-enregistrée (amendements 5 et 6) : ne-complet contre torch (principal) et contre coreml-gpu (même
+    # précision fp16, principal aussi) ; le bras à 30 images/s n'est interprétable que si la vision seule tient sa
+    # cadence dans les 3 répétitions
+    interp30 = all(garde_30(seules[("vision30", k)]["vision"]) for k in R)
     g = q2["vision30"]["garde_30"]
-    c30 = g["ne-complet"] and not g["torch"]
-    c30_neutre = g["ne-complet"] == g["torch"]
-    reponse = "oui" if (s_ok and v_ok and (c30 or (c30_neutre and g["ne-complet"]))) else (
-        "non" if (not s_ok and not v_ok and not c30) else "en partie")
-    q2_principal = {"ralentissement": k["ralentissement"], "part_vision": k["part_vision"],
-                    "garde_30": {"ne-complet": g["ne-complet"], "torch": g["torch"]}, "reponse": reponse}
+    q2_principal = {"interpretable_30": interp30}
+    for ref in ("torch", "coreml-gpu"):
+        k_ = q2["vision"]["contrastes"][f"ne-complet contre {ref}"]
+        q2_principal[ref] = {"ralentissement": k_["ralentissement"], "part_vision": k_["part_vision"],
+                             "garde_30": {"ne-complet": g["ne-complet"], ref: g[ref]},
+                             "reponse": reponse_q2(k_["ralentissement"]["verdict"], k_["part_vision"]["verdict"],
+                                                   g["ne-complet"], g[ref], interp30)}
     tt = [lignes[("torch", k)]["temps_par_plan_ms"] for k in R]
     tf = json.loads((r / "exp013-fin" / "fp32_s42.temps.json").read_text())["appels_solve"]
     t_fin = 1000 * sum(x for x, _ in tf) / sum(y for _, y in tf)
@@ -466,9 +480,12 @@ def analyser(racine, verifier=True, essai=False):
             s_omp[m][variante] = {"temps_par_plan_ms": resume([x["temps_par_plan_ms"] for x in L]),
                                   "energie_solve_puce_j": resume([x["energie_solve"]["puce"] for x in L]),
                                   "cpu_w": resume([x["composants_solve_w"]["CPU"] for x in L])}
-        rap = s_omp[m]["passif"]["energie_solve_puce_j"]["mediane"] / s_omp[m]["defaut"]["energie_solve_puce_j"]["mediane"]
+        ep, ed = s_omp[m]["passif"]["energie_solve_puce_j"], s_omp[m]["defaut"]["energie_solve_puce_j"]
+        rap = ep["mediane"] / ed["mediane"]
         s_omp[m]["rapport_energie_passif_defaut"] = rap
-        s_omp[m]["sensible"] = not (1 - MARGE_ENERGIE <= rap <= 1 + MARGE_ENERGIE)
+        s_omp[m]["rapport_temps_passif_defaut"] = s_omp[m]["passif"]["temps_par_plan_ms"]["mediane"] / s_omp[m]["defaut"]["temps_par_plan_ms"]["mediane"]
+        disjoints = ep["min"] > ed["max"] or ep["max"] < ed["min"]       # les 2 runs de chaque variante ne se recouvrent pas
+        s_omp[m]["sensible"] = disjoints and not (1 - MARGE_ENERGIE <= rap <= 1 + MARGE_ENERGIE)
     for nom_c, cmp in comparaisons.items():
         cmp["sensible_openmp"] = [m for m in s_omp if s_omp[m]["sensible"] and m in nom_c.split(" contre ")]
     # bruit de la référence : écart des 3 runs torch (temps, énergie), et des p99 de la vision seule
@@ -478,7 +495,9 @@ def analyser(racine, verifier=True, essai=False):
         cmp["temps"]["peu_informatif"] = bruit > BRUIT_TORCH
     # question 3 : planificateur entièrement hors du GPU, si la puissance du GPU au-dessus du repos reste sous 0,3 W
     gpu = [lignes[("ne-complet", k)]["composants_solve_w"]["GPU"] for k in R]
-    q3 = {"gpu_w": gpu, "hors_gpu": all(g <= SEUIL_GPU_HORS for g in gpu)}
+    g_repos = [x["w"].get("GPU Energy", 0) for x in repos.values()]
+    q3 = {"gpu_w": gpu, "hors_gpu": all(g <= SEUIL_GPU_HORS for g in gpu), "gpu_repos_w": [min(g_repos), max(g_repos)],
+          "construction": "encodeurs et prédicteur en Core ML sur le Neural Engine (plan de calcul), CEM et coût sur le CPU (--device cpu)"}
     bal = balayage(r, sha, essai)
     if bal is None:
         signalements.append("balayage du lot absent (échec du balayage) : le reste de l'analyse vaut")
@@ -595,7 +614,7 @@ def rapport(r):
             continue
         e30 = ""
         if "garde_30" in c:
-            e30 = (f"{f(c['energie_planification_30_j'], 2)}, n = {c['energie_planification_30_n']}" if c["garde_30"]
+            e30 = (f"{f(c['energie_planification_30_j'], 2)}, n = {c['energie_planification_30_n']}" if c["energie_planification_30_n"]
                    else "non attribuable (30 images/s non gardées)")
         bo = c.get("energie_planification_30_bornes_j")
         L.append(f"| {nom} | {f(c['temps_par_plan_ms'])} | {f(c['puissance_solve_puce_w'], 1)} | {f(c['vision_ips'], 1)} | {f(c['vision_part_seule'], 2)} | "
@@ -614,19 +633,28 @@ def rapport(r):
           "", "30 images par seconde gardées (au moins 29,7 images/s et au plus 0,3 échéance manquée par seconde, dans les 3 "
           "répétitions) : " + ", ".join(f"{e} {'oui' if v else 'non'}" for e, v in r["question_2"]["vision30"]["garde_30"].items())]
     qp = r["question_2_principal"]
-    L += ["", f"Réponse pré-enregistrée à la question 2 (contrastes principaux, ne-complet contre torch) : **{qp['reponse']}** "
-          f"(ralentissement : {fr(qp['ralentissement'])} ; part de la vision : {fr(qp['part_vision'])} ; 30 images/s gardées : "
-          f"ne-complet {'oui' if qp['garde_30']['ne-complet'] else 'non'}, torch {'oui' if qp['garde_30']['torch'] else 'non'}). "
-          "Les autres contrastes sont secondaires."]
+    for ref in ("torch", "coreml-gpu"):
+        q = qp[ref]
+        L += ["", f"Réponse pré-enregistrée à la question 2, ne-complet contre {ref}"
+              + (" (principal ; précision différente : torch en float32, ne-complet en float16)" if ref == "torch" else
+                 " (principal, même précision float16)") + f" : **{q['reponse']}** (ralentissement : {fr(q['ralentissement'])} ; "
+              f"part de la vision : {fr(q['part_vision'])} ; 30 images/s gardées : ne-complet {'oui' if q['garde_30']['ne-complet'] else 'non'}, "
+              f"{ref} {'oui' if q['garde_30'][ref] else 'non'}" + ("" if qp["interpretable_30"] else
+              " ; bras à 30 images/s non interprétable : la vision seule n'y tient pas sa cadence") + ")."]
+    L += ["", "Les autres contrastes de la question 2 sont secondaires. Le contraste principal a été choisi après l'essai de "
+          "bout en bout (10 épisodes, EXP-011 en même temps) : ce qu'il montrait est consigné dans l'amendement 6."]
     q3 = r["question_3"]
-    L += ["", "Question 3 : puissance du GPU au-dessus du repos pendant la planification de ne-complet : "
-          + ", ".join(f"{g:.2f} W" for g in q3["gpu_w"]) + (" ; « planificateur entièrement hors du GPU » permis (au plus 0,3 W dans "
-          "les 3 répétitions)." if q3["hors_gpu"] else " ; la formulation est « GPU à X W », pas « entièrement hors du GPU ».")]
+    L += ["", f"Question 3 : par construction, {q3['construction']} ; puissance du GPU au-dessus du repos pendant la "
+          "planification de ne-complet : " + ", ".join(f"{g:.2f} W" for g in q3["gpu_w"])
+          + f" (GPU au repos de {q3['gpu_repos_w'][0]:.2f} à {q3['gpu_repos_w'][1]:.2f} W selon la mesure au repos)"
+          + (" ; « planificateur entièrement hors du GPU » permis (au plus 0,3 W dans les 3 répétitions)." if q3["hors_gpu"]
+             else " ; la formulation est « GPU à X W », pas « entièrement hors du GPU ».")]
     for m, s in r["sensibilite_omp"].items():
         L += ["", f"Sensibilité à l'attente active d'OpenMP ({m}, 2 runs par variante) : par défaut {f(s['defaut']['temps_par_plan_ms'])} ms, "
               f"{f(s['defaut']['energie_solve_puce_j'], 2)} J, CPU {f(s['defaut']['cpu_w'], 1)} W ; OMP_WAIT_POLICY=PASSIVE "
               f"{f(s['passif']['temps_par_plan_ms'])} ms, {f(s['passif']['energie_solve_puce_j'], 2)} J, CPU {f(s['passif']['cpu_w'], 1)} W ; "
-              f"rapport d'énergie {s['rapport_energie_passif_defaut']:.2f}" + (" : sensible à OpenMP." if s["sensible"] else ".")]
+              f"rapport d'énergie {s['rapport_energie_passif_defaut']:.2f}, de temps {s['rapport_temps_passif_defaut']:.2f}"
+              + (" : sensible à OpenMP." if s["sensible"] else ".")]
     br = r["bruit_reference"]
     L += ["", "Dérive : runs torch r1, r2, r3 et final : " + ", ".join(f"{v:.0f} ms" for v in r["derive_torch_ms"]) + " par plan ; écart "
           f"des 3 répétitions : temps {100 * br['temps']:.1f} %" + ("" if br["energie"] is None else f", énergie {100 * br['energie']:.1f} %") + "."]
@@ -643,9 +671,12 @@ def rapport(r):
     for u in ("ne", "gpu"):
         for cod in b["codages"]:
             L.append(f"| {u} | {cod} | " + " | ".join(f"{b['cas'][f'{u} {cod} {x}']['mediane_ms']['mediane']:.2f}" for x in b["lots"]) + " |")
-    L += ["", f"Prédiction pré-enregistrée (au lot de {max(b['lots'])}, aucun codage plus rapide que fp16 de plus de 5 % dans "
+    L += ["", f"Prédiction enregistrée (au lot de {max(b['lots'])}, aucun codage plus rapide que fp16 de plus de 5 % dans "
           f"les 3 répétitions) : {'tenue' if b['prediction_tenue'] else 'réfutée'} ; " + " ; ".join(
-              f"{k} {fr(v)}" for k, v in b["verdicts_lot_max"].items()) + "."]
+              f"{k} {fr(v)}" for k, v in b["verdicts_lot_max"].items()) + ". Des temps par appel au lot de 300 avaient été vus "
+          "avant le balayage (essai de placement) : c'est une observation, pas une prédiction confirmée. Cases informatives "
+          "sur la question « un codage accélère-t-il ? » : Neural Engine int8, pal4 et int4c, GPU pal4 ; les autres cases "
+          "mesurent aussi le coût propre de l'implémentation du codage dans Core ML, qu'on ne sépare pas ici."]
     return "\n".join(L) + "\n"
 
 

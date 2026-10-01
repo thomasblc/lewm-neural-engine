@@ -1,4 +1,4 @@
-"""EXP-013 (PREREG-EXP013.md, amendements 2 à 5) : enchaîne les mesures de vitesse et d'énergie.
+"""EXP-013 (PREREG-EXP013.md, amendements 2 à 6) : enchaîne les mesures de vitesse et d'énergie.
 
 - 3 répétitions ; ordre de la répétition 1 tiré au hasard (default_rng(13)), répétition 2 dans l'ordre inverse
   (contrebalancement de la dérive), répétition 3 tirée au hasard ; la vision seule jamais en tête ni en dernier, ses
@@ -98,6 +98,22 @@ def probleme(dossier, g=42):
     if not P["essai"] and max((x.get("processus_run_grid", 0) for x in t["lectures"]), default=0) > 0:   # essai : EXP-011 tourne
         return "autre calcul run_grid pendant le run"
     return None
+
+
+COUVERTURE_S = 1.0                                     # lignes de la vision : écart permis entre lignes et aux bords
+
+
+def couverture(lignes, fenetres):
+    """Vrai si les lignes de la vision (contiguës, [t0, t1]) couvrent toutes les fenêtres : la vision tournait et a tout
+    écrit. Un trou sans image dans une fenêtre couverte est un résultat (la vision affamée), pas une panne."""
+    L = sorted((x["t0"], x["t1"]) for x in lignes if "fins" in x)
+    if not L or any(b0 - a1 > COUVERTURE_S for (_, a1), (b0, _) in zip(L, L[1:])):
+        return False
+    return all(L[0][0] <= h0 + COUVERTURE_S and L[-1][1] >= h1 - COUVERTURE_S for h0, h1 in fenetres)
+
+
+def lire_jsonl(f):
+    return [json.loads(l) for l in f.read_text().splitlines() if l.strip()] if f.exists() else []
 
 
 def pid_calcul(dossier, p, attente=60):
@@ -208,6 +224,10 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
             raise SystemExit(f"[arrêt] {dossier} : run_grid a échoué (code {p.returncode})")
         if raison is None and controle:
             raison = next((probleme(racine / dossier, g) for g in graines if probleme(racine / dossier, g)), None)
+        if raison is None and mode:                    # la vision a-t-elle tout écrit sur les fenêtres de planification ?
+            t = json.loads((racine / dossier / "fp32_s42.temps.json").read_text())
+            if not couverture(lire_jsonl(racine / f"exp013-vision-{etiquette}.jsonl"), t["energie_puce"]["fenetres_solve"]):
+                raison = "la charge de vision ne couvre pas les fenêtres de planification"
         if raison is None:
             return
         dire(f"[refait] {dossier} : {raison}")

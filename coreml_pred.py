@@ -157,8 +157,8 @@ def processus_actifs(n=4):
 
 def placement_detail(m, cu):
     """EXP-013, essai de placement des codages : pour chaque type d'opération, le nombre d'opérations par processeur
-    préféré, « aucun » compris (opérations sans usage de processeur, comme les constantes et la décompression des poids
-    faite au chargement)."""
+    préféré, « aucun » compris (opérations sans processeur dans le plan de calcul, comme les constantes et les opérations
+    de décompression des poids ; le moment de la décompression n'est pas observé)."""
     from coremltools.models.compute_plan import MLComputePlan
     plan = MLComputePlan.load_from_path(path=m.get_compiled_model_path(), compute_units=cu)
     d = {}

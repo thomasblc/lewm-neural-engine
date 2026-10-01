@@ -209,7 +209,10 @@ def test_valeurs(tmp):
     assert proche(c["coreml-ne-vision30"]["energie_planification_30_j"]["mediane"], e_30, 1e-9)
     assert all(proche(b, e_30 * 1.01 / 1.02, 1e-9) or proche(b, e_30 * 1.03 / 1.02, 1e-9) for b in c["coreml-ne-vision30"]["energie_planification_30_bornes_j"])
     assert c["coreml-ne-vision30"]["energie_planification_30_n"] == 3
-    assert res["question_2_principal"]["reponse"] == "oui" and res["question_3"]["hors_gpu"]
+    qp = res["question_2_principal"]
+    assert qp["torch"]["reponse"] == "oui" and qp["coreml-gpu"]["reponse"] == "oui" and qp["interpretable_30"]
+    assert res["question_3"]["hors_gpu"] and res["question_3"]["gpu_repos_w"] == [1.0, 1.0]
+    assert proche(c["coreml-ne-vision"]["vision_avant_ips"]["mediane"], 100.0, 0.05)      # la chauffe : vision seule
     assert res["configurations"]["coreml-ne-int4b32"]["placement"] == {"CPU": 211, "NeuralEngine": 150}
     assert proche(res["vision_seule"]["vision"]["ips"]["mediane"], 100.0) and proche(res["vision_seule"]["vision30"]["ips"]["mediane"], 30.0)
     cmp = res["comparaisons"]
@@ -274,6 +277,17 @@ def champ(d, cle, val):
     return m
 
 
+def test_reponse_q2():
+    B, H, N = "plus bas dans les 3 répétitions", "plus haut dans les 3 répétitions", "non constant"
+    t = [((B, H, True, False, True), "oui"), ((B, H, True, True, True), "oui"), ((B, H, False, False, True), "en partie"),
+         ((B, H, False, True, True), "compromis"), ((B, H, False, False, False), "oui"), ((B, N, True, False, True), "en partie"),
+         ((N, N, False, False, True), "non"), ((H, B, False, False, True), "non"), ((N, N, True, False, True), "en partie"),
+         ((B, B, True, False, True), "compromis"), ((N, H, False, True, True), "compromis"), ((N, N, True, False, False), "non")]
+    for args, attendu in t:
+        assert A13.reponse_q2(*args) == attendu, (args, A13.reponse_q2(*args), attendu)
+    print(f"ok réponse à la question 2 ({len(t)} cas de la table)")
+
+
 def test_signalements(tmp, r):
     def essai(attendu, *mods):
         rr = copie(tmp, r, "signal")
@@ -308,6 +322,27 @@ def test_signalements(tmp, r):
     jsonl_mod("exp013-vision-torch-vision-r2.jsonl", vider)(rr)
     res = A13.analyser(rr, verifier=False)
     assert res["configurations"]["torch-vision"]["vision_trou_max_s"]["max"] > 5
+    # vision entièrement affamée sur les fenêtres : 0 image/s, rapports non calculables, pas de plantage
+    rr = copie(tmp, r, "zero")
+    def tout_vider(L):
+        for x in L[1:]:
+            x.update(fins=[], lat_ms=[], retard=[], images=0, latence_p50_ms=None, latence_p99_ms=None)
+        return L
+    for k in (1, 2, 3):
+        jsonl_mod(f"exp013-vision-torch-vision-r{k}.jsonl", tout_vider)(rr)
+    res = A13.analyser(rr, verifier=False)
+    assert res["configurations"]["torch-vision"]["vision_ips"]["mediane"] == 0.0
+    assert res["question_2"]["vision"]["contrastes"]["ne-complet contre torch"]["part_vision"]["verdict"] == "non calculable"
+    A13.rapport(res)
+    # 30 images/s gardées dans une seule répétition : énergie estimée sur celle-là, n = 1
+    rr = copie(tmp, r, "trente")
+    jsonl_mod("exp013-vision-torch-vision30-r1.jsonl", lambda L: [dict(x, retard=[]) if "fins" in x else x for x in L])(rr)
+    res = A13.analyser(rr, verifier=False)
+    assert res["configurations"]["torch-vision30"]["energie_planification_30_n"] == 1 and not res["configurations"]["torch-vision30"]["garde_30"]
+    # Neural Engine faible sous charge de vision : signalé, pas refusé
+    rr = copie(tmp, r, "ane-vision")
+    json_mod(tps("exp013-coreml-ne-vision-r1"), lambda j: j["energie_puce"]["joules_solve"].update(ANE=0.5 * sum(a for a, _ in j["appels_solve"])))(rr)
+    assert any("sous charge de vision" in x for x in A13.analyser(rr, verifier=False)["signalements"])
     # balayage absent : signalé, le reste de l'analyse vaut
     rr = copie(tmp, r, "sans-balayage")
     (rr / "exp013-balayage-lot.json").unlink()
@@ -399,6 +434,7 @@ def test_code():
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp:
         r = test_valeurs(tmp)
+        test_reponse_q2()
         test_signalements(tmp, r)
         test_refus(tmp, r)
         test_code()

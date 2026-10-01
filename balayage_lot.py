@@ -93,6 +93,7 @@ with tempfile.TemporaryDirectory() as d:
                                  "q3_ms": float(np.percentile(t, 75)), "appels": len(t), "duree_s": dt, "joules": j,
                                  "joules": j})
             print(f"[r{r}] {c['unite']} {c['codage']:8s} lot {c['lot']:3d} : {np.median(t):7.2f} ms ({len(t)} appels)", flush=True)
+    time.sleep(REPOS_S)                                # stabilisation après le dernier cas
     repos_apres = mesure_repos()
     repos_w = {k: (repos_avant.get(k, 0) + repos_apres.get(k, 0)) / 2 for k in set(repos_avant) | set(repos_apres)}
     for c in cas:                                      # énergie nette du repos (moyenne d'avant et d'après), par appel

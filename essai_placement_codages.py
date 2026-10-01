@@ -1,12 +1,13 @@
-"""EXP-013, essai avant lancement (amendement 3) : où Core ML place les opérations des prédicteurs codés, et ce que coûte
-leur chargement en mémoire. Pour chaque processeur (Neural Engine, graphe « 1ctb » ; GPU, graphe d'origine) et chaque
-codage (fp16, int8, int4b32, pal4), au lot de 300 et T = 3 :
-- le détail du placement par type d'opération, « aucun » compris (constantes, décompression des poids au chargement) ;
+"""EXP-013, essai avant lancement (amendements 3 à 5) : où Core ML place les opérations des prédicteurs codés, et la
+mémoire du processus client. Pour chaque processeur (Neural Engine, graphe « 1ctb » ; GPU, graphe d'origine) et chaque
+codage (fp16, int8, int4b32, pal4, int4c, et le témoin int4b64), au lot de 300 et T = 3 :
+- le détail du placement par type d'opération, « aucun » compris (opérations sans processeur dans le plan de calcul :
+  constantes et décompression des poids) ;
 - la taille du fichier des poids ;
 - dans un processus neuf par cas : mémoire du processus (empreinte physique, outil footprint de macOS, et RSS) avant le
   chargement, après le chargement et après 10 appels.
-Si la décompression des poids tombe au chargement (aucune opération de décompression placée), un codage ne peut changer
-que la taille du fichier, pas la lecture des poids pendant le calcul : à dire dans le papier.
+Le plan de calcul ne dit pas quand la décompression a lieu ; la mémoire côté Neural Engine n'est pas observée ; le temps
+par appel affiché ici (10 appels, le premier compris) ne sert à aucune affirmation de vitesse.
 
 Usage (un fichier par commit, jamais écrasé) :
     python essai_placement_codages.py ../resultats/preparation-exp013/placement-codages-COMMIT.json
