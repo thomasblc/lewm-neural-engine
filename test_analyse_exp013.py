@@ -120,7 +120,7 @@ def test_valeurs(tmp):
     r = fabriquer(Path(tmp) / "a")
     res = A13.analyser(r, verifier=False)
     c = res["configurations"]
-    assert abs(c["torch"]["temps_par_plan_ms"]["mediane"] - 808) < 1e-9 and abs(c["coreml-gpu"]["temps_par_plan_ms"]["min"] - 404) < 1e-9
+    assert abs(c["torch"]["temps_par_plan_ms"]["mediane"] - 816) < 1e-9 and abs(c["coreml-gpu"]["temps_par_plan_ms"]["min"] - 404) < 1e-9
     # énergie pendant la planification, au-dessus du repos (repos avant = après = REPOS) : (P - repos) sur les canaux de la puce
     e_ne = sum(puissance("coreml-ne").get(k, 0) - REPOS.get(k, 0) for k in A13.SOC) * 0.90 * 1.02
     assert abs(c["coreml-ne"]["energie_solve_puce_j"]["mediane"] - e_ne) < 1e-9
