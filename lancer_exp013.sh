@@ -2,13 +2,13 @@
 # EXP-013 (PREREG-EXP013.md) : vitesse, énergie et mémoire de la planification selon le moteur, le codage des poids et une
 # charge de vision. Attend que le GPU soit libre (EXP-011 et EXP-012 finies), lance la garde de batterie (elle suit tous
 # les calculs d'exp013 et sort quand le run final est écrit), puis vitesse.py, qui enchaîne les runs et fait les contrôles
-# bloquants. caffeinate empêche la mise en veille. Tout le corps est dans des fonctions, lues en entier avant d'être exécutées.
+# bloquants. caffeinate empêche la mise en veille, de la machine et de l'écran. Tout le corps est dans des fonctions, lues en entier avant d'être exécutées.
 # Relancer après une interruption avec >> pour garder le journal : ./lancer_exp013.sh >> ../resultats/exp013.log 2>&1
 set -e
 ICI="${0:A:h}"
 main() {
   cd "$ICI" || exit 1
-  caffeinate -i -w $$ &!
+  caffeinate -d -i -w $$ &!                 # écran allumé pendant tout le calcul, repos compris : affichage constant
   local PY=/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python
   local R=../resultats
   local GARDE=/Users/thomasblanc/Documents/PRO/these-ia-thomas/outils/garde_batterie.sh

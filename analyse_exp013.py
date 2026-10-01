@@ -18,7 +18,8 @@ import vitesse as V
 # Canaux de la puce (compteurs IOReport « Energy Model »), niveau haut seulement : « CPU Energy » contient PCPU et
 # MCPU ; « GPU » double « GPU Energy » et n'est pas compté
 SOC = ("CPU Energy", "GPU Energy", "ANE", "DRAM", "AMCC", "DCS", "FAB", "AFR", "ISP", "AVE", "MSR", "DISP", "DISPEXT")
-GROUPES = {"calcul": ("CPU Energy", "GPU Energy", "ANE"), "memoire": ("DRAM", "AMCC", "DCS", "FAB"), "puce": SOC}
+PUCE = tuple(k for k in SOC if k not in ("DISP", "DISPEXT"))   # sans l'affichage : il ne calcule pas le plan
+GROUPES = {"calcul": ("CPU Energy", "GPU Energy", "ANE"), "memoire": ("DRAM", "AMCC", "DCS", "FAB"), "puce": PUCE}
 PRINCIPAUX = {"CPU": "CPU Energy", "GPU": "GPU Energy", "Neural Engine": "ANE"}
 PLACEMENT = {"coreml-ne": "NeuralEngine", "coreml-gpu": "GPU", "ne-complet": "NeuralEngine", "coreml-cpu": "CPU"}
 SUR_ANE = ("coreml-ne", "ne-complet")
@@ -122,7 +123,7 @@ def par_run(run, repos_avant, repos_apres, vision, vision_seule30):
          "energie_solve_repos_apres": net(e["joules_solve"], duree_solve, repos_apres)["puce"],
          "energie_run": net(e["joules"], e["duree_s"], idle),
          "composants_solve_w": {nom: e["joules_solve"].get(k, 0) / duree_solve - idle.get(k, 0) for nom, k in PRINCIPAUX.items()},
-         "puissance_puce_w": somme(e["joules"], SOC) / e["duree_s"], "cpu_s_par_plan": e["cpu_s"] / plans,
+         "puissance_puce_w": somme(e["joules"], PUCE) / e["duree_s"], "cpu_s_par_plan": e["cpu_s"] / plans,
          "maxrss_mo": e["maxrss_octets"] / 1e6,
          "part_coreml": e["appels_predict"]["coreml_s"] / duree_solve if e["appels_predict"]["n"] else None,
          "succes": run["succes"], "octets_poids": (t.get("coreml") or {}).get("octets_poids") or e.get("octets_modele_torch")}
@@ -131,8 +132,8 @@ def par_run(run, repos_avant, repos_apres, vision, vision_seule30):
         s["vision_avant"] = vision_fenetre(vision, e["debut"] - 60, e["debut"])
         s["energie_solve"] = None                      # avec charge : pas d'énergie par plan (travail de la vision élastique)
     if vision_seule30 is not None:                     # cadence fixe : énergie de planification = total moins vision seule
-        p_v = somme(vision_seule30["joules"], SOC) / vision_seule30["duree_s"]
-        s["energie_planification_30_j"] = (somme(e["joules_solve"], SOC) - p_v * duree_solve) / plans
+        p_v = somme(vision_seule30["joules"], PUCE) / vision_seule30["duree_s"]
+        s["energie_planification_30_j"] = (somme(e["joules_solve"], PUCE) - p_v * duree_solve) / plans
     return s
 
 
@@ -172,6 +173,7 @@ def analyser(racine, verifier=True):
             x = par_run(runs[(nom, rep)], repos[rep - 1], repos[rep], vis, v30)
             if mode:
                 A.exiger(x["vision"] is not None, f"{nom} r{rep} : aucune mesure de la charge de vision pendant le run")
+                x["vision_part_seule"] = x["vision"]["ips"] / vision_seule_ips(r, mode, rep)   # référence : vision seule, même répétition
             else:                                      # repli à l'exécution : le Neural Engine doit vraiment calculer
                 w = x["composants_solve_w"]["Neural Engine"]
                 if runs[(nom, rep)]["moteur"] in SUR_ANE:
@@ -193,6 +195,7 @@ def analyser(racine, verifier=True):
             c["energie_run_puce_j"] = resume([x["energie_run"]["puce"] for x in L])
             c["composants_solve_w"] = {k: resume([x["composants_solve_w"][k] for x in L]) for k in PRINCIPAUX}
         if "vision" in L[0]:
+            c["vision_part_seule"] = resume([x["vision_part_seule"] for x in L])
             for k in ("ips", "latence_p50_ms", "latence_p99_ms", "manquees_par_s"):
                 c[f"vision_{k}"] = resume([x["vision"][k] for x in L])
                 c[f"vision_avant_{k}"] = resume([x["vision_avant"][k] if x["vision_avant"] else None for x in L])
@@ -221,11 +224,11 @@ def analyser(racine, verifier=True):
         p = []
         for k in R:
             j = json.loads((r / f"exp013-vision-seule-{mode}-r{k}.json").read_text())
-            p.append(somme(j["joules"], SOC) / j["duree_s"])
+            p.append(somme(j["joules"], PUCE) / j["duree_s"])
         seules[mode] = {"puissance_puce_w": resume(p), "ips": resume([vision_seule_ips(r, mode, k) for k in R])}
     f_b = r / "exp013-balayage-lot.json"
     return {"controles": {"commit": sha}, "configurations": res, "comparaisons": comparaisons, "vision_seule": seules,
-            "repos_puce_w": {k: somme(w, SOC) for k, w in repos.items()}, "reussite_ne_complet": reussite(r, sha),
+            "repos_puce_w": {k: somme(w, PUCE) for k, w in repos.items()}, "reussite_ne_complet": reussite(r, sha),
             "balayage_lot": json.loads(f_b.read_text()) if f_b.exists() else None}
 
 
@@ -252,7 +255,7 @@ def rapport(r):
     L = ["# EXP-013 : vitesse, énergie et mémoire de la planification (analyse pré-enregistrée, descriptive)", "",
          f"Contrôles passés, commit {r['controles']['commit'][:7]} ; runs torch identiques au pilote d'EXP-012 ; chaque "
          "configuration identique d'une répétition à l'autre et avec ou sans vision. Médiane des 3 répétitions (min à max). "
-         "Énergie de la puce (compteurs IOReport, canaux de niveau haut) pendant la planification seule, au-dessus du repos.", "",
+         "Énergie de la puce (compteurs IOReport « Energy Model », estimation de la puce, non validée contre une mesure externe ; affichage exclu) pendant la planification seule, au-dessus du repos (moyenne des repos avant et après la répétition).", "",
          "## Sans charge", "",
          "| Configuration | Temps par plan (ms) | Énergie par plan, puce (J) | calcul (J) | mémoire (J) | Poids (Mo) | Part de l'appel Core ML | Réussite (50 épisodes) |",
          "| --- | --- | --- | --- | --- | --- | --- | --- |"]
@@ -262,6 +265,10 @@ def rapport(r):
         mo = f"{c['octets_poids'] / 1e6:.1f}" if c["octets_poids"] else ""
         L.append(f"| {nom} | {f(c['temps_par_plan_ms'])} | {f(c.get('energie_solve_puce_j'), 2)} | {f(c.get('energie_solve_calcul_j'), 2)} | "
                  f"{f(c.get('energie_solve_memoire_j'), 2)} | {mo} | {f(c['part_coreml'], 0, 100)} | {f(c['succes'], 0, 100)} |")
+    L += ["", "Codages int8, int4b32, pal4 (fonctions de coremltools, depuis les poids 16 bits) : réussite non établie, "
+          "50 épisodes de contrôle seulement ; leur réussite est l'objet d'une autre expérience."]
+    L += ["", "Différence établie : les 3 rapports appariés (même répétition) au-delà de 5 % pour le temps, 10 % pour "
+          "l'énergie, du même côté ; règle de constance pré-enregistrée, pas un test."]
     L += ["", "| Comparaison | Temps contre torch | Énergie contre torch | Énergie contre coreml-gpu |", "| --- | --- | --- | --- |"]
 
     def fr(x):
@@ -272,12 +279,12 @@ def rapport(r):
     for nom, c in r["comparaisons"].items():
         L.append(f"| {nom} | {fr(c['temps_contre_torch'])} | {fr(c.get('energie_contre_torch'))} | {fr(c.get('energie_contre_coreml-gpu'))} |")
     L += ["", "## Avec charge de vision sur le GPU", "",
-          "| Configuration | Temps par plan (ms) | Puissance de la puce (W) | Vision (images/s) | Vision avant le run | Latence p99 (ms) | Échéances manquées par s | Énergie de planification estimée (J par plan, cadence fixe) |",
-          "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+          "| Configuration | Temps par plan (ms) | Puissance de la puce (W) | Vision (images/s) | Part de la vision seule | Vision avant le run (chargement compris) | Latence p99 (ms) | Échéances manquées par s | Énergie de planification estimée (J par plan, cadence fixe) |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for nom, c in r["configurations"].items():
         if "vision" not in nom:
             continue
-        L.append(f"| {nom} | {f(c['temps_par_plan_ms'])} | {f(c['puissance_puce_w'], 1)} | {f(c['vision_ips'], 1)} | "
+        L.append(f"| {nom} | {f(c['temps_par_plan_ms'])} | {f(c['puissance_puce_w'], 1)} | {f(c['vision_ips'], 1)} | {f(c['vision_part_seule'], 2)} | "
                  f"{f(c.get('vision_avant_ips'), 1)} | {f(c['vision_latence_p99_ms'], 1)} | {f(c['vision_manquees_par_s'], 2)} | "
                  f"{f(c.get('energie_planification_30_j'), 2)} |")
     L += ["", "Vision seule : " + " ; ".join(f"{m} {f(v['ips'], 1)} images/s, puce {f(v['puissance_puce_w'], 1)} W"

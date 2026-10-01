@@ -40,6 +40,7 @@ def puissance(nom):
     p["GPU Energy"] += 25.0 if m in ("torch", "torch-fp16", "coreml-gpu") else 0.0
     p["ANE"] += 4.0 if m in ("coreml-ne", "ne-complet") else 0.0
     p["AMCC"] += 1.0
+    p["DISP"] += 2.0                                       # l'affichage, hors de la puce comptée : sans effet
     if "vision" in nom:
         p["GPU Energy"] += 15.0
     return p
@@ -122,15 +123,16 @@ def test_valeurs(tmp):
     c = res["configurations"]
     assert abs(c["torch"]["temps_par_plan_ms"]["mediane"] - 816) < 1e-9 and abs(c["coreml-gpu"]["temps_par_plan_ms"]["min"] - 404) < 1e-9
     # énergie pendant la planification, au-dessus du repos (repos avant = après = REPOS) : (P - repos) sur les canaux de la puce
-    e_ne = sum(puissance("coreml-ne").get(k, 0) - REPOS.get(k, 0) for k in A13.SOC) * 0.90 * 1.02
+    e_ne = sum(puissance("coreml-ne").get(k, 0) - REPOS.get(k, 0) for k in A13.PUCE) * 0.90 * 1.02
     assert abs(c["coreml-ne"]["energie_solve_puce_j"]["mediane"] - e_ne) < 1e-9
     assert abs(c["coreml-ne"]["composants_solve_w"]["Neural Engine"]["mediane"] - 4.0) < 1e-9
     assert c["torch-vision"].get("energie_solve_puce_j") is None                          # pas d'énergie par plan avec charge
     assert abs(c["coreml-ne-vision"]["vision_ips"]["mediane"] - 60.0) < 1e-9 and abs(c["torch-vision"]["vision_avant_ips"]["mediane"] - 100.0) < 1e-9
     assert abs(c["torch-vision30"]["vision_manquees_par_s"]["mediane"] - 1.0) < 1e-9
+    assert abs(c["torch-vision"]["vision_part_seule"]["mediane"] - 0.40) < 1e-9 and abs(c["ne-complet-vision30"]["vision_part_seule"]["mediane"] - 1.0) < 1e-9
     # cadence fixe : (E pendant la planification - puissance de la vision seule x durée) / plans
-    pv = sum(v for v in REPOS.values()) + 6.0
-    p_run = sum(puissance("coreml-ne-vision30").get(k, 0) for k in A13.SOC)
+    pv = sum(v for k, v in REPOS.items() if k in A13.PUCE) + 6.0
+    p_run = sum(puissance("coreml-ne-vision30").get(k, 0) for k in A13.PUCE)
     assert abs(c["coreml-ne-vision30"]["energie_planification_30_j"]["mediane"] - (p_run - pv) * 0.90 * 1.02) < 1e-9
     assert abs(res["vision_seule"]["vision"]["ips"]["mediane"] - 100.0) < 1e-9
     cmp = res["comparaisons"]
