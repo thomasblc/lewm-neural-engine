@@ -25,6 +25,8 @@ def main():
     ap.add_argument("--tache", required=True)
     ap.add_argument("--groupe", default="all")
     ap.add_argument("--bits", nargs="+", type=int, default=[4, 3, 2])
+    ap.add_argument("--hors-echantillon", action="store_true",
+                    help="échelles et GPTQ réglés sur la moitié a de la calibration, erreur mesurée sur la moitié b")
     a = ap.parse_args()
     torch.set_num_threads(4)
     import stable_worldmodel as swm
@@ -39,17 +41,20 @@ def main():
         zeros = total = 0
         for n, x in couches.items():
             w = x.weight.detach().reshape(x.weight.shape[0], -1).double()
-            h = cal["H"][n] / cal["n"][n]
+            if a.hors_echantillon:                        # réglage sur a, mesure sur b
+                h, hm = cal["H_a"][n] / cal["n_a"][n], cal["H_b"][n] / cal["n_b"][n]
+            else:
+                h = hm = cal["H"][n] / cal["n"][n]
             r = gptq.rtn(w, bits)
-            e["rtn"] += gptq.perte(w, r, h)
-            e["zero"] += gptq.perte(w, torch.zeros_like(w), h)
-            e["gptq"] += gptq.perte(w, gptq.gptq_couche(w, h, bits), h)
+            e["rtn"] += gptq.perte(w, r, hm)
+            e["zero"] += gptq.perte(w, torch.zeros_like(w), hm)
+            e["gptq"] += gptq.perte(w, gptq.gptq_couche(w, h, bits), hm)
             s0 = w.abs().amax(1, keepdim=True).clamp_min(1e-12) / qmax
             s = s0 * gptq.facteur_reduit(w, h, bits)      # même choix que quant.py (":clip")
-            e["rtn_echelle_reduite"] += gptq.perte(w, (w / s).round().clamp(-qmax, qmax) * s, h)
-            e["gptq_echelle_reduite"] += gptq.perte(w, gptq.gptq_couche(w, h, bits, s=s), h)
+            e["rtn_echelle_reduite"] += gptq.perte(w, (w / s).round().clamp(-qmax, qmax) * s, hm)
+            e["gptq_echelle_reduite"] += gptq.perte(w, gptq.gptq_couche(w, h, bits, s=s), hm)
             zeros, total = zeros + int((r == 0).sum()), total + r.numel()
-        print(f"{a.tache} {a.groupe} ({len(couches)} couches), {bits} bits : erreur rapportée à tout mettre à zéro : "
+        print(f"{a.tache} {a.groupe} ({len(couches)} couches), {bits} bits{', hors échantillon' if a.hors_echantillon else ''} : erreur rapportée à tout mettre à zéro : "
               f"RTN {e['rtn'] / e['zero']:.3f}, GPTQ {e['gptq'] / e['zero']:.3f}, RTN à échelle réduite "
               f"{e['rtn_echelle_reduite'] / e['zero']:.3f}, GPTQ à échelle réduite {e['gptq_echelle_reduite'] / e['zero']:.3f} ; "
               f"poids mis à zéro par RTN {100 * zeros / total:.0f} %", flush=True)
