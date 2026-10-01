@@ -147,7 +147,7 @@ def test_scenario_a(tmp):
         assert abs(d["part_rattrapee"]["moyenne"] - 1.0) < 1e-12 and abs(d["reussite_gptq"] - d["reussite_fp32"]) < 1e-12
         p3 = K(r, c["rtn3"], "predictor:3") / 5
         assert abs(d["gptq_moins_rtn3"]["moyenne"] - (K(r, c["fp32"], "fp32") / 5 - p3).mean()) < 1e-12
-    assert "Contrôle négatif" in A11.rapport(res)
+    assert "Contrôle de la marge" in A11.rapport(res)
     print("ok scénario A : p recomptées en numpy, 4 hypothèses soutenues, part rattrapée 100 %, RTN 3 bits d'EXP-003 et d'EXP-008")
     return r
 

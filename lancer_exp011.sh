@@ -34,6 +34,8 @@ main() {
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite (une grille, ou le lanceur d'une autre expérience
   #    entre deux de ses étapes), 24 h au plus ; 2. garde de batterie, après la sortie de celle du calcul précédent.
   #    Si un autre calcul démarre pendant ce temps, on recommence.
+  # une reproduction finale d'un lancement précédent ferait sortir la garde tout de suite : elle est refaite
+  rm -rf $R/exp011-fin-pusht $R/exp011-fin-tworoom
   local debut=$(date +%s)
   while true; do
     attendre_gpu

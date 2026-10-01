@@ -174,7 +174,7 @@ def rapport(r):
     t = lambda e, f=100: A.ic_txt(e, f, 1)
     L = ["# EXP-011 : analyse pré-enregistrée (le prédicteur ternaire, RTN et GPTQ à échelle réduite)", "",
          f"Contrôles passés, commit {r['controles']['commit'][:7]} ; reproductions des graines 42 et 46 identiques.", "",
-         "| Tâche | fp32 | RTN réduit | GPTQ réduit | GPTQ moins fp32 | RTN moins fp32 | GPTQ moins RTN | RTN 3 bits | GPTQ ternaire moins RTN 3 bits |",
+         "| Tâche | fp32 | RTN réduit | GPTQ réduit | GPTQ moins fp32 | RTN moins fp32 | GPTQ moins RTN | RTN 3 bits (échelle du max) | GPTQ ternaire moins RTN 3 bits |",
          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for k, d in r["descriptifs"].items():
         L.append(f"| {k} | {100 * d['reussite_fp32']:.1f} % | {100 * d['reussite_rtn']:.1f} % | {100 * d['reussite_gptq']:.1f} % | "
@@ -187,7 +187,7 @@ def rapport(r):
         pb = f"{x['p_bootstrap_t']:.4f}" if "p_bootstrap_t" in x else "sans objet"
         L.append(f"| {n} | {x['tache']} | {noms[x['comparaison']]} | {t(x['ecart_points'])} | {x['borne_inferieure_points']:.1f} "
                  f"(niveau {x['niveau_holm']:.4f}) | {x['p_signe']:.4f} | {pb} | {x['p_holm']:.4f} | {x['verdict']} |")
-    L += ["", "Contrôle négatif (deuxième série de la pleine précision, graines 47 à 51, contre 42 à 46, test N) :"]
+    L += ["", "Contrôle de la marge (deux séries de la pleine précision, graines 47 à 51 contre 42 à 46, écart vrai nul, test N) :"]
     for k, c in r["controle_negatif"].items():
         L.append(f"- {k} : écart {t(c['ecart_points'])} points, p signe {c['p_signe']:.4f}, p bootstrap-t {c['p_bootstrap_t']:.4f}")
     L += ["", "Sensibilité, référence sur les 10 graines de la pleine précision :"]
