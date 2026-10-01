@@ -42,7 +42,7 @@ def ecrire_temps(f, c, g, empreinte):
 
 def ecrire(f, x, **champs):
     x = dict(x)
-    x.update(git=np.str_(TETE), git_sale=np.bool_(False), **champs)
+    x.update({"git": np.str_(TETE), "git_sale": np.bool_(False), **champs})
     np.savez_compressed(f, **x)
 
 
