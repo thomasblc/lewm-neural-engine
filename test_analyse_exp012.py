@@ -166,7 +166,9 @@ def test_refus(tmp, r):
            ("protocole différent", meta("exp012-gpu-pusht", lambda p: p.update(chunk=32))),
            ("moteur", meta("exp012-ne-tworoom", lambda p: p["moteur"].update(precision="float32"))),
            ("init_state différent", champ("exp012-gpu-tworoom", "fp32_s42.npz", "init_state", lambda x: x["init_state"] + 1)),
-           ("plusieurs commits", champ("exp012-gpu-tworoom", "fp32_s45.npz", "git", lambda x: np.str_("b" * 40))),
+           ("plusieurs commits", lambda rr: (champ("exp012-gpu-tworoom", "fp32_s45.npz", "git", lambda x: np.str_("b" * 40))(rr),
+                                             temps("exp012-gpu-tworoom", "fp32_s45.temps.json", lambda j: j.update(git="b" * 40))(rr))),
+           ("fichier de temps", champ("exp012-ne-pusht", "fp32_s46.npz", "git", lambda x: np.str_("d" * 40))),
            ("fichier de temps", temps("exp012-ne-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="torch"))),
            ("reproduction pusht : moteur", temps("exp012-repro-pusht", "fp32_s42.temps.json", lambda j: j.update(moteur="coreml-ne")))]
     for motif, m in cas:
