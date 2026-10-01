@@ -4,7 +4,7 @@ Brouillon rédigé par Claude le 1er octobre 2026 à partir de 18 h 02 (heure du
 d'EXP-013. Figé par le commit enregistré dans les fichiers. Les mesures d'EXP-012 (temps par plan, 50 épisodes de pilote,
 journal d'énergie par composant pendant TwoRoom) sont connues et ont motivé ce plan ; aucun fichier d'EXP-013 n'existe.
 
-Amendement 1 (1er octobre, 18 h 25, avant tout calcul) : la question 3 est retenue. L'essai de faisabilité de l'encodeur
+Amendement 1 (1er octobre, 18 h 14, avant tout calcul) : la question 3 est retenue. L'essai de faisabilité de l'encodeur
 (`essais/encodeur_ane.py`, `test_encodeur_ane.py`, `essai_encodeur_placement.py`) montre l'encodeur d'images réécrit en
 (B, C, 1, S) équivalent à 1,9e-6 en float32 et ses 323 opérations toutes sur le Neural Engine (plan de calcul), de même
 que l'encodeur d'actions ; l'encodeur d'images n'est appelé que 2 fois par plan (but et départ, en cache). Configuration
