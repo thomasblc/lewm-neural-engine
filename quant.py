@@ -13,6 +13,10 @@ couche de l'encodeur d'action, 10 entrées). Les versions sans ":gN" passent par
 EXP-009 ajoute GPTQ : "all:4:gptq" arrondit les mêmes couches, sur la même grille et avec les mêmes échelles que
 "all:4", mais choisit les arrondis avec gptq.py, à partir des statistiques de calibration désignées par la variable
 LEWM_GPTQ_CALIB (fichier écrit par run_grid.py --calibrer-gptq). Les autres versions ne changent pas.
+
+EXP-011 ajoute l'échelle réduite : "predictor:2:clip" est un RTN par canal dont l'échelle de chaque ligne vaut
+f x max|W_ligne| / qmax, avec un facteur f par couche choisi sur la calibration (gptq.facteur_reduit) ;
+"predictor:2:clip:gptq" garde exactement ces échelles et choisit les arrondis avec GPTQ. Mémoire identique.
 """
 import os
 import torch
@@ -67,16 +71,31 @@ def quantifier(model, spec=None):
     if not spec:
         return model, []
     avec_gptq = spec.endswith(":gptq")
-    groupe, bits, taille = lire_spec(spec[:-len(":gptq")] if avec_gptq else spec)
-    if avec_gptq:
+    base = spec[:-len(":gptq")] if avec_gptq else spec
+    avec_clip = base.endswith(":clip")
+    groupe, bits, taille = lire_spec(base[:-len(":clip")] if avec_clip else base)
+    if avec_gptq or avec_clip:
         import gptq
         if taille is not None or not os.environ.get("LEWM_GPTQ_CALIB"):
-            raise ValueError(f"{spec} : GPTQ demande une version par canal et LEWM_GPTQ_CALIB")
+            raise ValueError(f"{spec} : GPTQ et l'échelle réduite demandent une version par canal et LEWM_GPTQ_CALIB")
         calib = torch.load(os.environ["LEWM_GPTQ_CALIB"], map_location="cpu")
-    touches, par_canal = [], []
+    qmax = 2 ** (bits - 1) - 1
+    touches, par_canal, facteurs = [], [], []
     for nom, mod in model.named_modules():
         if nom.split(".")[0] in GROUPES[groupe] and isinstance(mod, (torch.nn.Linear, torch.nn.Conv2d)):
-            if avec_gptq:
+            if avec_clip:
+                h = calib["H"][nom] / calib["n"][nom]
+                w32 = mod.weight.reshape(mod.weight.shape[0], -1)
+                f = gptq.facteur_reduit(w32, h, bits)
+                s32 = w32.abs().amax(dim=1, keepdim=True).clamp_min(1e-12) / qmax * f
+                if avec_gptq:
+                    q = gptq.gptq_couche(w32, h, bits, s=s32.double())
+                    k = (q / s32.double()).round().clamp(-qmax, qmax).to(w32.dtype)
+                else:
+                    k = (w32 / s32).round().clamp(-qmax, qmax)
+                mod.weight.copy_((k * s32).reshape(mod.weight.shape))
+                facteurs.append(f)
+            elif avec_gptq:
                 h = calib["H"][nom] / calib["n"][nom]
                 w32 = mod.weight.reshape(mod.weight.shape[0], -1)
                 q = gptq.gptq_couche(w32, h, bits)
@@ -93,5 +112,6 @@ def quantifier(model, spec=None):
                     par_canal.append(nom)
             touches.append(nom)
     print(f"[quant] {spec} : {len(touches)} couches quantifiées"
-          + (f", dont {len(par_canal)} par canal faute de divisibilité : {par_canal}" if par_canal else ""))
+          + (f", dont {len(par_canal)} par canal faute de divisibilité : {par_canal}" if par_canal else "")
+          + (f", facteurs d'échelle de {min(facteurs):.2f} à {max(facteurs):.2f}" if facteurs else ""))
     return model, touches

@@ -7,6 +7,8 @@ les couches calibrées avec moins de lignes que d'entrées.
 Usage :
     python verifier_gptq.py --tache pusht --calib ../resultats/exp009-calib-pusht/calib.pt
     python verifier_gptq.py --tache pusht --calib ../resultats/exp009-calib-pusht/calib.pt --bits 2 --groupe predictor
+    python verifier_gptq.py --tache pusht --calib ../resultats/exp009-calib-pusht/calib.pt --bits 2 --groupe predictor --echelle reduite
+(hors échantillon, l'échelle réduite est elle aussi choisie sur la moitié de réglage)
 """
 import argparse
 import os
@@ -21,12 +23,23 @@ import gptq
 from quant import GROUPES
 
 
+def paire(w, h_reglage, bits, echelle):
+    """(GPTQ, RTN) sur la même grille : échelle du max, ou échelle réduite choisie sur h_reglage pour les deux."""
+    if echelle == "max":
+        return gptq.gptq_couche(w, h_reglage, bits), gptq.rtn(w, bits)
+    s0, qmax = gptq.echelle(w, bits)
+    s = s0 * gptq.facteur_reduit(w, h_reglage, bits)
+    return gptq.gptq_couche(w, h_reglage, bits, s=s), (w / s).round().clamp(-qmax, qmax) * s
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tache", required=True)
     ap.add_argument("--calib", required=True)
     ap.add_argument("--bits", nargs="+", type=int, default=[4, 3])
     ap.add_argument("--groupe", default="all", help="partie du modèle vérifiée (clé de quant.GROUPES)")
+    ap.add_argument("--echelle", choices=("max", "reduite"), default="max",
+                    help="EXP-011 : échelle de RTN (max) ou échelle réduite choisie sur la calibration, la même pour GPTQ")
     a = ap.parse_args()
     import stable_worldmodel as swm
     calib = torch.load(a.calib, map_location="cpu")
@@ -44,9 +57,10 @@ def main():
         for nom, m in couches.items():
             w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
             h = calib["H"][nom] / calib["n"][nom]
-            eg, er = gptq.perte(w, gptq.gptq_couche(w, h, bits), h), gptq.perte(w, gptq.rtn(w, bits), h)
+            qg, qr = paire(w, h, bits, a.echelle)
+            eg, er = gptq.perte(w, qg, h), gptq.perte(w, qr, h)
             tg, tr, mieux = tg + eg, tr + er, mieux + (eg < er)
-        print(f"[vérification GPTQ] {a.tache}, {a.groupe}, {bits} bits : erreur totale GPTQ / RTN = {tg / tr:.3f}, "
+        print(f"[vérification GPTQ] {a.tache}, {a.groupe}, {bits} bits, échelle {a.echelle} : erreur totale GPTQ / RTN = {tg / tr:.3f}, "
               f"{mieux} couches améliorées sur {len(couches)}", flush=True)
         ok &= tg < tr
     if calib.get("H_b"):                              # hors échantillon : réglé sur une moitié, mesuré sur l'autre
@@ -55,14 +69,16 @@ def main():
             for nom, m in couches.items():
                 w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
                 ha, hb = calib["H_a"][nom] / calib["n_a"][nom], calib["H_b"][nom] / calib["n_b"][nom]
-                tg += gptq.perte(w, gptq.gptq_couche(w, ha, bits), hb)
-                tr += gptq.perte(w, gptq.rtn(w, bits), hb)
-            print(f"[vérification GPTQ] {a.tache}, {a.groupe}, {bits} bits, hors échantillon : erreur GPTQ / RTN = {tg / tr:.3f}", flush=True)
+                qg, qr = paire(w, ha, bits, a.echelle)
+                tg += gptq.perte(w, qg, hb)
+                tr += gptq.perte(w, qr, hb)
+            print(f"[vérification GPTQ] {a.tache}, {a.groupe}, {bits} bits, échelle {a.echelle}, hors échantillon : erreur GPTQ / RTN = {tg / tr:.3f}", flush=True)
             for nom in pauvres:                          # couches à calibration mince : rapport couche par couche
                 m = couches[nom]
                 w = m.weight.detach().reshape(m.weight.shape[0], -1).double()
                 ha, hb = calib["H_a"][nom] / calib["n_a"][nom], calib["H_b"][nom] / calib["n_b"][nom]
-                rg = gptq.perte(w, gptq.gptq_couche(w, ha, bits), hb) / gptq.perte(w, gptq.rtn(w, bits), hb)
+                qg, qr = paire(w, ha, bits, a.echelle)
+                rg = gptq.perte(w, qg, hb) / gptq.perte(w, qr, hb)
                 print(f"[vérification GPTQ]   {nom} ({calib['n'][nom]} lignes), hors échantillon : {rg:.3f}", flush=True)
             ok &= tg < tr
     else:

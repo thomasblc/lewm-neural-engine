@@ -186,6 +186,56 @@ def test_chemin_quant_2_bits():
     print("ok chemin quant à 2 bits : trois niveaux par ligne, entiers de GPTQ, H identité = RTN")
 
 
+
+def test_echelle_reduite():
+    """EXP-011 : échelles imposées (s = échelles de RTN redonne GPTQ exactement) ; facteur réduit = minimum de l'erreur
+    de RTN sur FACTEURS ; versions ":clip" et ":clip:gptq" de quant.py sur la même grille réduite, entiers de GPTQ ;
+    H identité : les deux redonnent le même RTN réduit."""
+    import os, tempfile
+    g = torch.Generator().manual_seed(8)
+    x = torch.randn(3000, 120, generator=g, dtype=torch.float64) @ torch.randn(120, 120, generator=g, dtype=torch.float64)
+    w, h = torch.randn(40, 120, generator=g, dtype=torch.float64), x.T @ x / 3000
+    for bits in (4, 2):
+        s0, qmax = gptq.echelle(w, bits)
+        assert torch.equal(gptq.gptq_couche(w, h, bits), gptq.gptq_couche(w, h, bits, s=s0))
+        f = gptq.facteur_reduit(w, h, bits)
+        err = {c: gptq.perte(w, (w / (s0 * c)).round().clamp(-qmax, qmax) * s0 * c, h) for c in gptq.FACTEURS}
+        assert f in gptq.FACTEURS and err[f] == min(err.values())
+    assert gptq.facteur_reduit(w, h, 2) < 1.0                   # à 2 bits, l'échelle du max n'est pas la meilleure
+    torch.manual_seed(9)
+    class M(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.predictor = torch.nn.Sequential(torch.nn.Linear(120, 40), torch.nn.Linear(40, 12))
+    noms = ["predictor.0", "predictor.1"]
+    a, b, c, d = M(), M(), M(), M()
+    for m in (b, c, d):
+        m.load_state_dict(a.state_dict())
+    w0 = a.predictor[0].weight.detach().clone()
+    with tempfile.TemporaryDirectory() as dd:
+        fc = os.path.join(dd, "calib.pt")
+        torch.save({"H": {"predictor.0": x.T @ x, "predictor.1": torch.eye(40, dtype=torch.float64)}, "n": {n: 3000 for n in noms}}, fc)
+        os.environ["LEWM_GPTQ_CALIB"] = fc
+        quant.quantifier(a, "predictor:2:clip")
+        quant.quantifier(b, "predictor:2:clip:gptq")
+        f = gptq.facteur_reduit(w0, h, 2)
+        s32 = w0.abs().amax(dim=1, keepdim=True) / 1 * f
+        for m in (a, b):
+            wq = m.predictor[0].weight.detach()
+            k = (wq / s32).round()
+            assert torch.equal(wq, k * s32) and set(k.unique().tolist()) <= {-1.0, 0.0, 1.0}
+        assert torch.equal((a.predictor[0].weight / s32).round(), (w0 / s32).round().clamp(-1, 1))
+        k_gptq = (gptq.gptq_couche(w0, h, 2, s=s32.double()) / s32.double()).round()
+        assert torch.equal((b.predictor[0].weight / s32).round().double(), k_gptq)
+        assert not torch.equal(a.predictor[0].weight, b.predictor[0].weight)
+        torch.save({"H": {n: torch.eye(mm.in_features, dtype=torch.float64) for n, mm in zip(noms, c.predictor)},
+                    "n": {n: 1 for n in noms}}, fc)
+        quant.quantifier(c, "predictor:2:clip")
+        quant.quantifier(d, "predictor:2:clip:gptq")
+        assert all(torch.equal(mc.weight, md.weight) for mc, md in zip(c.predictor, d.predictor))
+    print("ok échelle réduite : échelles imposées, facteur minimal, versions :clip et :clip:gptq sur la même grille")
+
+
 if __name__ == "__main__":
     test_chemin_quant()
     test_reference_naive()
@@ -195,4 +245,5 @@ if __name__ == "__main__":
     test_perte_egale_calcul_direct()
     test_entree_morte()
     test_chemin_quant_2_bits()
+    test_echelle_reduite()
     print("tous les tests passent")

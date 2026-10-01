@@ -10,6 +10,7 @@ colonnes, comme l'implémentation de référence sans « act-order ».
 import torch
 
 AMORTISSEMENT, BLOC = 0.01, 128
+FACTEURS = tuple(i / 20 for i in range(4, 21))      # EXP-011 : facteurs de réduction de l'échelle, 0,20 à 1,00
 
 
 def echelle(w, bits):
@@ -24,11 +25,23 @@ def rtn(w, bits):
 
 
 @torch.no_grad()
-def gptq_couche(w, h, bits, amortissement=AMORTISSEMENT, bloc=BLOC):
-    """w : (sorties, entrées) ; h : (entrées, entrées), moyenne de x x^T. Renvoie les poids quantifiés (float64)."""
+def facteur_reduit(w, h, bits):
+    """EXP-011 : facteur f de FACTEURS qui minimise l'erreur de sortie de RTN avec l'échelle f x max|W_ligne| / qmax
+    (un facteur par couche, choisi sur la calibration h) ; le premier en cas d'égalité."""
+    W = w.detach().to(torch.float64)
+    s0, qmax = echelle(W, bits)
+    erreurs = [perte(W, (W / (s0 * f)).round().clamp(-qmax, qmax) * (s0 * f), h) for f in FACTEURS]
+    return FACTEURS[min(range(len(FACTEURS)), key=lambda i: erreurs[i])]
+
+
+@torch.no_grad()
+def gptq_couche(w, h, bits, amortissement=AMORTISSEMENT, bloc=BLOC, s=None):
+    """w : (sorties, entrées) ; h : (entrées, entrées), moyenne de x x^T. Renvoie les poids quantifiés (float64).
+    s : échelles par ligne (sorties, 1) imposées (EXP-011, échelle réduite) ; par défaut celles de RTN."""
     W = w.detach().to(torch.float64).clone()
     H = h.detach().to(torch.float64).clone()
-    s, qmax = echelle(W, bits)                       # échelles de RTN, sur les poids d'origine
+    s0, qmax = echelle(W, bits)                      # échelles de RTN, sur les poids d'origine
+    s = s0 if s is None else s.detach().to(torch.float64).reshape(-1, 1)
     mort = torch.diag(H) == 0                        # entrée jamais active : poids sans effet, mis à 0
     H[mort, mort] = 1
     W[:, mort] = 0
