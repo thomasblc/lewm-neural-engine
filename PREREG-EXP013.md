@@ -4,6 +4,29 @@ Brouillon rédigé par Claude le 1er octobre 2026 à partir de 18 h 02 (heure du
 d'EXP-013. Figé par le commit enregistré dans les fichiers. Les mesures d'EXP-012 (temps par plan, 50 épisodes de pilote,
 journal d'énergie par composant pendant TwoRoom) sont connues et ont motivé ce plan ; aucun fichier d'EXP-013 n'existe.
 
+## Plan en vigueur (résumé des amendements 1 à 5 ; en cas de doute, les amendements font foi)
+
+- Machine : MacBook Pro M5 Max, macOS 26.6.2, coremltools 9.0, PyTorch 2.14 (OpenMP, 6 fils). PushT, 50 épisodes de la
+  sonde, graine 42, CEM 300 x 30, horizon 5, LeWM publié.
+- Sans charge, 14 configurations : `torch` (float32, GPU), `torch-fp16`, `coreml-gpu`, `coreml-ne`, `ne-complet`
+  (encodeurs et prédicteur sur le Neural Engine, CEM sur le CPU), `coreml-cpu` (mêmes graphes que `ne-complet`, CPU
+  seul), et les codages Core ML int8, int4b32, pal4, int4c sur le GPU et sur le Neural Engine.
+- Avec charge (ResNet-50 sur le GPU, démarrée après la mise en route du run) : `torch`, `coreml-gpu`, `coreml-ne`,
+  `ne-complet`, à pleine vitesse et à 30 images/s ; vision seule dans chaque mode. 24 éléments par répétition.
+- 3 répétitions, ordre contrebalancé ; repos par composant avant, entre et après ; sensibilité OpenMP (`ne-complet`,
+  `coreml-cpu`) ; contrôle de réussite descriptif de `ne-complet` (500 épisodes, 2 graines) ; run torch final ;
+  balayage du lot (50 cas, 3 répétitions en ordre aléatoire).
+- Mesures : temps par plan ; énergie de la puce (IOReport, affichage exclu) pendant la planification au-dessus du repos ;
+  par composant ; taille du fichier des poids du prédicteur ; vision sur les fenêtres de planification (images/s, part
+  de la vision seule, latences, échéances, plus grand trou) ; énergie marginale à 30 images/s si la cadence est gardée.
+- Décisions : règle de constance (3 répétitions du même côté, 5 % temps et vision, 10 % énergie), descriptive ;
+  question 2 : réponse fixée par les contrastes principaux `ne-complet` contre `torch` (amendement 5, point 7) ;
+  question 3 : « entièrement hors du GPU » seulement sous 0,3 W ; balayage : au lot de 300, aucun codage plus rapide
+  que fp16 de plus de 5 %.
+- Contrôles bloquants : runs torch identiques au pilote d'EXP-012 ; un commit ; placement attendu ; Neural Engine actif ;
+  ordre ; repos à leur place et propres ; vision prête et couvrant les fenêtres ; canaux complets ; aucun autre calcul.
+  Le reste est signalé.
+
 Amendement 1 (1er octobre, 18 h 14, avant tout calcul) : la question 3 est retenue. L'essai de faisabilité de l'encodeur
 (`essais/encodeur_ane.py`, `test_encodeur_ane.py`, `essai_encodeur_placement.py`) montre l'encodeur d'images réécrit en
 (B, C, 1, S) équivalent à 1,9e-6 en float32 et ses 323 opérations toutes sur le Neural Engine (plan de calcul), de même
@@ -202,6 +225,71 @@ Changements :
    macOS 26.6.2, coremltools 9.0) ; un codage ne réduit que la taille du fichier des poids, pas l'empreinte mémoire du
    processus, dans ce montage.
 4. Durée estimée : environ 2 h 45.
+
+Amendement 5 (1er octobre, 19 h 59, avant tout calcul d'EXP-013 ; code au commit `8398d18`, tests passés, 34 refus).
+Relecture des corrections des amendements 3 et 4 par deux sous-agents (code : 2 P0, 4 P1 ; méthode : 2 P0, 11 P1) et
+premier essai de bout en bout (`vitesse.py --essai`, arrêté après la répétition 1, 10 épisodes, EXP-011 en même temps :
+temps indicatifs seulement). Ce qui suit l'emporte sur les amendements précédents.
+1. Vision, écriture : la charge de vision écrit à l'arrêt les images depuis sa dernière ligne (elles étaient perdues,
+   jusqu'à 5 s ; l'essai le montrait : 21,9 images/s au lieu de 30 et un trou de 2,2 s à la fin d'un run). Contrôle
+   bloquant : les lignes de la vision, contiguës, couvrent toutes les fenêtres de planification (la vision tournait et a
+   tout écrit) ; le plus grand trou sans image dans une fenêtre est un résultat (vision affamée par le planificateur),
+   rapporté, plus un refus.
+2. Compteur des autres calculs : `pgrep` exclut le processus qui l'appelle et ses ancêtres, donc le run lui-même ; la
+   valeur attendue est 0 (et non 1). Sans cette correction, l'analyse aurait refusé tous les runs réels.
+3. Démarrage de la vision : run_grid charge et convertit le modèle, fait sa mise en route, écrit `go.pret` et attend ;
+   la vision démarre alors (prête, puis 10 s de chauffe), puis le signal `go` lance la planification. La chauffe de la
+   vision ne dépend plus du temps de conversion du moteur.
+4. Placement : contrôle bloquant pour toutes les configurations Core ML, contre le placement de l'essai de placement
+   (`resultats/preparation-exp013/placement-codages-70ecada.json`, commit `70ecada`) : int4 par blocs sur le Neural
+   Engine 211 opérations sur le CPU et 150 sur le Neural Engine ; tous les autres cas sur le processeur visé. Contrôle
+   bloquant du Neural Engine actif (plus de 1,0 W) pour toutes les configurations sur le Neural Engine sauf int4 par
+   blocs (signalé). Les chiffres de l'amendement 4 sur la mémoire venaient d'un fichier écrasé depuis ; les chiffres en
+   vigueur sont ceux de `70ecada` : empreinte du processus après chargement et 10 appels, Neural Engine 360 à 370 Mo,
+   GPU 470 (pal4) à 526 Mo (fp16 501 Mo) ; le témoin int4 par blocs de 64 est ajouté à l'essai de placement.
+5. Décompression, formulation corrigée (l'amendement 4 concluait trop) : le plan de calcul n'assigne aucun processeur
+   aux constantes ni aux opérations de décompression ; l'int4 par blocs change le placement sur le Neural Engine ; le
+   moment de la décompression n'est pas observé ; l'empreinte mémoire mesurée est celle du processus client (2
+   mesures, environ 1 Mo de résolution), la mémoire côté Neural Engine n'est pas observée. Rien sur la vitesse ne vient
+   de l'essai de placement. Observation de l'essai de bout en bout, exploratoire : sur le GPU, les codages linéaires
+   (int8, int4) rendent le prédicteur Core ML environ 10 fois plus lent (5 900 à 8 000 ms par plan contre 589 ms en fp16,
+   pal4 657 ms) ; sur le Neural Engine, int8 et int4 par canal ne changent rien (760 à 773 ms) et int4 par blocs le rend
+   3 fois plus lent (repli sur le CPU). EXP-013 le mesure ; durée allongée d'environ 1 h.
+6. Énergie à 30 images par seconde : la « sensibilité par image » est retirée (égale à l'estimation principale quand la
+   cadence est gardée). À la place, bornes : puissance de la vision seule la plus basse et la plus haute des 3
+   répétitions ; même condition (cadence gardée) ; le nombre de répétitions attribuables est affiché. Descriptive, sans
+   contraste.
+7. Question 2, réponse pré-enregistrée. Contrastes principaux : `ne-complet` contre `torch`, ralentissement S et part de
+   la vision V à pleine vitesse, et cadence de 30 images/s gardée. « Oui » si S est plus bas et V plus haut dans les 3
+   répétitions, et si `ne-complet` garde les 30 images/s quand `torch` ne les garde pas (ou si les deux les gardent) ;
+   « non » si ni S ni V ne sont en faveur de `ne-complet` et que la cadence n'est pas mieux gardée ; « en partie »
+   sinon. Les autres contrastes de la question 2 sont secondaires.
+8. Question 3 : « planificateur entièrement hors du GPU » n'est écrit que si la puissance du GPU au-dessus du repos
+   pendant la planification de `ne-complet` reste au plus 0,3 W dans les 3 répétitions ; sinon « GPU à X W ».
+9. OpenMP : la sensibilité couvre aussi `coreml-cpu` (ABBA, 2 runs par variante) ; un moteur dont l'énergie par plan
+   change de plus de 10 % avec `OMP_WAIT_POLICY=PASSIVE` est dit « sensible à OpenMP », et chaque contraste qui le met en
+   jeu porte cette mention.
+10. Mesures au repos : refaites une fois sur-le-champ si un processus hors de l'expérience dépasse 20 % d'un cœur au
+    début ou à la fin, gardées et signalées s'il est encore là ; refus si un calcul ou une vision tourne encore.
+11. Ordre : la vision seule n'est plus jamais en dernier dans une répétition (la garde de batterie sort après 4 contrôles
+    sans calcul, un par minute).
+12. Reprise : refusée si un fichier d'EXP-013 vient d'un autre commit ; un run déjà écrit est recontrôlé (pause,
+    autre calcul) et refait s'il le faut ; un run dont la vision s'arrête est effacé et refait ; écritures atomiques.
+13. Balayage du lot : modèles chargés cas par cas (pas 50 en mémoire) ; 30 s de stabilisation, repos de 30 s avant et
+    après, moyenne ; état de la batterie au début et à la fin ; canaux contrôlés ; 50 cas (int4c compris). Son échec
+    n'empêche ni les contrôles finaux ni le reste de l'analyse (signalé). Point 13 de l'amendement 3 : l'argument du
+    trafic des activations est retiré (le cache du système peut les garder) ; seule la prédiction reste.
+14. Divers : règle de constance « non calculable » si une valeur est nulle ou négative ; mention « référence bruitée »
+    sur les verdicts de temps si les runs torch s'écartent de plus de 2,5 % ; écart des runs torch en énergie rapporté ;
+    puissance de la puce sur les fenêtres de planification dans le tableau avec charge ; maximum des 99e centiles par
+    tranche de 5 s calculé ; vision seule à 30 images/s vérifiée contre la règle de cadence (signalé) ; Core ML complète
+    les longueurs T = 1 et 2 à 3 (environ 25 % de calcul du prédicteur en plus dans 2 appels sur 5), à dire dans la
+    comparaison des moteurs ; int4 par blocs contre int4 par canal sur le Neural Engine est un contraste de placement,
+    sur le GPU un contraste de granularité. Environ 90 verdicts au total (pas 40).
+15. Validation des compteurs : protocole de l'amendement 3 (point 19) complété par un segment de calibration (charge
+    torch sur le GPU) pour ajuster une perte de conversion proportionnelle à la charge ; script écrit avant la mesure ;
+    faite avec Thomas (chargeur débranché, environ 20 min), sinon la mention « non validée » reste.
+16. Durée estimée : environ 3 h 45.
 
 ## Questions
 
