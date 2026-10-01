@@ -4,7 +4,7 @@ Brouillon rédigé par Claude le 1er octobre 2026 à partir de 18 h 02 (heure du
 d'EXP-013. Figé par le commit enregistré dans les fichiers. Les mesures d'EXP-012 (temps par plan, 50 épisodes de pilote,
 journal d'énergie par composant pendant TwoRoom) sont connues et ont motivé ce plan ; aucun fichier d'EXP-013 n'existe.
 
-## Plan en vigueur (résumé des amendements 1 à 5 ; en cas de doute, les amendements font foi)
+## Plan en vigueur (résumé des amendements 1 à 6 ; en cas de doute, les amendements font foi)
 
 - Machine : MacBook Pro M5 Max, macOS 26.6.2, coremltools 9.0, PyTorch 2.14 (OpenMP, 6 fils). PushT, 50 épisodes de la
   sonde, graine 42, CEM 300 x 30, horizon 5, LeWM publié.
@@ -17,14 +17,15 @@ journal d'énergie par composant pendant TwoRoom) sont connues et ont motivé ce
   `coreml-cpu`) ; contrôle de réussite descriptif de `ne-complet` (500 épisodes, 2 graines) ; run torch final ;
   balayage du lot (50 cas, 3 répétitions en ordre aléatoire).
 - Mesures : temps par plan ; énergie de la puce (IOReport, affichage exclu) pendant la planification au-dessus du repos ;
-  par composant ; taille du fichier des poids du prédicteur ; vision sur les fenêtres de planification (images/s, part
+  par composant ; taille du fichier des poids du prédicteur (pas la mémoire à l'exécution) ; vision sur les fenêtres de planification (images/s, part
   de la vision seule, latences, échéances, plus grand trou) ; énergie marginale à 30 images/s si la cadence est gardée.
 - Décisions : règle de constance (3 répétitions du même côté, 5 % temps et vision, 10 % énergie), descriptive ;
-  question 2 : réponse fixée par les contrastes principaux `ne-complet` contre `torch` (amendement 5, point 7) ;
-  question 3 : « entièrement hors du GPU » seulement sous 0,3 W ; balayage : au lot de 300, aucun codage plus rapide
+  question 2 : réponse fixée par les contrastes principaux `ne-complet` contre `torch` et contre `coreml-gpu`
+  (amendement 6, point 4) ; question 3 : « entièrement hors du GPU » par construction, avec le GPU au plus à 0,3 W ; balayage : au lot de 300, aucun codage plus rapide
   que fp16 de plus de 5 %.
 - Contrôles bloquants : runs torch identiques au pilote d'EXP-012 ; un commit ; placement attendu ; Neural Engine actif ;
-  ordre ; repos à leur place et propres ; vision prête et couvrant les fenêtres ; canaux complets ; aucun autre calcul.
+  ordre ; repos à leur place, sans calcul ni vision ; vision prête et couvrant les fenêtres ; canaux complets ; aucun
+  autre calcul.
   Le reste est signalé.
 
 Amendement 1 (1er octobre, 18 h 14, avant tout calcul) : la question 3 est retenue. L'essai de faisabilité de l'encodeur
@@ -290,6 +291,57 @@ temps indicatifs seulement). Ce qui suit l'emporte sur les amendements précéde
     torch sur le GPU) pour ajuster une perte de conversion proportionnelle à la charge ; script écrit avant la mesure ;
     faite avec Thomas (chargeur débranché, environ 20 min), sinon la mention « non validée » reste.
 16. Durée estimée : environ 3 h 45.
+
+Amendement 6 (1er octobre, 20 h 20, avant tout calcul d'EXP-013 ; code au commit `af37479`, tests passés : 34 refus, table de
+12 cas pour la réponse à la question 2). Relecture des corrections de l'amendement 5 (méthode : « prêt avec
+corrections », 7 P1). Ce qui suit l'emporte sur les amendements précédents.
+1. Mémoire, retrait : la phrase de l'amendement 4 (point 3) « un codage ne réduit que la taille du fichier des poids, pas
+   l'empreinte mémoire du processus » est retirée. Ce qui reste : l'empreinte du processus client après chargement et
+   10 appels n'est pas plus basse pour les modèles codés (1 processus par cas ; GPU int8 520 à 526 Mo contre fp16 499 à
+   501 Mo selon le passage) ; la mémoire côté Neural Engine n'est pas observée ; aucune affirmation sur la mémoire à
+   l'exécution.
+2. Blocs de 64 : le témoin est maintenant mesuré (`resultats/preparation-exp013/placement-codages-1b0123c.json`) : int4 par
+   blocs de 64 sur le Neural Engine, 211 opérations sur le CPU et 150 sur le Neural Engine, comme par blocs de 32.
+3. Observations de l'essai de bout en bout (amendement 5, point 5), formulation : essai, 1 run par cas, 10 épisodes,
+   EXP-011 en même temps sur le GPU ; ce sont des temps par plan, pas des temps du prédicteur ; aucune cause n'est
+   avancée ; rien n'en est cité. Divulgation : des temps par appel au lot de 300 ont été vus avant le balayage du lot
+   (essai de placement : Neural Engine int4c 7,97 ms contre fp16 8,00 ms ; GPU pal4 15,8 contre 16,0 ms) ; le balayage
+   est donc rapporté comme une observation, pas comme une prédiction confirmée.
+4. Question 2, divulgation et réponse. Le contraste principal (point 7 de l'amendement 5) a été choisi après le premier
+   essai, qui avait produit des runs `torch-vision`, `ne-complet-vision` et à 30 images/s (10 épisodes, EXP-011 en même
+   temps) ; il suit la question (le seul planificateur entièrement hors du GPU, contre le déploiement par défaut). Biais
+   de précision : `torch` est en float32, `ne-complet` en float16 ; la même règle de réponse est donc appliquée aussi
+   contre `coreml-gpu` (float16), principal au même titre, et les deux réponses sont rapportées ensemble. Règle de
+   réponse : « compromis » si un critère est en faveur de `ne-complet` et un autre contre (ralentissement plus haut,
+   part de la vision plus basse, ou la référence garde les 30 images/s quand `ne-complet` ne les garde pas) ; « oui » si
+   ralentissement plus bas et part de la vision plus haute dans les 3 répétitions et si `ne-complet` garde les
+   30 images/s ; « non » si aucun critère n'est en faveur ; « en partie » sinon. Si la vision seule ne tient pas sa
+   cadence de 30 images/s dans les 3 répétitions, le bras à 30 images/s n'est pas interprétable et la réponse se lit
+   sur le ralentissement et la part de la vision seuls. Les autres contrastes de la question 2 sont rapportés dans le
+   même tableau, comme secondaires.
+5. Vision entièrement affamée (aucune image finie dans les fenêtres) : 0 image/s, latences absentes, rapports « non
+   calculables » ; un résultat, pas un refus (la couverture par les lignes prouve que la vision tournait). vitesse.py
+   contrôle aussi la couverture après chaque run avec vision et refait le run sinon.
+6. Énergie à 30 images/s : estimée sur les répétitions qui gardent la cadence, avec leur nombre n ; bornes sur ces mêmes
+   répétitions ; les bornes ne couvrent que la dérive de la puissance de la vision seule, pas la non-additivité,
+   inhérente à une mesure marginale.
+7. Validation des compteurs : obligatoire avant qu'un chiffre d'énergie entre dans le papier (sinon, aucun chiffre
+   d'énergie dans le papier) ; segments : repos, `coreml-gpu`, `ne-complet`, `ne-complet` avec la vision à 30 images/s,
+   et la charge de calibration (torch sur le GPU) ; script écrit avant la mesure. L'énergie marginale sous charge n'est
+   jamais répartie par composant.
+8. Neural Engine sous charge de vision : sa puissance baisse (essai : environ 4,3 W sans charge, 2,4 W avec) ; le
+   contrôle bloquant de plus de 1,0 W ne s'applique qu'aux runs sans charge ; sous charge, une puissance de 1,0 W ou
+   moins est signalée.
+9. OpenMP : « sensible à OpenMP » seulement si l'énergie par plan change de plus de 10 % et si les intervalles des deux
+   runs de chaque variante sont disjoints ; le rapport des temps est rapporté aussi.
+10. Question 3 : « entièrement hors du GPU » repose d'abord sur la construction (encodeurs et prédicteur en Core ML sur le
+    Neural Engine d'après le plan de calcul, CEM et coût sur le CPU), la puissance du GPU servant de contrôle (au plus
+    0,3 W au-dessus du repos dans les 3 répétitions) ; l'écart de la puissance du GPU entre les mesures au repos est
+    rapporté.
+11. Divers : fenêtre « vision avant le run » réduite à la chauffe (de la ligne « prête » au début de la mesure) ;
+    stabilisation de 30 s avant le repos final du balayage ; formulations corrigées dans le code (moment de la
+    décompression non observé). Limite connue, non corrigée : le filtre des processus de fond ignore tout processus
+    python (un autre calcul python que run_grid serait invisible) ; EXP-011 sera finie avant le lancement.
 
 ## Questions
 
