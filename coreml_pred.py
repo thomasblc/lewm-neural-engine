@@ -28,7 +28,26 @@ import torch.nn.functional as F
 
 import predicteur_ane as P
 
-MOTEURS = ("torch", "coreml-gpu", "coreml-ne")
+MOTEURS = ("torch", "torch-fp16", "coreml-gpu", "coreml-ne")
+CODAGES = ("fp16", "int8", "int4b32", "pal4")      # EXP-013 : codage des poids dans Core ML
+
+
+def comprimer(ml, codage):
+    """EXP-013 : codage des poids du programme Core ML (fonctions de coremltools, depuis les poids 16 bits) : int8 par
+    canal, int4 par blocs de 32, palettes de 16 valeurs (k-moyennes). Vitesse et mémoire seulement : la réussite de
+    ces codages est l'objet d'une autre expérience."""
+    import coremltools.optimize.coreml as cto
+    if codage == "fp16":
+        return ml
+    if codage == "int8":
+        cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8", granularity="per_channel")
+        return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
+    if codage == "int4b32":
+        cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_block", block_size=32)
+        return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
+    if codage == "pal4":
+        return cto.palettize_weights(ml, cto.OptimizationConfig(global_config=cto.OpPalettizerConfig(mode="kmeans", nbits=4)))
+    raise ValueError(codage)
 LOT, T_FIXE = 300, 3
 
 
@@ -59,7 +78,7 @@ def _empreinte_modele(m):
     return hashlib.sha256(spec.SerializeToString(deterministic=True)).hexdigest()
 
 
-def convertir(model, moteur, chemin):
+def convertir(model, moteur, chemin, codage="fp16"):
     """Convertit model.predict en Core ML (mlprogram, float16, macOS 15), formes fixes (300, 3) ; rend le MLModel
     chargé sur le moteur demandé et sa description."""
     import coremltools as ct
@@ -85,6 +104,7 @@ def convertir(model, moteur, chemin):
                                        ct.TensorType(name="act", shape=tuple(ex[1].shape))],
                         convert_to="mlprogram", compute_precision=ct.precision.FLOAT16,
                         minimum_deployment_target=ct.target.macOS15, skip_model_load=True)
+        ml = comprimer(ml, codage)
     finally:
         model.to(dev)
     assert all(torch.equal(v.detach().cpu(), cpu[k]) for k, v in model.state_dict().items()), "poids modifiés"
@@ -95,7 +115,8 @@ def convertir(model, moteur, chemin):
     m = ct.models.MLModel(str(chemin), compute_units=cu)
     info = {"moteur": moteur, "disposition": disp or "origine", "precision": "float16", "lot": LOT, "t_fixe": T_FIXE,
             "coremltools": ct.__version__, "macos": platform.mac_ver()[0], "fichier": chemin.name,
-            "sha256_poids": _empreinte(chemin), "sha256_modele": _empreinte_modele(m), "placement": placement(m, cu)}
+            "sha256_poids": _empreinte(chemin), "sha256_modele": _empreinte_modele(m), "placement": placement(m, cu),
+            "codage": codage, "octets_poids": sum(x.stat().st_size for x in Path(chemin).rglob("weight.bin"))}
     return m, info
 
 
@@ -117,11 +138,11 @@ def placement(m, cu):
         return {"indisponible": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
-def brancher(model, moteur, chemin):
-    """Remplace model.predict par l'appel Core ML. Rend la description (vide pour le moteur torch)."""
-    if moteur == "torch":
+def brancher(model, moteur, chemin, codage="fp16"):
+    """Remplace model.predict par l'appel Core ML. Rend la description (vide pour les moteurs PyTorch)."""
+    if moteur in ("torch", "torch-fp16"):
         return {}
-    m, info = convertir(model, moteur, chemin)
+    m, info = convertir(model, moteur, chemin, codage)
     disp = None if info["disposition"] == "origine" else info["disposition"]
 
     def predict(emb, act_emb):
@@ -248,4 +269,16 @@ def chronometrer(solver, temps):
         temps.append((time.perf_counter() - t0, int(r["actions"].shape[0])))
         return r
     solver.solve = solve_chrono
+    return solver
+
+
+def autocast_fp16(solver):
+    """EXP-013, moteur torch-fp16 : la planification sous torch.autocast en float16 sur le GPU (PyTorch), témoin du 16 bits
+    sans Core ML."""
+    solve = solver.solve
+
+    def solve_fp16(*a, **k):
+        with torch.autocast(device_type="mps", dtype=torch.float16):
+            return solve(*a, **k)
+    solver.solve = solve_fp16
     return solver

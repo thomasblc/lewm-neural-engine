@@ -314,8 +314,11 @@ def main():
     ap.add_argument("--cem-iter", type=int, default=None, help="itérations de la CEM par plan (défaut 30)")
     ap.add_argument("--calibrer-gptq", action="store_true", help="EXP-009 : calibre GPTQ au lieu d'évaluer")
     ap.add_argument("--gptq-calib", default=None, help="EXP-009 : statistiques de calibration pour les versions :gptq")
-    ap.add_argument("--moteur", choices=("torch", "coreml-gpu", "coreml-ne"), default="torch",
-                    help="EXP-012 : prédicteur en PyTorch (défaut) ou en Core ML 16 bits sur le GPU ou le Neural Engine")
+    ap.add_argument("--moteur", choices=coreml_pred.MOTEURS, default="torch",
+                    help="EXP-012 : prédicteur en PyTorch (défaut) ou en Core ML 16 bits sur le GPU ou le Neural Engine ; "
+                         "EXP-013 : torch-fp16 (autocast)")
+    ap.add_argument("--codage", choices=coreml_pred.CODAGES, default="fp16", help="EXP-013 : codage des poids Core ML")
+    ap.add_argument("--energie-puce", action="store_true", help="EXP-013 : énergie par composant (IOReport) par fichier")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
@@ -345,10 +348,18 @@ def main():
                                    "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
     if args.calibrer_gptq:
         protocole["calibration_gptq"] = True
-    if args.moteur != "torch":                                # absent des protocoles précédents
+    if args.moteur == "torch-fp16":                           # EXP-013, absent des protocoles précédents
+        protocole["moteur"] = {"nom": args.moteur, "macos": platform.mac_ver()[0], "precision": "float16 (autocast)"}
+    elif args.moteur != "torch":                              # absent des protocoles précédents
         import coremltools
         protocole["moteur"] = {"nom": args.moteur, "coremltools": coremltools.__version__,
                                "macos": platform.mac_ver()[0], "precision": "float16"}
+        if args.codage != "fp16":                             # EXP-013
+            protocole["moteur"]["codage"] = args.codage
+    compteur = None
+    if args.energie_puce:                                     # EXP-013 : énergie par composant, sans changer le protocole
+        import energie_puce
+        compteur = energie_puce.Compteur()
     if args.replan is not None or args.cem_iter is not None:  # absent des protocoles précédents
         protocole["planification"] = {"receding_horizon": int(cfg.plan_config.receding_horizon),
                                       "cem_n_steps": int(cfg.solver.n_steps)}
@@ -382,16 +393,24 @@ def main():
             model = model.to(args.device).eval()
             model.requires_grad_(False)
             model.interpolate_pos_encoding = True
-            moteur = coreml_pred.brancher(model, args.moteur, out / f"{f.stem}.mlpackage")   # {} pour torch
+            moteur = coreml_pred.brancher(model, args.moteur, out / f"{f.stem}.mlpackage", args.codage)   # {} pour torch
             recs, temps = [], []
+            e0 = compteur.lire() if compteur else None
             with coreml_pred.Puissance() as puissance:
                 for c in range(args.n // args.chunk):
                     sl = slice(c * args.chunk, (c + 1) * args.chunk)
-                    solver = coreml_pred.chronometrer(CEMParEpisode(model=model, graine=seed, **solver_kw), temps)
+                    solver = CEMParEpisode(model=model, graine=seed, **solver_kw)
+                    if args.moteur == "torch-fp16":
+                        solver = coreml_pred.autocast_fp16(solver)
+                    solver = coreml_pred.chronometrer(solver, temps)
                     policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
                                                          process=process, transform=transform)
                     world.set_policy(policy)
                     recs.append(evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache))
+            energie_fichier = None
+            if compteur:
+                j, dt = compteur.ecart(e0, compteur.lire())
+                energie_fichier = {"joules": j, "duree_s": dt, "debut": e0[0]}
             data = {}
             for k in recs[0]:
                 if k in ("init_state", "goal_state") or recs[0][k].ndim < 2:
@@ -411,6 +430,7 @@ def main():
                 "moteur": args.moteur, "coreml": moteur, "appels_solve": temps,
                 "temps_par_plan_s": [d / n for d, n in temps if n > 0], "plans": sum(n for _, n in temps),
                 "puissance": puissance.resume(), "lectures": puissance.lectures, "duree_s": time.time() - t0,
+                "energie_puce": energie_fichier,
                 "git": sha}, indent=1))
             os.replace(ft_tmp, ft)
             os.replace(tmp, f)
