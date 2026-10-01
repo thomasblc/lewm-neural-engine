@@ -232,6 +232,8 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
                 while not go.with_name("go.pret").exists():
                     if p.poll() is not None:
                         raise SystemExit(f"[arrêt] {dossier} : run_grid arrêté avant la mise en route (code {p.returncode})")
+                    if pid is not None and gele(pid):
+                        raison = "pause de la garde pendant le chargement"
                     time.sleep(0.5)
                 vision, fj = charge_vision(racine, etiquette, MODES_VISION[mode])
                 pret, gel = attendre_pret(fj, vision, pid_calcul=pid)
@@ -241,14 +243,16 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
                 if dormir(P["chauffe_vision"], pid, vision) or gel:
                     raison = "pause de la garde pendant la mise en route"   # le run continue, puis il est refait
                 go.write_text(str(time.time()))
-            while p.poll() is None:                    # garde : si le calcul est gelé, la vision l'est aussi
-                if pid is not None and vision is not None:
+            while p.poll() is None:                    # garde : un gel, même pendant le chargement, fait refaire le run
+                if pid is not None:
                     g = gele(pid)
-                    if g != vision_gelee:
+                    if g:
+                        raison = raison or "pause de la garde pendant le run ou son chargement"
+                    if vision is not None and g != vision_gelee:
                         vision.send_signal(signal.SIGSTOP if g else signal.SIGCONT)
                         vision_gelee = g
-                    if vision.poll() is not None:
-                        raison = "la charge de vision s'est arrêtée pendant le run"
+                if vision is not None and vision.poll() is not None:
+                    raison = "la charge de vision s'est arrêtée pendant le run"
                 time.sleep(1)
         except InterruptedError:                       # vision pas démarrée : le run est arrêté puis refait
             pass
@@ -260,6 +264,11 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
                     subprocess.run(["kill", "-CONT", str(pid)])
                     subprocess.run(["kill", "-TERM", str(pid)])
                 p.terminate()
+                try:                                   # fini avant tout nouvel essai (pas deux calculs à la fois)
+                    p.wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    p.kill()
+                    p.wait()
             arreter(vision)                            # la vision écrit ses dernières images en s'arrêtant
         if p.returncode != 0 and raison is None:
             effacer(racine, dossier, graines)
@@ -280,19 +289,23 @@ def vision_seule(racine, mode, r, compteur, sha):
     if f.exists():
         dire(f"[saut] vision seule {mode} r{r}")
         return
-    dire(f"[vision seule] {mode} r{r}")
-    p, fj = charge_vision(racine, f"seule-{mode}-r{r}", MODES_VISION[mode])
-    try:
-        if not attendre_pret(fj, p)[0]:
-            raise SystemExit(f"[arrêt] la vision seule {mode} r{r} n'a pas démarré")
-        time.sleep(P["chauffe_vision"])                # chauffe, hors mesure
-        e0 = compteur.lire()
-        time.sleep(P["mesure_vision"])
-        e1 = compteur.lire()
-        if p.poll() is not None:
-            raise SystemExit(f"[arrêt] la vision seule {mode} r{r} s'est arrêtée pendant la mesure")
-    finally:
-        arreter(p)                                     # la vision écrit ses dernières images en s'arrêtant
+    for essai in (1, 2, 3):                            # une vision qui ne démarre pas ou s'arrête : mesure refaite
+        dire(f"[vision seule] {mode} r{r}" + (f" (essai {essai})" if essai > 1 else ""))
+        p, fj = charge_vision(racine, f"seule-{mode}-r{r}", MODES_VISION[mode])
+        ok = False
+        try:
+            if attendre_pret(fj, p)[0]:
+                time.sleep(P["chauffe_vision"])        # chauffe, hors mesure
+                e0 = compteur.lire()
+                time.sleep(P["mesure_vision"])
+                e1 = compteur.lire()
+                ok = p.poll() is None
+        finally:
+            arreter(p)                                 # la vision écrit ses dernières images en s'arrêtant
+        if ok:
+            break
+    else:
+        raise SystemExit(f"[arrêt] la vision seule {mode} r{r} a échoué 3 fois")
     j, dt = compteur.ecart(e0, e1)
     ecrire_json(f, {"mode": mode, "ips_cible": MODES_VISION[mode], "debut": e0[0], "fin": e1[0], "duree_s": dt,
                     "joules": j, "git": sha})
@@ -316,6 +329,7 @@ def repos(racine, etiquette):
             dire(f"[repos] {etiquette} : processus de fond encore là ({fond(j)}), mesure gardée et signalée")
             return
         if essai == 2:
+            f.rename(f.with_name(f.name.replace(".json", ".contamine")))   # jamais reprise comme faite
             raise SystemExit(f"[arrêt] mesure au repos {etiquette} : un calcul ou une vision tourne encore")
         dire(f"[repos] {etiquette} : calcul, vision ou processus de fond ({fond(j)}), mesure refaite")
         f.rename(f.with_name(f.name.replace(".json", ".contamine")))

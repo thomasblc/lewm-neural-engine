@@ -335,7 +335,8 @@ def test_signalements(tmp, r):
         jsonl_mod(f"exp013-vision-torch-vision-r{k}.jsonl", tout_vider)(rr)
     res = A13.analyser(rr, verifier=False)
     assert res["configurations"]["torch-vision"]["vision_ips"]["mediane"] == 0.0
-    assert res["question_2"]["vision"]["contrastes"]["ne-complet contre torch"]["part_vision"]["verdict"] == "non calculable"
+    assert res["question_2"]["vision"]["contrastes"]["ne-complet contre torch"]["part_vision"]["verdict"] == "plus haut dans les 3 répétitions"
+    assert res["question_2"]["vision"]["contrastes"]["ne-complet contre torch"]["latence_p99"]["verdict"] == "non calculable"
     A13.rapport(res)
     # 30 images/s gardées dans une seule répétition : énergie estimée sur celle-là, n = 1
     rr = copie(tmp, r, "trente")
@@ -403,6 +404,8 @@ def test_refus(tmp, r):
            ("ne couvre pas les fenêtres", jsonl_mod("exp013-vision-coreml-ne-vision-r2.jsonl", trou)),
            ("autre commit ou autre cadence", json_mod("exp013-vision-seule-vision30-r2.json", lambda j: j.update(git="c" * 40))),
            ("vision interrompue", jsonl_mod("exp013-vision-seule-vision-r1.jsonl", trou)),
+           ("aucune image pendant la mesure", jsonl_mod("exp013-vision-seule-vision30-r3.jsonl",
+                                                       lambda L: [dict(x, fins=[], lat_ms=[], retard=[], images=0) if "fins" in x else x for x in L])),
            ("différent du pilote", lambda rr: [champ(f"exp013-{n}-r{k}", "success", lambda x: ~x["success"])(rr)
                                                 for n in ("torch", "torch-vision", "torch-vision30") for k in (1, 2, 3)]),
            ("plusieurs commits", lambda rr: (champ("exp013-torch-fp16-r1", "git", lambda x: np.str_("b" * 40))(rr),

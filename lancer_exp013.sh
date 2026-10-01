@@ -23,6 +23,10 @@ main() {
     [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] ${d:t} commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
   done
   rm -rf $R/exp013-fin                       # le run final d'un lancement précédent ferait sortir la garde tout de suite
+  # une charge de vision orpheline (gelée, elle ne voit pas son parent disparaître) ferait attendre le lanceur 24 h
+  if pgrep -f '^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*charge_vision\.py( |$)' > /dev/null; then
+    echo "[arrêt] une charge de vision tourne déjà (orpheline ?) : la tuer avant de relancer"; exit 1
+  fi
   local debut=$(date +%s)
   attendre_gpu
   attendre_batterie

@@ -183,6 +183,7 @@ def charger(racine, verifier=True, essai=False):
             A.exiger(lv and lv[0].get("ips_cible") == ips and lv[0]["pret"] <= j["debut"], f"{fj.name} : vision pas prête avant la mesure")
             v = vision_fenetres(images(lv), [(j["debut"], j["fin"])])
             A.exiger(v is not None and couverture(lv, [(j["debut"], j["fin"])]), f"{fj.name} : vision interrompue pendant la mesure")
+            A.exiger(v["ips"] > 0, f"{fj.name} : aucune image pendant la mesure de la vision seule")
             seules[(mode, rep)] = {"json": j, "vision": v, "puissance_puce_w": somme(j["joules"], PUCE) / j["duree_s"]}
     for rep in range(1, V.REPETITIONS + 1):            # ordre réel = ordre tiré
         t = []
@@ -286,7 +287,7 @@ def resume(vals):
 
 def decision(rapports, marge):
     """Règle de constance : les 3 rapports appariés (même répétition) du même côté de 1, au-delà de la marge."""
-    if len(rapports) < V.REPETITIONS or any(x is None or not math.isfinite(x) or x <= 0 for x in rapports):
+    if len(rapports) < V.REPETITIONS or any(x is None or x != x or x <= 0 for x in rapports):   # l'infini reste permis
         return "non calculable"
     if all(x < 1 - marge for x in rapports):
         return "plus bas dans les 3 répétitions"
@@ -434,7 +435,8 @@ def analyser(racine, verifier=True, essai=False):
              "contrastes": {}}
         for e in ("coreml-ne", "ne-complet"):
             for ref in ("torch", "coreml-gpu"):
-                div = lambda a, b: a / b if a is not None and b is not None and a > 0 and b > 0 else None
+                # référence entièrement affamée (part 0) et ne-complet non : rapport infini, donc en faveur de ne-complet
+                div = lambda a, b: (a / b if b > 0 else (math.inf if a > 0 else None)) if a is not None and b is not None and a >= 0 else None
                 rr = [div(a, b) for a, b in zip(ral[e], ral[ref])]
                 rv = [div(a, b) for a, b in zip(part[e], part[ref])]
                 rp = [div(a, b) for a, b in zip(p99[e], p99[ref])]
@@ -636,7 +638,8 @@ def rapport(r):
           "| --- | --- | --- | --- | --- |"]
     for mode, q in r["question_2"].items():
         for nom, c in q["contrastes"].items():
-            L.append(f"| {mode} | {nom} | {fr(c['ralentissement'])} | {fr(c['part_vision'])} | {fr(c['latence_p99'])} |")
+            so = f" ; sensible à OpenMP ({', '.join(c['sensible_openmp'])})" if c.get("sensible_openmp") else ""
+            L.append(f"| {mode} | {nom} | {fr(c['ralentissement'])}{so} | {fr(c['part_vision'])} | {fr(c['latence_p99'])} |")
     L += ["", "Ralentissement sous charge (temps avec charge / sans charge, même répétition) : " + " ; ".join(
         f"{mode} {e} {f(v, 2)}" for mode, q in r["question_2"].items() for e, v in q["ralentissement"].items()),
           "", "30 images par seconde gardées (au moins 29,7 images/s et au plus 0,3 échéance manquée par seconde, dans les 3 "
