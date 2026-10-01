@@ -158,9 +158,10 @@ def etiquette_processus(commande):
 
 SCRIPTS_EXPERIENCE = ("python:vitesse.py", "python:run_grid.py", "python:repos_puce.py", "python:charge_vision.py",
                       "python:balayage_lot.py", "caffeinate", "ps")
-# processus jamais comptés comme calcul de fond : ceux de l'expérience, et l'affichage (écran gardé allumé par caffeinate ;
-# l'essai le montre à 21-22 % d'un cœur au repos)
-NON_COMPTES = SCRIPTS_EXPERIENCE + ("WindowServer",)
+# processus jamais comptés comme calcul de fond : ceux de l'expérience, l'affichage (écran gardé allumé par caffeinate ;
+# l'essai le montre à 21-22 % d'un cœur au repos) et launchd (il lance les processus de surveillance de l'expérience ;
+# 36 % juste après eux dans l'essai)
+NON_COMPTES = SCRIPTS_EXPERIENCE + ("WindowServer", "launchd")
 
 
 def processus_actifs(n=4):

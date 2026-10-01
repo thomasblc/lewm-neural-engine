@@ -369,7 +369,8 @@ Dernière relecture du code (aucun P0 ; 1 P1, 7 P2) :
 7. Essai de bout en bout au commit `a2930fe` (66 runs, sensibilité, contrôle de réussite, run final, balayage complet en
    plus ; EXP-011 en même temps, chiffres indicatifs, non cités) : passé sans run refait ; runs torch identiques au pilote.
    Deux réglages : WindowServer (l'affichage, écran gardé allumé) n'est pas compté comme processus de fond (21 à 22 %
-   d'un cœur au repos dans l'essai, il aurait fait refaire chaque mesure au repos) ; la prédiction du balayage est dite
+   d'un cœur au repos dans l'essai, il aurait fait refaire chaque mesure au repos), ni launchd (36 % juste après les
+   lancements de processus de l'expérience, dans le mini-essai du commit `d4d8b96`) ; la prédiction du balayage est dite
    « non évaluable » si un de ses rapports n'est pas calculable.
 
 ## Questions
