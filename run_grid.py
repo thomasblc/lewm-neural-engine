@@ -319,6 +319,8 @@ def main():
                     help="EXP-012 : prédicteur en PyTorch (défaut) ou en Core ML 16 bits sur le GPU ou le Neural Engine ; "
                          "EXP-013 : torch-fp16 (autocast)")
     ap.add_argument("--codage", choices=coreml_pred.CODAGES, default="fp16", help="EXP-013 : codage des poids Core ML")
+    ap.add_argument("--go", default=None, help="EXP-013 : après la mise en route, écrire GO.pret puis attendre le fichier GO "
+                    "(la charge de vision démarre entre les deux, une fois le modèle chargé et converti)")
     ap.add_argument("--energie-puce", action="store_true", help="EXP-013 : énergie par composant (IOReport) par fichier")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
@@ -407,6 +409,13 @@ def main():
             if args.energie_puce:                          # EXP-013 : mise en route hors mesure, compteurs à zéro
                 coreml_pred.echauffer(model, args.moteur)
                 coreml_pred.remise_a_zero_appels()
+            if args.go:                                    # EXP-013 : la vision démarre maintenant, le run attend son signal
+                Path(args.go + ".pret").write_text(str(time.time()))
+                t_go = time.time()
+                while not Path(args.go).exists():
+                    if time.time() - t_go > 900:
+                        sys.exit(f"{args.go} : signal de départ jamais reçu")
+                    time.sleep(0.2)
             octets_torch = sum(q.numel() * q.element_size() for q in model.parameters()) if not moteur else None
             ru0 = resource.getrusage(resource.RUSAGE_SELF)
             e0 = compteur.lire() if compteur else None

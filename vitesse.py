@@ -1,23 +1,25 @@
-"""EXP-013 (PREREG-EXP013.md, amendements 2 et 3) : enchaîne les mesures de vitesse et d'énergie.
+"""EXP-013 (PREREG-EXP013.md, amendements 2 à 5) : enchaîne les mesures de vitesse et d'énergie.
 
 - 3 répétitions ; ordre de la répétition 1 tiré au hasard (default_rng(13)), répétition 2 dans l'ordre inverse
-  (contrebalancement de la dérive), répétition 3 tirée au hasard ; la vision seule jamais en tête, ses deux mesures
-  jamais côte à côte (la garde de batterie ne doit pas croire le calcul arrêté).
+  (contrebalancement de la dérive), répétition 3 tirée au hasard ; la vision seule jamais en tête ni en dernier, ses
+  deux mesures jamais côte à côte (la garde de batterie ne doit pas croire le calcul arrêté).
 - Mesures au repos par composant (repos_puce.py) avant la répétition 1, entre les répétitions et après la 3 ; refaites
-  sur-le-champ si un calcul ou une charge de vision tournait, jamais refaites plus tard.
+  une fois sur-le-champ si un calcul, une charge de vision ou un processus de fond tournait, jamais refaites plus tard.
 - Chaque configuration est un appel de run_grid.py sur les 50 épisodes de la sonde, graine 42, avec l'énergie de la
-  puce ; avec charge, charge_vision.py tourne pendant le run (prête, puis 10 s de chauffe avant le run), à pleine
-  vitesse ou à 30 images par seconde ; si la garde gèle le run, la vision est gelée aussi.
+  puce. Avec charge : run_grid charge et convertit le modèle, fait sa mise en route, écrit GO.pret et attend ; la
+  vision démarre alors (prête, puis 10 s de chauffe), puis le signal GO lance la planification ; à pleine vitesse ou à
+  30 images par seconde ; si la garde gèle le run, la vision est gelée aussi.
 - Vision seule (pleine vitesse et 30 images par seconde) : prête, 10 s de chauffe, 35 s de mesure d'énergie.
-- Un run allongé par une pause (fil de lecture gelé plus de 7,5 s) ou partagé avec un autre calcul run_grid est refait,
-  3 essais au plus.
-- Ensuite : sensibilité à l'attente active d'OpenMP (ne-complet, OMP_WAIT_POLICY par défaut et PASSIVE, ordre ABBA),
-  contrôle de réussite du planificateur sur le Neural Engine (500 épisodes, 2 graines, sans contrôle de pause : la
-  réussite ne dépend pas du temps), run torch final, balayage de la taille du lot, contrôles bloquants (runs torch
-  identiques au pilote d'EXP-012).
+- Un run allongé par une pause (fil de lecture gelé plus de 7,5 s), partagé avec un autre calcul run_grid, ou dont la
+  vision s'est arrêtée, est effacé et refait, 3 essais au plus ; à la reprise, un run déjà écrit est recontrôlé.
+- Ensuite : sensibilité à l'attente active d'OpenMP (ne-complet et coreml-cpu, OMP_WAIT_POLICY par défaut et PASSIVE,
+  ordre ABBA), contrôle de réussite du planificateur sur le Neural Engine (500 épisodes, 2 graines, sans contrôle de
+  pause : la réussite ne dépend pas du temps), run torch final, balayage de la taille du lot (son échec n'empêche pas
+  les contrôles finaux), contrôles bloquants (runs torch identiques au pilote d'EXP-012).
 - État de la machine (pmset, batterie, fils, processus actifs) écrit au début et à la fin.
-Reprend là où il s'est arrêté. --essai : même chemin en court (10 épisodes, mesures brèves), dans un dossier de travail,
-pour vérifier le fonctionnement de bout en bout ; jamais dans resultats/.
+- Reprise : refusée si un fichier d'EXP-013 vient d'un autre commit (tout recommencer dans un dossier propre).
+--essai : même chemin en court (10 épisodes, mesures brèves), dans un dossier de travail, pour vérifier le
+fonctionnement de bout en bout ; jamais dans resultats/.
 
 Usage (depuis code-exp013, par le lanceur) :
     python vitesse.py --racine ../resultats
@@ -46,10 +48,12 @@ SANS_CHARGE = [("torch", "fp16"), ("torch-fp16", "fp16"), ("coreml-gpu", "fp16")
 AVEC_CHARGE = [("torch", "fp16"), ("coreml-gpu", "fp16"), ("coreml-ne", "fp16"), ("ne-complet", "fp16")]
 MODES_VISION = {"vision": 0.0, "vision30": 30.0}      # pleine vitesse ; 30 images par seconde
 REUSSITE = ("ne-complet", (42, 43))                    # contrôle de réussite du planificateur hors du GPU, 500 épisodes
-SENSIBILITE_OMP = [("defaut", 1), ("passif", 1), ("passif", 2), ("defaut", 2)]   # ne-complet, ordre ABBA
+SENSIBILITE_OMP = [(m, v, k) for m in ("ne-complet", "coreml-cpu")
+                   for v, k in (("defaut", 1), ("passif", 1), ("passif", 2), ("defaut", 2))]   # ordre ABBA par moteur
 REPETITIONS = 3
 SUR_CPU = ("ne-complet", "coreml-cpu")
 SEUIL_TROU_S = 7.5                                     # lectures toutes les 5 s : un trou plus long est une pause
+SEUIL_FOND = 20.0                                      # % d'un cœur : processus de fond pendant une mesure au repos
 P = {"n": 50, "chunk": 50, "n_reussite": 500, "repos": ("60", "30"), "chauffe_vision": 10, "mesure_vision": 35,
      "essai": False}
 ESSAI = {"n": 10, "chunk": 10, "n_reussite": 10, "repos": ("10", "5"), "chauffe_vision": 3, "mesure_vision": 8,
@@ -78,20 +82,26 @@ def git_tete():
     return subprocess.run(["git", "-C", str(ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 
 
+def ecrire_json(f, d):
+    tmp = f.with_name(f.name + ".tmp")
+    tmp.write_text(json.dumps(d, indent=1))
+    os.replace(tmp, f)                                 # jamais de fichier partiel, même sur SIGTERM
+
+
 def probleme(dossier, g=42):
     """Motif de refaire le run, ou None : fil de lecture gelé plus de 7,5 s (pause de la garde ou du régulateur de
-    batterie), ou un autre calcul run_grid vu pendant le run."""
+    batterie), ou un autre calcul run_grid vu pendant le run (pgrep exclut le run lui-même : 0 attendu)."""
     t = json.loads((dossier / f"fp32_s{g}.temps.json").read_text())
     ts = [x["t"] for x in t["lectures"] if "t" in x]
     if any(b - a > SEUIL_TROU_S for a, b in zip(ts, ts[1:])):
         return "pause pendant le run"
-    if not P["essai"] and max((x.get("processus_run_grid", 1) for x in t["lectures"]), default=1) > 1:   # essai : EXP-011 tourne
+    if not P["essai"] and max((x.get("processus_run_grid", 0) for x in t["lectures"]), default=0) > 0:   # essai : EXP-011 tourne
         return "autre calcul run_grid pendant le run"
     return None
 
 
 def pid_calcul(dossier, p, attente=60):
-    """PID du processus python de run_grid qui écrit dans dossier (enfant de caffeinate p), ou None s'il a déjà fini."""
+    """PID du processus python de run_grid qui écrit dans dossier, ou None s'il a déjà fini."""
     motif = f"^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\\.py --out {dossier}( |$)"
     for _ in range(attente * 2):
         out = subprocess.run(["pgrep", "-f", motif], capture_output=True, text=True).stdout.split()
@@ -106,52 +116,6 @@ def pid_calcul(dossier, p, attente=60):
 def gele(pid):
     st = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()
     return st.startswith("T")
-
-
-def run(racine, dossier, moteur, codage, n=None, graines=(42,), vision=None, env=None, controle=True):
-    n = n or P["n"]
-    if all((racine / dossier / f"fp32_s{g}.npz").exists() for g in graines):
-        dire(f"[saut] {dossier}")
-        return
-    cmd = [PY, "run_grid.py", "--out", str(racine / dossier), "--n", str(n), "--chunk", str(min(P["chunk"], n)),
-           "--specs", "fp32", "--seeds", *map(str, graines), "--moteur", moteur, "--energie-puce"] + \
-        ([] if moteur.startswith("torch") else ["--codage", codage]) + (["--device", "cpu"] if moteur in SUR_CPU else [])
-    for essai in (1, 2, 3):
-        if vision is not None and vision.poll() is not None:
-            raise SystemExit(f"[arrêt] la charge de vision s'est arrêtée avant {dossier}")
-        dire(f"[run] {dossier}" + (f" (essai {essai})" if essai > 1 else ""))
-        p = subprocess.Popen(["caffeinate", "-d", "-i"] + cmd, stdout=subprocess.DEVNULL,
-                             env={**os.environ, **(env or {})})
-        vision_gelee, pid = False, None
-        try:
-            pid = pid_calcul(racine / dossier, p)
-            while p.poll() is None:                    # garde : si le calcul est gelé, la vision l'est aussi
-                if pid is not None and vision is not None:
-                    g = gele(pid)
-                    if g != vision_gelee:
-                        vision.send_signal(signal.SIGSTOP if g else signal.SIGCONT)
-                        vision_gelee = g
-                time.sleep(1)
-        finally:
-            if vision_gelee:
-                vision.send_signal(signal.SIGCONT)
-            if p.poll() is None:                       # arrêt de vitesse.py : le calcul ne reste pas orphelin
-                if pid is not None:
-                    subprocess.run(["kill", "-CONT", str(pid)])
-                    subprocess.run(["kill", "-TERM", str(pid)])
-                p.terminate()
-        if p.returncode != 0:
-            raise SystemExit(f"[arrêt] {dossier} : run_grid a échoué (code {p.returncode})")
-        if vision is not None and vision.poll() is not None:
-            raise SystemExit(f"[arrêt] la charge de vision s'est arrêtée pendant {dossier}")
-        raison = next((probleme(racine / dossier, g) for g in graines if probleme(racine / dossier, g)), None) if controle else None
-        if raison is None:
-            return
-        dire(f"[refait] {dossier} : {raison}")
-        for g in graines:
-            for suffixe in (".npz", ".temps.json"):
-                (racine / dossier / f"fp32_s{g}{suffixe}").unlink(missing_ok=True)
-    raise SystemExit(f"[arrêt] {dossier} : 3 essais refaits")
 
 
 def charge_vision(racine, etiquette, ips):
@@ -171,7 +135,7 @@ def attendre_pret(f, p, attente=180):
 
 
 def arreter(p):
-    if p.poll() is not None:
+    if p is None or p.poll() is not None:
         return
     p.send_signal(signal.SIGCONT)
     p.send_signal(signal.SIGTERM)
@@ -179,6 +143,76 @@ def arreter(p):
         p.wait(timeout=30)
     except subprocess.TimeoutExpired:
         p.kill()
+
+
+def effacer(racine, dossier, graines):
+    for g in graines:
+        for suffixe in (".npz", ".temps.json"):
+            (racine / dossier / f"fp32_s{g}{suffixe}").unlink(missing_ok=True)
+
+
+def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiquette=None, env=None, controle=True):
+    """Un run de run_grid, refait (3 essais) s'il a été gelé, partagé ou si sa vision s'est arrêtée. mode : charge de
+    vision (None, "vision", "vision30"), démarrée après la mise en route du run (signal GO)."""
+    n = n or P["n"]
+    if all((racine / dossier / f"fp32_s{g}.npz").exists() for g in graines):
+        raison = next((probleme(racine / dossier, g) for g in graines if probleme(racine / dossier, g)), None) if controle else None
+        if raison is None:
+            dire(f"[saut] {dossier}")
+            return
+        dire(f"[refait] {dossier} (reprise) : {raison}")
+        effacer(racine, dossier, graines)
+    (racine / dossier).mkdir(parents=True, exist_ok=True)
+    go = racine / dossier / "go"
+    cmd = [PY, "run_grid.py", "--out", str(racine / dossier), "--n", str(n), "--chunk", str(min(P["chunk"], n)),
+           "--specs", "fp32", "--seeds", *map(str, graines), "--moteur", moteur, "--energie-puce"] + \
+        ([] if moteur.startswith("torch") else ["--codage", codage]) + (["--device", "cpu"] if moteur in SUR_CPU else []) + \
+        (["--go", str(go)] if mode else [])
+    for essai in (1, 2, 3):
+        dire(f"[run] {dossier}" + (f" (essai {essai})" if essai > 1 else ""))
+        for f in (go, go.with_name("go.pret")):
+            f.unlink(missing_ok=True)
+        p = subprocess.Popen(["caffeinate", "-d", "-i"] + cmd, stdout=subprocess.DEVNULL, env={**os.environ, **(env or {})})
+        vision, vision_gelee, pid, raison = None, False, None, None
+        try:
+            pid = pid_calcul(racine / dossier, p)
+            if mode:                                   # le run est chargé et mis en route : la vision démarre, puis GO
+                while not go.with_name("go.pret").exists():
+                    if p.poll() is not None:
+                        raise SystemExit(f"[arrêt] {dossier} : run_grid arrêté avant la mise en route (code {p.returncode})")
+                    time.sleep(0.5)
+                vision, fj = charge_vision(racine, etiquette, MODES_VISION[mode])
+                attendre_pret(fj, vision)
+                time.sleep(P["chauffe_vision"])
+                go.write_text(str(time.time()))
+            while p.poll() is None:                    # garde : si le calcul est gelé, la vision l'est aussi
+                if pid is not None and vision is not None:
+                    g = gele(pid)
+                    if g != vision_gelee:
+                        vision.send_signal(signal.SIGSTOP if g else signal.SIGCONT)
+                        vision_gelee = g
+                    if vision.poll() is not None:
+                        raison = "la charge de vision s'est arrêtée pendant le run"
+                time.sleep(1)
+        finally:
+            if vision_gelee:
+                vision.send_signal(signal.SIGCONT)
+            if p.poll() is None:                       # arrêt de vitesse.py : le calcul ne reste pas orphelin
+                if pid is not None:
+                    subprocess.run(["kill", "-CONT", str(pid)])
+                    subprocess.run(["kill", "-TERM", str(pid)])
+                p.terminate()
+            arreter(vision)                            # la vision écrit ses dernières images en s'arrêtant
+        if p.returncode != 0:
+            effacer(racine, dossier, graines)
+            raise SystemExit(f"[arrêt] {dossier} : run_grid a échoué (code {p.returncode})")
+        if raison is None and controle:
+            raison = next((probleme(racine / dossier, g) for g in graines if probleme(racine / dossier, g)), None)
+        if raison is None:
+            return
+        dire(f"[refait] {dossier} : {raison}")
+        effacer(racine, dossier, graines)
+    raise SystemExit(f"[arrêt] {dossier} : 3 essais refaits")
 
 
 def vision_seule(racine, mode, r, compteur, sha):
@@ -197,24 +231,34 @@ def vision_seule(racine, mode, r, compteur, sha):
         if p.poll() is not None:
             raise SystemExit(f"[arrêt] la vision seule {mode} r{r} s'est arrêtée pendant la mesure")
     finally:
-        arreter(p)
+        arreter(p)                                     # la vision écrit ses dernières images en s'arrêtant
     j, dt = compteur.ecart(e0, e1)
-    f.write_text(json.dumps({"mode": mode, "ips_cible": MODES_VISION[mode], "debut": e0[0], "fin": e1[0], "duree_s": dt,
-                             "joules": j, "git": sha}, indent=1))
+    ecrire_json(f, {"mode": mode, "ips_cible": MODES_VISION[mode], "debut": e0[0], "fin": e1[0], "duree_s": dt,
+                    "joules": j, "git": sha})
+
+
+def fond(j):
+    """Processus hors de l'expérience au-dessus de 20 % d'un cœur au début ou à la fin d'une mesure au repos."""
+    return [p for p in j.get("processus_debut", []) + j.get("processus_fin", [])
+            if p[0] > SEUIL_FOND and not p[1].lower().startswith(("python", "caffeinate", "ps"))]
 
 
 def repos(racine, etiquette):
     if list(racine.glob(f"exp013-repos-{etiquette}-*.json")):
         return
-    for essai in (1, 2, 3):
-        # stabilisation et mesure : moins de 2 min sans calcul, la garde ne croit pas à un arrêt
+    for essai in (1, 2):                               # deux essais au plus : la garde ne doit pas croire à un arrêt
         subprocess.run([PY, "repos_puce.py", str(racine), etiquette, *P["repos"]], check=True)
         f = sorted(racine.glob(f"exp013-repos-{etiquette}-*.json"))[-1]
-        if json.loads(f.read_text())["calculs_run_grid_vus"] == 0 or P["essai"]:
+        j = json.loads(f.read_text())
+        if P["essai"] or (j["calculs_run_grid_vus"] == 0 and not fond(j)):
             return
-        dire(f"[repos] {etiquette} : un calcul ou une vision tournait, mesure refaite")
+        if essai == 2 and j["calculs_run_grid_vus"] == 0:
+            dire(f"[repos] {etiquette} : processus de fond encore là ({fond(j)}), mesure gardée et signalée")
+            return
+        if essai == 2:
+            raise SystemExit(f"[arrêt] mesure au repos {etiquette} : un calcul ou une vision tourne encore")
+        dire(f"[repos] {etiquette} : calcul, vision ou processus de fond ({fond(j)}), mesure refaite")
         f.rename(f.with_name(f.name.replace(".json", ".contamine")))
-    raise SystemExit(f"[arrêt] mesure au repos {etiquette} contaminée 3 fois")
 
 
 def identiques(fa, fb):
@@ -225,15 +269,16 @@ def identiques(fa, fb):
 
 
 def ordres_contrebalances(n, rng, configs):
-    """Répétition 1 au hasard, 2 à l'envers, 3 au hasard ; dans chacune, la vision seule ni en tête ni côte à côte."""
+    """Répétition 1 au hasard, 2 à l'envers, 3 au hasard ; dans chacune, la vision seule ni en tête, ni en dernier, ni
+    côte à côte."""
     def contraindre(o):
         seule = [configs[v][0].startswith("seule") for v in o]
         s = [v for v, x in zip(o, seule) if x]
         a = [v for v, x in zip(o, seule) if not x]
-        assert len(s) == 2
+        assert len(s) == 2 and len(o) >= 5
         p1, p2 = [i for i, x in enumerate(seule) if x]
         p1 = max(p1, 1)
-        p2 = min(max(p2, p1 + 2), len(o) - 1)
+        p2 = min(max(p2, p1 + 2), len(o) - 2)
         p1 = min(p1, p2 - 2)
         a.insert(p1, s[0])
         a.insert(p2, s[1])
@@ -259,7 +304,23 @@ def etat_machine(racine, moment, sha):
          "parallelisme_torch": torch.__config__.parallel_info(),
          "omp": {k: v for k, v in os.environ.items() if k.startswith("OMP_")}, "processus": processus_actifs(8),
          "canaux_ioreport": sorted(canaux), "macos": subprocess.run(["sw_vers"], capture_output=True, text=True).stdout}
-    (racine / f"exp013-etat-{moment}-{int(d['t'])}.json").write_text(json.dumps(d, indent=1))
+    ecrire_json(racine / f"exp013-etat-{moment}-{int(d['t'])}.json", d)
+
+
+def autre_commit(racine, sha):
+    """Fichiers d'EXP-013 écrits par un autre commit (une reprise les mélangerait)."""
+    ko = []
+    for f in racine.glob("exp013-*.json"):
+        try:
+            g = json.loads(f.read_text()).get("git")
+        except Exception:  # noqa: BLE001
+            g = "illisible"
+        if g not in (None, sha):
+            ko.append(f.name)
+    for m in racine.glob("exp013-*/meta.json"):
+        if json.loads(m.read_text()).get("git") != sha:
+            ko.append(m.parent.name)
+    return sorted(ko)
 
 
 def main():
@@ -272,12 +333,15 @@ def main():
         P.update(ESSAI)
         assert "resultats" not in racine.parts, "--essai : jamais dans resultats/"
         racine.mkdir(parents=True, exist_ok=True)
-    signal.signal(signal.SIGTERM, lambda *x: sys.exit(143))   # les blocs finally arrêtent la vision
+    signal.signal(signal.SIGTERM, lambda *x: sys.exit(143))   # les blocs finally arrêtent la vision et le calcul
     if not a.essai:
         autres = subprocess.run(["pgrep", "-f", "(charge_vision|regulateur_batterie)\\.py"], capture_output=True, text=True).stdout.split()
         if autres:
             raise SystemExit(f"[arrêt] une charge de vision ou le régulateur de batterie tourne déjà : {autres}")
     sha = git_tete()
+    ko = autre_commit(racine, sha)
+    if ko:
+        raise SystemExit(f"[arrêt] fichiers d'EXP-013 d'un autre commit (tout recommencer) : {ko[:10]}")
     configs = configurations()
     f_ordre = racine / "exp013-ordre.json"
     ordres = ordres_contrebalances(len(configs), np.random.default_rng(13), configs)
@@ -286,7 +350,7 @@ def main():
         if o["configs"] != [nom(*c) for c in configs] or o["ordres"] != ordres:
             raise SystemExit("[arrêt] exp013-ordre.json décrit un autre plan que le code")
     else:
-        f_ordre.write_text(json.dumps({"configs": [nom(*c) for c in configs], "ordres": ordres, "git": sha}, indent=1))
+        ecrire_json(f_ordre, {"configs": [nom(*c) for c in configs], "ordres": ordres, "git": sha})
     etat_machine(racine, "debut", sha)
     compteur = energie_puce.Compteur()
     for r, ordre in enumerate(ordres, start=1):
@@ -296,23 +360,10 @@ def main():
             if m.startswith("seule"):
                 vision_seule(racine, mode, r, compteur, sha)
                 continue
-            dossier = f"exp013-{nom(m, c, mode)}-r{r}"
-            if mode is None:
-                run(racine, dossier, m, c)
-                continue
-            if (racine / dossier / "fp32_s42.npz").exists():
-                dire(f"[saut] {dossier}")
-                continue
-            p, fj = charge_vision(racine, f"{nom(m, c, mode)}-r{r}", MODES_VISION[mode])
-            try:
-                attendre_pret(fj, p)
-                time.sleep(P["chauffe_vision"])        # chauffe de la vision, puis le run (quelques secondes de chargement)
-                run(racine, dossier, m, c, vision=p)
-            finally:
-                arreter(p)
+            run(racine, f"exp013-{nom(m, c, mode)}-r{r}", m, c, mode=mode, etiquette=f"{nom(m, c, mode)}-r{r}")
     repos(racine, f"r{REPETITIONS}-apres")
-    for variante, k in SENSIBILITE_OMP:                # entre le repos d'après la répétition 3 et le suivant
-        run(racine, f"exp013-sens-ne-complet-omp-{variante}-{k}", "ne-complet", "fp16",
+    for m, variante, k in SENSIBILITE_OMP:            # entre le repos d'après la répétition 3 et le suivant
+        run(racine, f"exp013-sens-{m}-omp-{variante}-{k}", m, "fp16",
             env={"OMP_WAIT_POLICY": "PASSIVE"} if variante == "passif" else None)
     repos(racine, "sens-apres")
     m, graines = REUSSITE
@@ -321,7 +372,9 @@ def main():
     f_lot = racine / "exp013-balayage-lot.json"
     if not f_lot.exists():                             # appels isolés du prédicteur, une vingtaine de minutes
         dire("[balayage] taille du lot")
-        subprocess.run(["caffeinate", "-d", "-i", PY, "balayage_lot.py", str(f_lot)] + (["--essai"] if a.essai else []), check=True)
+        b = subprocess.run(["caffeinate", "-d", "-i", PY, "balayage_lot.py", str(f_lot)] + (["--essai"] if a.essai else []))
+        if b.returncode != 0:
+            dire(f"[balayage] ÉCHEC (code {b.returncode}) : le reste de l'expérience est gardé, contrôles finaux faits")
     etat_machine(racine, "fin", sha)
     ref = racine / "pilote-exp012" / "torch" / "fp32_s42.npz" if not a.essai else racine / "exp013-torch-r1" / "fp32_s42.npz"
     torch_runs = [racine / f"exp013-torch-r{r}" / "fp32_s42.npz" for r in range(1, REPETITIONS + 1)] + [racine / "exp013-fin" / "fp32_s42.npz"]

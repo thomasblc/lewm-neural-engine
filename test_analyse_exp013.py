@@ -106,7 +106,7 @@ def fabriquer(racine):
         t += 100
 
     def lecture(h):
-        return {"t": h, "processus_run_grid": 1, "thermique": NORMAL, "CurrentCapacity": 80, "ExternalConnected": True,
+        return {"t": h, "processus_run_grid": 0, "thermique": NORMAL, "CurrentCapacity": 80, "ExternalConnected": True,
                 "processus": [[95.0, "python3.10"], [3.0, "WindowServer"]]}
 
     def run(d, nom, rep_facteur, env=None, x=None):
@@ -121,7 +121,7 @@ def fabriquer(racine):
         p = puissance(nom)
         coreml = {}
         if m in A13.PLACEMENT:
-            coreml = {"placement": {A13.PLACEMENT[m]: 300}, "octets_poids": 23.2e6, "codage": c}
+            coreml = {"placement": A13.PLACEMENT_CODAGE.get((m, c), {A13.PLACEMENT[m]: 300}), "octets_poids": 23.2e6, "codage": c}
             if m in A13.HORS_GPU:
                 coreml["octets_par_modele"] = {"predicteur": 23.2e6, "encodeur": 11.0e6, "actions": 0.1e6}
         ep = {"joules": {k: v * duree_run for k, v in p.items()}, "duree_s": duree_run, "debut": t,
@@ -163,8 +163,9 @@ def fabriquer(racine):
                              lignes_vision(t0 + 2, fin + 1, lambda x, d=debut: cible if x >= d else hors, 20.0 if m in SUR_GPU else 12.0,
                                            retard_tous=30 if (mode == "vision30" and m in SUR_GPU) else 0, cible=V.MODES_VISION[mode]))
     repos("r3-apres")
-    for variante, k in V.SENSIBILITE_OMP:
-        run(r / f"exp013-sens-ne-complet-omp-{variante}-{k}", "ne-complet", 1.0 if variante == "defaut" else 1.1,
+    for m, variante, k in V.SENSIBILITE_OMP:
+        f_passif = 1.05 if m == "ne-complet" else 1.2              # coreml-cpu : sensible à OpenMP, ne-complet non
+        run(r / f"exp013-sens-{m}-omp-{variante}-{k}", m, 1.0 if variante == "defaut" else f_passif,
             env={"OMP_WAIT_POLICY": "PASSIVE"} if variante == "passif" else None)
     repos("sens-apres")
     shutil.copytree(RES / "exp003", r / "exp003", ignore=shutil.ignore_patterns("*.log", "all-*", "encoder-*", "predictor-*"))
@@ -181,7 +182,8 @@ def fabriquer(racine):
                             "octets_poids": 23.2e6, "mesures": [{"repetition": k, "mediane_ms": base * (1 + 0.01 * k), "appels": 100,
                                                                  "joules_nets_par_appel": {"ANE": 0.01}} for k in (1, 2, 3)]})
     (r / "exp013-balayage-lot.json").write_text(json.dumps({"git": TETE, "essai": False, "lots": [1, 8, 32, 100, 300],
-        "codages": ["fp16", "int8", "int4b32", "pal4", "int4c"], "repetitions": 3, "boucle_s": 3.0, "repos_w": REPOS, "cas": cas}))
+        "codages": ["fp16", "int8", "int4b32", "pal4", "int4c"], "repetitions": 3, "boucle_s": 3.0, "repos_w": REPOS,
+        "repos_avant_w": REPOS, "repos_apres_w": REPOS, "cas": cas}))
     return r
 
 
@@ -205,7 +207,10 @@ def test_valeurs(tmp):
     assert c["ne-complet-vision30"]["garde_30"] is True
     e_30 = 9.0 * 0.90 * 1.02                         # coreml-ne : puissance au-dessus de la vision seule = 9 W
     assert proche(c["coreml-ne-vision30"]["energie_planification_30_j"]["mediane"], e_30, 1e-9)
-    assert proche(c["coreml-ne-vision30"]["energie_planification_30_images_j"]["mediane"], e_30, 0.02)
+    assert all(proche(b, e_30 * 1.01 / 1.02, 1e-9) or proche(b, e_30 * 1.03 / 1.02, 1e-9) for b in c["coreml-ne-vision30"]["energie_planification_30_bornes_j"])
+    assert c["coreml-ne-vision30"]["energie_planification_30_n"] == 3
+    assert res["question_2_principal"]["reponse"] == "oui" and res["question_3"]["hors_gpu"]
+    assert res["configurations"]["coreml-ne-int4b32"]["placement"] == {"CPU": 211, "NeuralEngine": 150}
     assert proche(res["vision_seule"]["vision"]["ips"]["mediane"], 100.0) and proche(res["vision_seule"]["vision30"]["ips"]["mediane"], 30.0)
     cmp = res["comparaisons"]
     assert cmp["coreml-gpu contre torch"]["temps"]["verdict"] == "plus bas dans les 3 répétitions"
@@ -221,7 +226,10 @@ def test_valeurs(tmp):
     assert k["latence_p99"]["verdict"] == "plus bas dans les 3 répétitions"
     assert q["vision30"]["garde_30"] == {"torch": False, "coreml-gpu": False, "coreml-ne": True, "ne-complet": True}
     assert c["torch"]["octets_predicteur"] == 46.4e6 and c["coreml-ne"]["octets_predicteur"] == 23.2e6
-    assert proche(res["sensibilite_omp"]["passif"]["temps_par_plan_ms"]["mediane"], 935, 1e-9)
+    so = res["sensibilite_omp"]
+    assert proche(so["ne-complet"]["passif"]["temps_par_plan_ms"]["mediane"], 892.5, 1e-9) and not so["ne-complet"]["sensible"]
+    assert so["coreml-cpu"]["sensible"] and cmp["ne-complet contre coreml-cpu"]["sensible_openmp"] == ["coreml-cpu"]
+    assert cmp["coreml-ne contre torch"]["sensible_openmp"] == []
     assert all(proche(a, b, 1e-12) for a, b in zip(res["derive_torch_ms"], [808, 816, 824, 832]))
     assert res["balayage_lot"]["prediction_tenue"] and res["signalements"] == [], res["signalements"]
     rn = res["reussite_ne_complet"]
@@ -286,11 +294,26 @@ def test_signalements(tmp, r):
     # codage : placement en partie sur le CPU accepté et rapporté, Neural Engine faible signalé (amendement 4)
     rr = copie(tmp, r, "codage")
     for k in (1, 2, 3):
-        json_mod(tps(f"exp013-coreml-ne-int4b32-r{k}"), lambda j: (j["coreml"].update(placement={"CPU": 211, "NeuralEngine": 150}),
-                 j["energie_puce"]["joules_solve"].update(ANE=0.5 * sum(a for a, _ in j["appels_solve"]))))(rr)
+        json_mod(tps(f"exp013-coreml-ne-int4b32-r{k}"), lambda j: j["energie_puce"]["joules_solve"].update(
+            ANE=0.5 * sum(a for a, _ in j["appels_solve"])))(rr)
     res = A13.analyser(rr, verifier=False)
     assert res["configurations"]["coreml-ne-int4b32"]["placement"] == {"CPU": 211, "NeuralEngine": 150}
     assert any("coreml-ne-int4b32 r1 : Neural Engine à" in x for x in res["signalements"]), res["signalements"]
+    # vision affamée (images manquantes dans des lignes présentes) : un résultat, pas un refus
+    rr = copie(tmp, r, "affamee")
+    def vider(L):
+        for x in L[4:6]:
+            x.update(fins=[], lat_ms=[], retard=[], images=0)
+        return L
+    jsonl_mod("exp013-vision-torch-vision-r2.jsonl", vider)(rr)
+    res = A13.analyser(rr, verifier=False)
+    assert res["configurations"]["torch-vision"]["vision_trou_max_s"]["max"] > 5
+    # balayage absent : signalé, le reste de l'analyse vaut
+    rr = copie(tmp, r, "sans-balayage")
+    (rr / "exp013-balayage-lot.json").unlink()
+    res = A13.analyser(rr, verifier=False)
+    assert res["balayage_lot"] is None and any("balayage du lot absent" in x for x in res["signalements"])
+    assert "Absent (échec du balayage)" in A13.rapport(res)
     print("ok signalements (déterminisme, GPU hors planification, thermique, bruit, processus de fond)")
 
 
@@ -319,11 +342,8 @@ def test_refus(tmp, r):
         fa.write_text(json.dumps(ja))
         fb.write_text(json.dumps(jb))
 
-    def trou(L):
-        for x in L[3:5]:
-            if "fins" in x:
-                x.update(fins=[], lat_ms=[], retard=[], images=0)
-        return L
+    def trou(L):                                       # vision arrêtée : des lignes manquent
+        return L[:3] + L[6:]
     cas = [("mesure au repos r2-r3 manquante", lambda rr: [f.unlink() for f in rr.glob("exp013-repos-r2-r3-*.json")]),
            ("un calcul tournait", json_mod(repos("r1-avant"), lambda j: j.update(calculs_run_grid_vus=1))),
            ("faite avant la fin des runs", json_mod(repos("r1-r2"), lambda j: j.update(debut=j["debut"] - 200, fin=j["fin"] - 200))),
@@ -350,10 +370,13 @@ def test_refus(tmp, r):
            ("ordre différent de l'ordre tiré", json_mod("exp013-ordre.json", lambda j: j["ordres"].reverse())),
            ("dans un autre ordre", permuter),
            ("pause pendant le run", json_mod(tps("exp013-coreml-ne-r3"), lambda j: j.update(lectures=[dict(j["lectures"][0], t=0), dict(j["lectures"][0], t=5), dict(j["lectures"][0], t=13)]))),
-           ("autre calcul run_grid", json_mod(tps("exp013-torch-r1"), lambda j: j["lectures"][1].update(processus_run_grid=2))),
+           ("autre calcul run_grid", json_mod(tps("exp013-torch-r1"), lambda j: j["lectures"][1].update(processus_run_grid=1))),
+           ("hors du processeur demandé", json_mod(tps("exp013-coreml-ne-int4b32-r2"), lambda j: j["coreml"].update(placement={"NeuralEngine": 361}))),
+           ("Neural Engine presque inactif", json_mod(tps("exp013-coreml-ne-pal4-r3"), lambda j: j["energie_puce"]["joules_solve"].update(ANE=0.0))),
            ("Neural Engine presque inactif", json_mod(tps("exp013-ne-complet-r2"), lambda j: j["energie_puce"]["joules_solve"].update(ANE=0.0))),
            ("Neural Engine actif", json_mod(tps("exp013-coreml-gpu-r1"), lambda j: j["energie_puce"]["joules_solve"].update(ANE=500.0))),
            ("OMP_WAIT_POLICY inattendue", json_mod(tps("exp013-sens-ne-complet-omp-passif-2"), lambda j: j["energie_puce"].update(omp={}))),
+           ("OMP_WAIT_POLICY inattendue", json_mod(tps("exp013-sens-coreml-cpu-omp-defaut-1"), lambda j: j["energie_puce"].update(omp={"OMP_WAIT_POLICY": "PASSIVE"}))),
            ("run torch final manquant", lambda rr: shutil.rmtree(rr / "exp013-fin")),
            ("balayage du lot incomplet", json_mod("exp013-balayage-lot.json", lambda j: j["cas"].pop())),
            ("init_state différent d'EXP-003", lambda rr: (lambda f: np.savez_compressed(f, **{**dict(np.load(f)), "init_state": np.load(f)["init_state"] + 1}))(

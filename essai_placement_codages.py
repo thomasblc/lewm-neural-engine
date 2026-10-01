@@ -8,8 +8,8 @@ codage (fp16, int8, int4b32, pal4), au lot de 300 et T = 3 :
 Si la décompression des poids tombe au chargement (aucune opération de décompression placée), un codage ne peut changer
 que la taille du fichier, pas la lecture des poids pendant le calcul : à dire dans le papier.
 
-Usage :
-    python essai_placement_codages.py SORTIE.json
+Usage (un fichier par commit, jamais écrasé) :
+    python essai_placement_codages.py ../resultats/preparation-exp013/placement-codages-COMMIT.json
 """
 import json
 import os
@@ -49,6 +49,19 @@ def cas(chemin, unite):
                       "ms_par_appel": 100 * (time.perf_counter() - t)}))
 
 
+def convertir(C, model, moteur, chemin, codage):
+    if codage != "int4b64":
+        return C.convertir(model, moteur, chemin, codage)
+    import coremltools.optimize.coreml as cto
+    orig = C.comprimer
+    cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_block", block_size=64)
+    C.comprimer = lambda ml, c: cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
+    try:
+        return C.convertir(model, moteur, chemin, "int8")   # le libellé passé n'est pas utilisé par comprimer remplacé
+    finally:
+        C.comprimer = orig
+
+
 def main(sortie):
     import torch
     import stable_worldmodel as swm
@@ -59,9 +72,9 @@ def main(sortie):
     with tempfile.TemporaryDirectory() as d:
         for unite, moteur in (("ne", "coreml-ne"), ("gpu", "coreml-gpu")):
             cu = ct.ComputeUnit.CPU_AND_NE if unite == "ne" else ct.ComputeUnit.CPU_AND_GPU
-            for codage in C.CODAGES:
+            for codage in C.CODAGES + ("int4b64",):    # int4b64 : témoin de l'amendement 4 (blocs de 64), hors EXP-013
                 chemin = Path(d) / f"{unite}-{codage}.mlpackage"
-                m, info = C.convertir(model, moteur, chemin, codage)
+                m, info = convertir(C, model, moteur, chemin, codage)
                 detail = C.placement_detail(m, cu)
                 del m
                 p = subprocess.run([sys.executable, __file__, "--cas", str(chemin), unite], capture_output=True, text=True)
@@ -72,6 +85,7 @@ def main(sortie):
                 print(f"{unite} {codage:8s} : placement {info['placement']}, sans processeur {aucun}, poids {info['octets_poids'] / 1e6:.1f} Mo, "
                       f"mémoire {mem.get('apres_10_appels', {})}", flush=True)
     sha = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    assert not Path(sortie).exists(), f"{sortie} existe : un fichier par commit, jamais écrasé"
     Path(sortie).write_text(json.dumps({"git": sha, "torch": torch.__version__, "coremltools": ct.__version__, "cas": res}, indent=1))
 
 
