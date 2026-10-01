@@ -170,10 +170,10 @@ def test_refus(tmp, r):
             cal = torch.load(f)
             cal["episodes_idx"] = eps(rr)
             torch.save(cal, f)
-            g = rr / c["dossier"] / "meta.json"
-            meta = json.loads(g.read_text())
-            meta["protocole"]["gptq_calib"]["sha256"] = hashlib.sha256(f.read_bytes()).hexdigest()
-            g.write_text(json.dumps(meta))
+            for g in (rr / c["dossier"] / "meta.json", rr / f"exp009-{t}" / "meta.json"):   # SHA cohérents partout
+                meta = json.loads(g.read_text())
+                meta["protocole"]["gptq_calib"]["sha256"] = hashlib.sha256(f.read_bytes()).hexdigest()
+                g.write_text(json.dumps(meta))
         return m
 
     def meta(d, f):
