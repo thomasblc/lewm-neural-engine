@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 
 import energie_puce
-from coreml_pred import SCRIPTS_EXPERIENCE, Puissance, processus_actifs
+from coreml_pred import NON_COMPTES, Puissance, processus_actifs
 
 PY = sys.executable
 ICI = Path(__file__).resolve().parent
@@ -313,7 +313,7 @@ def vision_seule(racine, mode, r, compteur, sha):
 
 def fond(j):
     """Processus hors de l'expérience au-dessus de 20 % d'un cœur au début ou à la fin d'une mesure au repos."""
-    return [p for p in j.get("processus_debut", []) + j.get("processus_fin", []) if p[0] > SEUIL_FOND and p[1] not in SCRIPTS_EXPERIENCE]
+    return [p for p in j.get("processus_debut", []) + j.get("processus_fin", []) if p[0] > SEUIL_FOND and p[1] not in NON_COMPTES]
 
 
 def repos(racine, etiquette):

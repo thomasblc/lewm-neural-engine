@@ -366,6 +366,11 @@ Dernière relecture du code (aucun P0 ; 1 P1, 7 P2) :
    est infini, donc en faveur de `ne-complet` (au lieu de « non calculable ») ; la mention OpenMP figure aussi dans le
    tableau des contrastes secondaires.
 6. Le lanceur refuse de partir si une charge de vision tourne déjà (orpheline gelée).
+7. Essai de bout en bout au commit `a2930fe` (66 runs, sensibilité, contrôle de réussite, run final, balayage complet en
+   plus ; EXP-011 en même temps, chiffres indicatifs, non cités) : passé sans run refait ; runs torch identiques au pilote.
+   Deux réglages : WindowServer (l'affichage, écran gardé allumé) n'est pas compté comme processus de fond (21 à 22 %
+   d'un cœur au repos dans l'essai, il aurait fait refaire chaque mesure au repos) ; la prédiction du balayage est dite
+   « non évaluable » si un de ses rapports n'est pas calculable.
 
 ## Questions
 

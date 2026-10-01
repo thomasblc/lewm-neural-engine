@@ -119,7 +119,7 @@ def lire_repos(r, etiquette, sha, essai=False):
     A.exiger(essai or j["calculs_run_grid_vus"] == 0, f"mesure au repos {etiquette} : un calcul tournait")
     A.exiger(j["git"] == sha, f"mesure au repos {etiquette} : autre commit")
     canaux_ok(j["joules"], f"mesure au repos {etiquette}")
-    fond = [x for x in j.get("processus_debut", []) + j.get("processus_fin", []) if x[0] > SEUIL_FOND and x[1] not in C.SCRIPTS_EXPERIENCE]
+    fond = [x for x in j.get("processus_debut", []) + j.get("processus_fin", []) if x[0] > SEUIL_FOND and x[1] not in C.NON_COMPTES]
     return {"w": {k: v / j["duree_s"] for k, v in j["joules"].items()}, "debut": j["debut"], "fin": j["fin"], "fond": fond}
 
 
@@ -146,7 +146,7 @@ def lire_run(d, moteur, codage, sha_attendu=None, essai=False):
     if sha_attendu:
         A.exiger(str(x["git"]) == sha_attendu, f"{d.name} : autre commit")
     thermique = [y.get("thermique", "") for y in t["lectures"]]
-    autres = [p for y in t["lectures"] for p in y.get("processus", []) if p[1] not in C.SCRIPTS_EXPERIENCE]
+    autres = [p for y in t["lectures"] for p in y.get("processus", []) if p[1] not in C.NON_COMPTES]
     return {"temps": t, "succes": float(x["success"].mean()), "n_episodes": int(len(x["success"])), "fichier": f,
             "moteur": moteur, "codage": codage, "debut": e["debut"], "fin": e["debut"] + e["duree_s"], "git": str(x["git"]),
             "alerte_thermique": any(not all(k in s for k in THERMIQUE_NORMALE) for s in thermique),
@@ -517,10 +517,10 @@ def analyser(racine, verifier=True, essai=False):
                                                      "latence_p99_ms": resume([seules[(m, k)]["vision"]["latence_p99_ms"] for k in R])}
                                                  for m in V.MODES_VISION},
             "repos_puce_w": {e: somme(x["w"], PUCE) for e, x in repos.items()},
-            "reussite_ne_complet": reussite(r, sha), "balayage_lot": bal}
+            "reussite_ne_complet": reussite(r, sha, essai), "balayage_lot": bal}
 
 
-def reussite(r, sha):
+def reussite(r, sha, essai=False):
     """Contrôle descriptif du planificateur sur le Neural Engine sur les épisodes d'EXP-003 : moyenne sur ses graines contre
     la pleine précision d'EXP-003 (5 graines), par épisode (mêmes épisodes ; tirages de la CEM différents, sur le CPU)."""
     m, graines = V.REUSSITE
@@ -531,11 +531,16 @@ def reussite(r, sha):
         x = dict(np.load(d / f"fp32_s{g}.npz"))
         A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"{d.name} graine {g} : autre commit ou arbre modifié")
         n = len(x["episodes_idx"])
+        if essai:                                      # essai : 10 épisodes, pas un sous-ensemble d'EXP-003 ; pas de comparaison
+            S.append(x["success"].astype(np.float64))
+            continue
         for k in ("episodes_idx", "start_steps", "init_state", "goal_state"):
             A.exiger(np.array_equal(x[k], ref[k][:n]), f"{d.name} graine {g} : {k} différent d'EXP-003")
         A.controler_course(x, f"{d.name} graine {g}")
         S.append(x["success"].astype(np.float64))
     n = len(S[0])
+    if essai:
+        return {"n_episodes": n, "reussite": float(np.mean(S)), "reussite_fp32_exp003": None, "ecart": None}
     f = np.mean([np.load(r / "exp003" / f"fp32_s{g}.npz")["success"].astype(np.float64)[:n] for g in (42, 43, 44, 45, 46)], axis=0)
     return {"n_episodes": n, "reussite": float(np.mean(S)), "reussite_fp32_exp003": float(f.mean()),
             "ecart": A.Bootstrap(n=n).ic(np.mean(S, axis=0) - f)}
@@ -572,7 +577,8 @@ def balayage(r, sha, essai):
                 continue
             rr = [m["mediane_ms"] / ref[m["repetition"]] for m in sorted(cas[(u, cod, grand)]["mesures"], key=lambda m: m["repetition"])]
             verdicts[f"{u} {cod}"] = {"rapports": rr, "verdict": decision(rr, MARGE_TEMPS)}
-    tenue = all(v["verdict"] != "plus bas dans les 3 répétitions" for v in verdicts.values())
+    tenue = (None if any(v["verdict"] == "non calculable" for v in verdicts.values())          # non évaluable
+             else all(v["verdict"] != "plus bas dans les 3 répétitions" for v in verdicts.values()))
     return {"lots": b["lots"], "codages": b["codages"], "repos_puce_w": somme(b["repos_w"], PUCE), "cas": tab,
             "verdicts_lot_max": verdicts, "prediction_tenue": tenue}
 
@@ -673,7 +679,7 @@ def rapport(r):
     L += ["", "Dérive : runs torch r1, r2, r3 et final : " + ", ".join(f"{v:.0f} ms" for v in r["derive_torch_ms"]) + " par plan ; écart "
           f"des 3 répétitions : temps {100 * br['temps']:.1f} %" + ("" if br["energie"] is None else f", énergie {100 * br['energie']:.1f} %") + "."]
     rn = r["reussite_ne_complet"]
-    L += ["", f"Contrôle descriptif de réussite du planificateur sur le Neural Engine ({rn['n_episodes']} épisodes d'EXP-003, "
+    L += [] if rn["ecart"] is None else ["", f"Contrôle descriptif de réussite du planificateur sur le Neural Engine ({rn['n_episodes']} épisodes d'EXP-003, "
           f"2 graines) : {100 * rn['reussite']:.1f} % contre {100 * rn['reussite_fp32_exp003']:.1f} % en pleine précision PyTorch, "
           f"écart {A.ic_txt(rn['ecart'], 100, 1)} points (tirages de la CEM différents : sur le CPU ; aucune affirmation de "
           "non-infériorité)."]
@@ -686,7 +692,7 @@ def rapport(r):
         for cod in b["codages"]:
             L.append(f"| {u} | {cod} | " + " | ".join(f"{b['cas'][f'{u} {cod} {x}']['mediane_ms']['mediane']:.2f}" for x in b["lots"]) + " |")
     L += ["", f"Prédiction enregistrée (au lot de {max(b['lots'])}, aucun codage plus rapide que fp16 de plus de 5 % dans "
-          f"les 3 répétitions) : {'tenue' if b['prediction_tenue'] else 'réfutée'} ; " + " ; ".join(
+          f"les 3 répétitions) : {'non évaluable' if b['prediction_tenue'] is None else 'tenue' if b['prediction_tenue'] else 'réfutée'} ; " + " ; ".join(
               f"{k} {fr(v)}" for k, v in b["verdicts_lot_max"].items()) + ". Des temps par appel au lot de 300 avaient été vus "
           "avant le balayage (essai de placement) : c'est une observation, pas une prédiction confirmée. Cases informatives "
           "sur la question « un codage accélère-t-il ? » : Neural Engine int8, pal4 et int4c, GPU pal4 ; les autres cases "
