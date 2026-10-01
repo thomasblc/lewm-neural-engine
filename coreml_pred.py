@@ -197,24 +197,36 @@ class Puissance:
     def resume(self):
         """Puissance moyenne (W) entre la première et la dernière mise à jour du capteur vues pendant le calcul, et
         durée couverte (s)."""
-        return resume_puissance(self.lectures)
+        return resume_puissance(self.lectures, self.pas)
 
 
-def resume_puissance(lectures):
-    """Ne garde que les mises à jour du capteur faites pendant le calcul : la valeur vue à la première lecture date
-    d'avant le début (calcul précédent) et sert seulement à repérer la première vraie mise à jour. Il en faut au moins
-    deux après elle."""
-    v = [x for x in lectures if "AccumulatedSystemLoad" in x and "SystemLoadAccumulatorCount" in x]
-    maj = []
+def resume_puissance(lectures, pas=5.0):
+    """Puissance moyenne (W) sur les seules mises à jour du capteur faites pendant le calcul. Les lectures sont coupées
+    en segments là où deux lectures successives sont espacées de plus de 2,5 pas (le fil de lecture est gelé avec le
+    calcul pendant une pause de la garde de batterie : le compteur, lui, a continué au repos) ; dans chaque segment, la
+    première valeur du compteur date d'avant le segment (calcul précédent, ou pause) et ne sert qu'à repérer la première
+    vraie mise à jour. Énergie et secondes s'additionnent sur les segments."""
+    v = [x for x in lectures if "AccumulatedSystemLoad" in x and "SystemLoadAccumulatorCount" in x and "t" in x]
+    segments, cur = [], []
     for x in v:
-        if x["SystemLoadAccumulatorCount"] != (maj[-1] if maj else v[0])["SystemLoadAccumulatorCount"] or not maj:
-            maj.append(x)
-    maj = maj[1:]                                    # la première valeur est antérieure au calcul
-    if len(maj) < 2:
-        return {"puissance_moyenne_w": None, "secondes_couvertes": 0}
-    dn = maj[-1]["SystemLoadAccumulatorCount"] - maj[0]["SystemLoadAccumulatorCount"]
-    return {"puissance_moyenne_w": (maj[-1]["AccumulatedSystemLoad"] - maj[0]["AccumulatedSystemLoad"]) / dn / 1000,
-            "secondes_couvertes": dn}
+        if cur and x["t"] - cur[-1]["t"] > 2.5 * pas:
+            segments.append(cur)
+            cur = []
+        cur.append(x)
+    if cur:
+        segments.append(cur)
+    energie_mj = secondes = 0
+    for seg in segments:
+        maj = [seg[0]]
+        for x in seg[1:]:
+            if x["SystemLoadAccumulatorCount"] != maj[-1]["SystemLoadAccumulatorCount"]:
+                maj.append(x)
+        maj = maj[1:]                                # la première valeur du segment est antérieure au segment
+        if len(maj) >= 2:
+            energie_mj += maj[-1]["AccumulatedSystemLoad"] - maj[0]["AccumulatedSystemLoad"]
+            secondes += maj[-1]["SystemLoadAccumulatorCount"] - maj[0]["SystemLoadAccumulatorCount"]
+    return {"puissance_moyenne_w": energie_mj / secondes / 1000 if secondes > 0 else None, "secondes_couvertes": secondes,
+            "segments": len(segments)}
 
 
 def chronometrer(solver, temps):

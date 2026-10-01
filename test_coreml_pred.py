@@ -55,11 +55,23 @@ def test_moteurs():
 
 
 def test_puissance():
-    with C.Puissance(pas=0.5) as pw:
-        import time
-        time.sleep(1.6)
-    assert len(pw.w) >= 2 and all(5 < w < 300 for w in pw.w), pw.w
-    print(f"ok puissance : {len(pw.w)} mesures, {sum(pw.w) / len(pw.w):.1f} W en moyenne")
+    """Lecture réelle des capteurs (au moins deux mises à jour du compteur en 130 s), et résumé : seules les mises à jour
+    faites pendant le calcul comptent, pause du fil de lecture exclue."""
+    import time
+    with C.Puissance(pas=5) as pw:
+        time.sleep(130)
+    r = pw.resume()
+    assert len(pw.lectures) >= 20 and r["puissance_moyenne_w"] is not None and 5 < r["puissance_moyenne_w"] < 300, r
+    assert all(k in pw.lectures[-1] for k in ("AccumulatedSystemLoad", "SystemLoadAccumulatorCount", "CurrentCapacity", "t"))
+
+    def etat(t):                                         # compteur mis à jour toutes les 60 s ; 80 W, repos 20 W
+        tu = 60 * (t // 60)
+        acc = sum(20_000 if 125 <= s < 3120 else 80_000 for s in range(tu))
+        return {"t": t, "SystemLoadAccumulatorCount": 1000 + tu, "AccumulatedSystemLoad": acc}
+    gele = C.resume_puissance([etat(t) for t in list(range(30, 125, 5)) + list(range(3120, 3300, 5))], 5.0)
+    assert gele["segments"] == 2 and abs(gele["puissance_moyenne_w"] - 80.0) < 1e-9, gele
+    assert C.resume_puissance([etat(30), etat(35)], 5.0)["puissance_moyenne_w"] is None
+    print(f"ok puissance : {r['puissance_moyenne_w']:.1f} W sur {r['secondes_couvertes']} s ; pause du fil exclue (80 W retrouvés)")
 
 
 if __name__ == "__main__":

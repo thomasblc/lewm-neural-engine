@@ -39,7 +39,8 @@ def ecrire_temps(f, moteur, cle, g, empreinte=None):
     coreml = {} if cle == "torch" else {"placement": {A12.PLACEMENT[cle]: 361 if cle == "ne" else 197},
                                         "sha256_poids": empreinte, "sha256_modele": f"modele-{empreinte}"}
     f.with_suffix(".temps.json").write_text(json.dumps({"moteur": moteur, "appels_solve": appels, "coreml": coreml,
-                                                        "puissance": {"puissance_moyenne_w": PUISS[cle]}, "git": TETE}))
+                                                        "puissance": {"puissance_moyenne_w": PUISS[cle]}, "git": TETE,
+                                                        "lectures": [{"t": 2000.0 + g}]}))
 
 
 def fabriquer(racine, scenario="A"):
@@ -47,7 +48,10 @@ def fabriquer(racine, scenario="A"):
     for d in A12.TACHES.values():
         shutil.copytree(RES / d, r / d, ignore=shutil.ignore_patterns("*.log"))
     for t, ref_d in A12.TACHES.items():
-        (r / f"exp012-repos-{t}.json").write_text(json.dumps({"puissance_moyenne_w": REPOS}))
+        for debut, w in ((1000, REPOS), (5000, 999.0)):         # la seconde mesure vient après tous les fichiers
+            (r / f"exp012-repos-{t}-{debut}.json").write_text(json.dumps({
+                "tache": t, "debut": debut, "fin": debut + 130, "git": TETE, "secondes_couvertes": 120,
+                "puissance_moyenne_w": w, "lectures": [{"processus_run_grid": 0}]}))
         for d, g in ((f"exp012-repro-{t}", 42), (f"exp012-torch-{t}", 43), (f"exp012-fin-{t}", 46)):
             (r / d).mkdir()
             x = dict(np.load(r / ref_d / f"fp32_s{g}.npz"))
@@ -136,7 +140,9 @@ def test_scenario_a(tmp):
         assert d["temps"]["ne"]["appels_ecartes"] == 1 and d["temps"]["gpu"]["appels_ecartes"] == 0
         assert d["temps"]["ne"]["plans"] == 5 * 620 and d["temps"]["torch"]["fichiers"] == 1
     for nom in res["tests"]:                                  # borne inférieure : nulle quand l'écart est nul partout
-        assert res["tests"][nom]["borne_inferieure_points"] == 0.0
+        assert res["tests"][nom]["borne_inferieure_points"] == 0.0 and res["tests"][nom]["borne_et_verdict_concordent"]
+    niv = A12.niveaux_holm([0.02, 0.03, 0.03, 0.04])         # Holm s'arrête au premier test : tous au niveau 0,0125
+    assert niv == [0.0125] * 4 and A12.niveaux_holm([0.001, 0.5, 0.01, 0.02]) == [0.0125, 0.05 / 1, 0.05 / 3, 0.05 / 2]
     assert "Contrôle négatif" in A12.rapport(res)
     print("ok scénario A : 4 hypothèses soutenues, contrôle négatif et sensibilité recomptés, temps et énergie au-dessus "
           "du repos recomptés, appel allongé par une pause écarté")
@@ -184,6 +190,14 @@ def test_refus(tmp, r):
             g.write_text(json.dumps(mm))
         return m
 
+    def repos(t, f):
+        def m(rr):
+            g = rr / f"exp012-repos-{t}-1000.json"
+            j = json.loads(g.read_text())
+            f(j)
+            g.write_text(json.dumps(j))
+        return m
+
     def temps(d, nom, f):
         def m(rr):
             g = rr / d / nom
@@ -212,7 +226,12 @@ def test_refus(tmp, r):
                                              temps("exp012-gpu-tworoom", "fp32_s45.temps.json", lambda j: j.update(git="b" * 40))(rr))),
            ("fichier de temps", champ("exp012-ne-pusht", "fp32_s46.npz", "git", lambda x: np.str_("d" * 40))),
            ("fichier de temps", temps("exp012-ne-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="torch"))),
-           ("fichier de temps", temps("exp012-torch-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="coreml-ne")))]
+           ("fichier de temps", temps("exp012-torch-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="coreml-ne"))),
+           ("aucune mesure de la puissance au repos", lambda rr: (rr / "exp012-repos-tworoom-1000.json").unlink()),
+           ("mesure au repos invalide", repos("pusht", lambda j: j.update(lectures=[{"processus_run_grid": 2}]))),
+           ("mesure au repos invalide", repos("tworoom", lambda j: j.update(git="e" * 40))),
+           ("mesure au repos invalide", repos("pusht", lambda j: j.update(secondes_couvertes=40))),
+           ("sans lectures", temps("exp012-gpu-tworoom", "fp32_s44.temps.json", lambda j: j.update(lectures=[])))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")

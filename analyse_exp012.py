@@ -57,6 +57,51 @@ def p_bootstrap_t(y, b=B_BOOT, graine=GRAINE_BOOT):
     return float((1 + int((tb >= t).sum())) / (b + 1))
 
 
+def borne_bootstrap_t(x, niveau, b=B_BOOT, graine=GRAINE_BOOT):
+    """Borne inférieure unilatérale de la moyenne de x au niveau donné, par bootstrap-t (même rééchantillonnage que la
+    p du bootstrap-t) : moyenne - quantile (1 - niveau) de t* x erreur-type."""
+    x = np.asarray(x, dtype=np.float64)
+    n = len(x)
+    m, se = x.mean(), x.std(ddof=1) / np.sqrt(n)
+    if se == 0:
+        return float(m)
+    xb = x[np.random.default_rng(graine).integers(0, n, size=(b, n))]
+    seb = xb.std(axis=1, ddof=1) / np.sqrt(n)
+    tb = (xb.mean(axis=1) - m) / np.where(seb > 0, seb, np.inf)
+    return float(m - np.quantile(tb, 1 - niveau) * se)
+
+
+def niveaux_holm(ps, alpha=A.ALPHA):
+    """Niveau de chaque test dans la procédure de Holm : alpha / (m - rang) tant qu'on rejette ; après le premier test
+    gardé, tous les suivants au niveau du premier gardé, alpha / (m - k), k le nombre de rejets."""
+    m = len(ps)
+    niv = [None] * m
+    k, arrete = 0, False
+    for rang, i in enumerate(np.argsort(ps)):
+        if not arrete and ps[i] <= alpha / (m - rang):
+            niv[i] = alpha / (m - rang)
+            k += 1
+        else:
+            arrete = True
+            niv[i] = alpha / (m - k)
+    return niv
+
+
+def repos_avant(r, t, debut, sha):
+    """Dernière mesure de la puissance au repos de la tâche faite avant debut : même commit, au moins 50 s couvertes,
+    aucun calcul run_grid pendant la mesure."""
+    cand = []
+    for f in sorted(r.glob(f"exp012-repos-{t}-*.json")):
+        j = json.loads(f.read_text())
+        if j["fin"] <= debut:
+            cand.append((j["fin"], f, j))
+    A.exiger(cand, f"{t} : aucune mesure de la puissance au repos avant un fichier (début {debut:.0f})")
+    _, f, j = max(cand, key=lambda c: c[0])
+    A.exiger(j["git"] == sha and j["secondes_couvertes"] >= 50 and j["puissance_moyenne_w"] is not None
+             and max(x.get("processus_run_grid", 0) for x in j["lectures"]) == 0, f"{f.name} : mesure au repos invalide")
+    return j["puissance_moyenne_w"]
+
+
 def lire_temps(f, moteur, sha):
     j = json.loads(f.read_text())
     A.exiger(j["moteur"] == moteur and j["git"] == sha, f"{f.parent.name}/{f.name} : fichier de temps")
@@ -65,7 +110,8 @@ def lire_temps(f, moteur, sha):
     pp = d / np.maximum(n, 1)
     garde = pp <= 3 * np.median(pp)                   # un appel allongé par une pause de batterie est écarté
     return {"par_plan_s": float(d[garde].sum() / n[garde].sum()), "plans": int(n.sum()), "appels_ecartes": int((~garde).sum()),
-            "puissance_w": j["puissance"]["puissance_moyenne_w"], "coreml": j["coreml"]}
+            "puissance_w": j["puissance"]["puissance_moyenne_w"], "coreml": j["coreml"],
+            "debut": float(j["lectures"][0]["t"]) if j.get("lectures") else None}
 
 
 def charger(racine, verifier=True):
@@ -114,8 +160,6 @@ def charger(racine, verifier=True):
             A.exiger(len(empreintes) == 1, f"{d} : modèle Core ML différent selon les graines")
             K[(t, m)] = S
             temps[(t, m)] = fichiers
-        j = json.loads((r / f"exp012-repos-{t}.json").read_text())
-        repos[t] = j["puissance_moyenne_w"]
     A.exiger(len(shas) == 1, f"EXP-012 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
     for t in TACHES:
@@ -123,17 +167,24 @@ def charger(racine, verifier=True):
             x = np.load(r / d / f"fp32_s{g}.npz")
             A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"reproduction {t} graine {g} : autre commit ou arbre modifié")
         temps[(t, "torch")] = [lire_temps(r / f"exp012-torch-{t}" / "fp32_s43.temps.json", "torch", sha)]
+        for m in ("torch", *MOTEURS):                # à chaque fichier, la dernière mesure au repos faite avant lui
+            for f in temps[(t, m)]:
+                A.exiger(f["debut"] is not None, f"{t} {m} : fichier de temps sans lectures")
+                f["repos_w"] = repos_avant(r, t, f["debut"], sha)
     if verifier:
         verifier_code(sha)
-    return K, temps, repos, sha
+    return K, temps, sha
 
 
-def resume_temps(fichiers, p_repos):
-    """Par fichier : temps total sur nombre de plans (appels allongés par une pause écartés), puissance moyenne,
-    énergie par plan au-dessus du repos ; résumés par la médiane des fichiers, avec le minimum et le maximum."""
+def resume_temps(fichiers):
+    """Par fichier : somme des durées des appels de solve sur le nombre de plans (appels allongés par une pause
+    écartés), puissance moyenne pendant le calcul (pauses exclues), énergie par plan au-dessus de la dernière mesure au
+    repos faite avant le fichier ; résumés par la médiane des fichiers, avec le minimum et le maximum."""
     pp = np.array([f["par_plan_s"] for f in fichiers])
     pw = np.array([f["puissance_w"] if f["puissance_w"] is not None else np.nan for f in fichiers])
-    en = (pw - p_repos) * pp if p_repos is not None else np.full(len(pp), np.nan)
+    rp = np.array([f["repos_w"] for f in fichiers])
+    en = (pw - rp) * pp
+    p_repos = float(np.median(rp))
     med = lambda v: None if np.all(np.isnan(v)) else float(np.nanmedian(v))
     return {"fichiers": len(fichiers), "plans": int(sum(f["plans"] for f in fichiers)),
             "appels_ecartes": int(sum(f["appels_ecartes"] for f in fichiers)),
@@ -142,27 +193,27 @@ def resume_temps(fichiers, p_repos):
 
 
 def analyser(racine, verifier=True):
-    K, temps, repos, sha = charger(racine, verifier)
+    K, temps, sha = charger(racine, verifier)
     inv, boot = A.Inversion(n=500), A.Bootstrap(n=500)
 
     def test_ni(x):
         y = 20 * x + MARGE                            # moyenne de y positive ssi écart de réussite > -2 points
         ps, pb = inv.p(y, "plus"), p_bootstrap_t(y)
         return {"somme": float(x.sum()), "ecart_points": boot.ic(x / 5), "p_signe": ps, "p_bootstrap_t": pb,
-                "erreur_mc_p_signe": float(np.sqrt(ps * (1 - ps) / A.B)), "p": max(ps, pb)}
+                "erreur_mc_p_signe": float(np.sqrt(ps * (1 - ps) / A.B)),
+                "erreur_mc_p_bootstrap_t": float(np.sqrt(pb * (1 - pb) / B_BOOT)), "p": max(ps, pb)}
     tests = {}
     for nom, t, m in TESTS:
         tests[nom] = {"tache": t, "moteur": MOTEURS[m], **test_ni(K[(t, m)] - K[(t, "fp32")])}
-    ordre = np.argsort([tests[n]["p"] for n, *_ in TESTS])
     for (nom, *_), q in zip(TESTS, A.holm([tests[n]["p"] for n, *_ in TESTS])):
         tests[nom]["p_holm"] = float(q)
         tests[nom]["verdict"] = "soutenue" if q < A.ALPHA else "non soutenue"
-    for rang, i in enumerate(ordre):                  # borne inférieure unilatérale au niveau de Holm de chaque test
-        nom, t, m = TESTS[i]
-        niveau = A.ALPHA / (len(TESTS) - rang)
+    niv = niveaux_holm([tests[n]["p"] for n, *_ in TESTS])
+    for (nom, t, m), niveau in zip(TESTS, niv):     # borne inférieure unilatérale, bootstrap-t, au niveau de Holm
         x = (K[(t, m)] - K[(t, "fp32")]) / 5
         tests[nom]["niveau_holm"] = float(niveau)
-        tests[nom]["borne_inferieure_points"] = float(100 * np.percentile(np.array([x[j].mean() for j in boot.idx]), 100 * niveau))
+        tests[nom]["borne_inferieure_points"] = 100 * borne_bootstrap_t(x, niveau)
+        tests[nom]["borne_et_verdict_concordent"] = (tests[nom]["borne_inferieure_points"] > -MARGE) == (tests[nom]["verdict"] == "soutenue")
     controle = {t: test_ni(K[(t, "replique")] - K[(t, "fp32")]) for t in TACHES}
     sensibilite = {}
     for nom, t, m in TESTS:                           # référence : moyenne des 10 graines de la pleine précision
@@ -173,7 +224,7 @@ def analyser(racine, verifier=True):
         desc[t] = {"reussite_fp32": float(K[(t, "fp32")].mean() / 5), "reussite_replique": float(K[(t, "replique")].mean() / 5),
                    **{f"reussite_{m}": float(K[(t, m)].mean() / 5) for m in MOTEURS},
                    "ne_moins_gpu": boot.ic((K[(t, "ne")] - K[(t, "gpu")]) / 5),
-                   "temps": {m: resume_temps(temps[(t, m)], repos[t]) for m in ("torch", *MOTEURS)}}
+                   "temps": {m: resume_temps(temps[(t, m)]) for m in ("torch", *MOTEURS)}}
     return {"controles": {"commit": sha}, "tests": tests, "controle_negatif": controle, "sensibilite_10_graines": sensibilite,
             "descriptifs": desc}
 
@@ -187,6 +238,11 @@ def rapport(r):
     for n, x in r["tests"].items():
         L.append(f"| {n} | {x['tache']} | {x['moteur']} | {t(x['ecart_points'])} | {x['borne_inferieure_points']:.1f} "
                  f"(niveau {x['niveau_holm']:.4f}) | {x['p_signe']:.4f} | {x['p_bootstrap_t']:.4f} | {x['p_holm']:.4f} | {x['verdict']} |")
+    for n, x in r["tests"].items():
+        if not x["borne_et_verdict_concordent"]:
+            L.append(f"- Attention, {n} : la borne inférieure et le verdict ne concordent pas (l'inversion de signe décide).")
+    L.append("- Erreur de Monte-Carlo des p : " + " ; ".join(
+        f"{n} {x['erreur_mc_p_signe']:.4f} (signe), {x['erreur_mc_p_bootstrap_t']:.4f} (bootstrap-t)" for n, x in r["tests"].items()))
     L += ["", "Contrôle négatif (deuxième série de la pleine précision, graines 47 à 51, contre 42 à 46) :"]
     for k, c in r["controle_negatif"].items():
         L.append(f"- {k} : écart {t(c['ecart_points'])} points, p signe {c['p_signe']:.4f}, p bootstrap-t {c['p_bootstrap_t']:.4f}")

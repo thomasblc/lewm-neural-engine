@@ -13,6 +13,18 @@ relectures scientifiques (statistique ; protocole et reproductibilité) :
   plus grande des deux. Raison : le test par inversion de signe de la statistique décalée n'est pas exact et penche
   vers « non inférieur » (4,7 à 6,3 % pour 5 % nominal en simulation). Erreur de Monte-Carlo de la p rapportée ; borne
   inférieure unilatérale de l'écart rapportée au niveau de Holm de chaque test.
+
+Amendement 2 (1er octobre, 13 h 55, avant tout calcul ; relecture des corrections) :
+- Puissance : les lectures sont coupées là où le fil de lecture a été gelé (pause de la garde, plus de 2,5 pas sans
+  lecture) ; seules comptent les mises à jour du capteur faites pendant le calcul, pauses exclues.
+- Repos : une mesure par lancement, nommée par son heure, jamais écrasée ; chaque fichier est associé à la dernière
+  mesure faite avant lui (même commit, au moins 50 s couvertes, aucun calcul run_grid pendant la mesure).
+- Borne inférieure : par bootstrap-t (même rééchantillonnage que la p), aux niveaux de la procédure de Holm (après le
+  premier test gardé, tous les suivants au niveau de ce test) ; tout désaccord entre la borne et le verdict est signalé
+  (le verdict suit la règle des deux p). Erreur de Monte-Carlo rapportée pour les deux p, dans le rapport.
+- Temps par plan : somme des durées des appels de solve, divisée par le nombre de plans (pas la durée du fichier).
+- Reproductions finales d'un lancement précédent effacées au lancement (la garde de batterie ne sort pas trop tôt).
+- Les descriptifs de la section « Tests » ci-dessous sont remplacés par ceux des amendements 1 et 2.
 - Contrôle négatif rapporté : la deuxième série de la pleine précision (graines 47 à 51, déjà calculée) contre la
   première, par le même test. Sensibilité rapportée : référence sur la moyenne des 10 graines. La décision reste sur
   la référence à 5 graines (choix d'origine).

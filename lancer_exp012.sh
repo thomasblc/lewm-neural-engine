@@ -24,7 +24,8 @@ main() {
   echo "[info] code vérifié : $(git rev-parse --short HEAD)"
   # une grille commencée avec un autre commit ne se reprend pas : ses fichiers seraient de deux commits
   local d commit_grille
-  for d in exp012-ne-pusht exp012-gpu-pusht exp012-torch-pusht exp012-ne-tworoom exp012-gpu-tworoom exp012-torch-tworoom; do
+  for d in exp012-ne-pusht exp012-gpu-pusht exp012-torch-pusht exp012-ne-tworoom exp012-gpu-tworoom exp012-torch-tworoom \
+           exp012-fin-pusht exp012-fin-tworoom; do
     [ -f $R/$d/meta.json ] || continue
     commit_grille=$($PY -c 'import json, sys; print(json.load(open(sys.argv[1]))["git"])' $R/$d/meta.json)
     [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] $d commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
@@ -32,6 +33,8 @@ main() {
 
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite (une grille, ou le lanceur d'une autre expérience
   #    entre deux de ses étapes), 24 h au plus ; 2. garde de batterie, après la sortie de celle du calcul précédent.
+  # une reproduction finale d'un lancement précédent ferait sortir la garde tout de suite : elle est refaite
+  rm -rf $R/exp012-fin-pusht $R/exp012-fin-tworoom
   local debut=$(date +%s)
   while true; do
     attendre_gpu
@@ -47,7 +50,7 @@ main() {
     verifier $PY
     [ $t = pusht ] || garde exp012-fin-$t 1
     # 3. puissance au repos (aucun calcul de l'expérience), référence de l'énergie par plan
-    $PY -B mesurer_repos.py $R/exp012-repos-$t.json 130     # moins de 4 min : la garde ne croit pas le calcul arrêté
+    $PY -B mesurer_repos.py $R $t 130     # une mesure par lancement, jamais écrasée ; la garde tolère 3 min sans calcul
     # 4. reproduction de la pleine précision PyTorch, graine 42 (bloquante, référence de la sentinelle)
     rm -rf $R/exp012-repro-$t
     caffeinate -i $PY run_grid.py --out $R/exp012-repro-$t $opts --n 500 --specs fp32 --seeds 42
