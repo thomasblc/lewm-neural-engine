@@ -85,7 +85,7 @@ def probleme(dossier, g=42):
     ts = [x["t"] for x in t["lectures"] if "t" in x]
     if any(b - a > SEUIL_TROU_S for a, b in zip(ts, ts[1:])):
         return "pause pendant le run"
-    if max((x.get("processus_run_grid", 1) for x in t["lectures"]), default=1) > 1:
+    if not P["essai"] and max((x.get("processus_run_grid", 1) for x in t["lectures"]), default=1) > 1:   # essai : EXP-011 tourne
         return "autre calcul run_grid pendant le run"
     return None
 

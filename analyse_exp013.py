@@ -95,19 +95,19 @@ def garde_30(v):
     return v is not None and v["ips"] >= GARDE_30[0] and v["manquees_par_s"] <= GARDE_30[1]
 
 
-def lire_repos(r, etiquette, sha):
+def lire_repos(r, etiquette, sha, essai=False):
     fr = sorted(r.glob(f"exp013-repos-{etiquette}-*.json"))
     A.exiger(fr, f"mesure au repos {etiquette} manquante")
     A.exiger(len(fr) == 1, f"mesure au repos {etiquette} : plusieurs fichiers")
     j = json.loads(fr[0].read_text())
-    A.exiger(j["calculs_run_grid_vus"] == 0, f"mesure au repos {etiquette} : un calcul tournait")
+    A.exiger(essai or j["calculs_run_grid_vus"] == 0, f"mesure au repos {etiquette} : un calcul tournait")
     A.exiger(j["git"] == sha, f"mesure au repos {etiquette} : autre commit")
     canaux_ok(j["joules"], f"mesure au repos {etiquette}")
     return {"w": {k: v / j["duree_s"] for k, v in j["joules"].items()}, "debut": j["debut"], "fin": j["fin"],
             "processus": j.get("processus_debut", []) + j.get("processus_fin", [])}
 
 
-def lire_run(d, moteur, codage, sha_attendu=None):
+def lire_run(d, moteur, codage, sha_attendu=None, essai=False):
     f = d / "fp32_s42.npz"
     A.exiger(f.exists(), f"{d.name}/{f.name} manquant")
     x = dict(np.load(f))
@@ -119,7 +119,7 @@ def lire_run(d, moteur, codage, sha_attendu=None):
              f"{d.name} : moteur ou codage différents du nom du dossier")
     ts = [y["t"] for y in t.get("lectures", []) if "t" in y]
     A.exiger(len(ts) >= 2 and not any(b - a > V.SEUIL_TROU_S for a, b in zip(ts, ts[1:])), f"{d.name} : pause pendant le run")
-    A.exiger(max(y.get("processus_run_grid", 1) for y in t["lectures"]) == 1, f"{d.name} : autre calcul run_grid pendant le run")
+    A.exiger(essai or max(y.get("processus_run_grid", 1) for y in t["lectures"]) == 1, f"{d.name} : autre calcul run_grid pendant le run")
     if moteur in PLACEMENT:
         A.exiger(set(t["coreml"].get("placement", {})) == {PLACEMENT[moteur]}, f"{d.name} : opérations hors du processeur demandé")
     canaux_ok(e["joules_solve"], d.name)
@@ -148,7 +148,7 @@ def charger(racine, verifier=True, essai=False):
     runs = {}
     for rep in range(1, V.REPETITIONS + 1):
         for nom, (m, c, _) in attendus.items():
-            runs[(nom, rep)] = lire_run(r / f"exp013-{nom}-r{rep}", m, c)
+            runs[(nom, rep)] = lire_run(r / f"exp013-{nom}-r{rep}", m, c, essai=essai)
     shas = {x["git"] for x in runs.values()}
     A.exiger(len(shas) == 1, f"EXP-013 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
@@ -174,11 +174,11 @@ def charger(racine, verifier=True, essai=False):
         A.exiger(all(a < b for a, b in zip(t, t[1:])), f"répétition {rep} : runs dans un autre ordre que l'ordre tiré")
     sens = {}
     for variante, k in V.SENSIBILITE_OMP:
-        sens[(variante, k)] = lire_run(r / f"exp013-sens-ne-complet-omp-{variante}-{k}", "ne-complet", "fp16", sha)
+        sens[(variante, k)] = lire_run(r / f"exp013-sens-ne-complet-omp-{variante}-{k}", "ne-complet", "fp16", sha, essai)
         A.exiger((sens[(variante, k)]["temps"]["energie_puce"]["omp"].get("OMP_WAIT_POLICY") == "PASSIVE") == (variante == "passif"),
                  f"sensibilité OpenMP {variante}-{k} : variable OMP_WAIT_POLICY inattendue")
     etiquettes = ["r1-avant"] + [f"r{k}-r{k + 1}" for k in range(1, V.REPETITIONS)] + [f"r{V.REPETITIONS}-apres", "sens-apres"]
-    repos = {e: lire_repos(r, e, sha) for e in etiquettes}
+    repos = {e: lire_repos(r, e, sha, essai) for e in etiquettes}
 
     def bornes(rep):
         d = [x["debut"] for (n, k), x in runs.items() if k == rep] + [s["json"]["debut"] for (m, k), s in seules.items() if k == rep]
