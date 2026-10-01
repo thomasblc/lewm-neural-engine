@@ -342,6 +342,16 @@ corrections », 7 P1). Ce qui suit l'emporte sur les amendements précédents.
     stabilisation de 30 s avant le repos final du balayage ; formulations corrigées dans le code (moment de la
     décompression non observé). Limite connue, non corrigée : le filtre des processus de fond ignore tout processus
     python (un autre calcul python que run_grid serait invisible) ; EXP-011 sera finie avant le lancement.
+12. Relecture du code de l'amendement 5 (1 P0, 10 P1), corrigée au commit `a29483e` (tests : 35 refus) : garde de batterie
+    propre à EXP-013 (copie de `outils/garde_batterie.sh`, inchangée pendant qu'EXP-011 s'en sert), qui ne sort qu'après
+    8 contrôles d'affilée sans calcul au lieu de 4 (une mesure au repos refaite au départ l'aurait fait sortir pour la
+    nuit) ; une pause de la garde pendant la mise en route d'un run avec vision gèle aussi la vision et fait refaire le
+    run ; une vision qui ne démarre pas fait refaire le run au lieu d'arrêter la nuit ; la couverture de la vision est
+    recontrôlée à la reprise ; les processus de fond sont reconnus par leur script (les scripts de l'expérience sont
+    exclus, tout autre processus python compte), ce qui corrige la limite du point 11 ; écritures atomiques des mesures
+    au repos et de meta.json ; le lanceur attend aussi vitesse.py, balayage_lot.py et charge_vision.py ; mentions
+    OpenMP et « référence bruitée » portées aussi sur la question 2 ; rapport OpenMP non calculable si une énergie est
+    nulle ou négative ; canaux contrôlés dans chaque mesure du balayage.
 
 ## Questions
 
