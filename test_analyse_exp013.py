@@ -39,7 +39,7 @@ def moteur_de(nom):
 
 
 def codage_de(nom):
-    for c in ("int8", "int4b32", "pal4"):
+    for c in ("int8", "int4b32", "pal4", "int4c"):
         if f"-{c}" in nom:
             return c
     return "fp16"
@@ -174,14 +174,14 @@ def fabriquer(racine):
     run(r / "exp013-fin", "torch", 1.04)
     cas = []
     for u in ("ne", "gpu"):
-        for cod in ("fp16", "int8", "int4b32", "pal4"):
+        for cod in ("fp16", "int8", "int4b32", "pal4", "int4c"):
             for b in (1, 8, 32, 100, 300):
                 base = 1.0 + b / 100
                 cas.append({"unite": u, "codage": cod, "lot": b, "placement": {"NeuralEngine" if u == "ne" else "GPU": 300},
                             "octets_poids": 23.2e6, "mesures": [{"repetition": k, "mediane_ms": base * (1 + 0.01 * k), "appels": 100,
                                                                  "joules_nets_par_appel": {"ANE": 0.01}} for k in (1, 2, 3)]})
     (r / "exp013-balayage-lot.json").write_text(json.dumps({"git": TETE, "essai": False, "lots": [1, 8, 32, 100, 300],
-        "codages": ["fp16", "int8", "int4b32", "pal4"], "repetitions": 3, "boucle_s": 3.0, "repos_w": REPOS, "cas": cas}))
+        "codages": ["fp16", "int8", "int4b32", "pal4", "int4c"], "repetitions": 3, "boucle_s": 3.0, "repos_w": REPOS, "cas": cas}))
     return r
 
 
@@ -213,7 +213,7 @@ def test_valeurs(tmp):
     assert cmp["coreml-ne contre coreml-gpu"]["energie"]["verdict"] == "plus bas dans les 3 répétitions"
     assert cmp["coreml-ne contre coreml-gpu"]["energie"]["robuste_au_repos"]
     assert cmp["coreml-gpu-int8 contre coreml-gpu"]["temps"]["verdict"] == "non constant"
-    assert "ne-complet contre coreml-cpu" in cmp and "coreml-gpu contre torch-fp16" in cmp
+    assert "ne-complet contre coreml-cpu" in cmp and "coreml-gpu contre torch-fp16" in cmp and "coreml-ne-int4b32 contre coreml-ne-int4c" in cmp
     q = res["question_2"]
     assert proche(q["vision"]["ralentissement"]["torch"]["mediane"], 1.2, 1e-9) and proche(q["vision"]["ralentissement"]["ne-complet"]["mediane"], 1.0, 1e-9)
     k = q["vision"]["contrastes"]["ne-complet contre torch"]
@@ -283,6 +283,14 @@ def test_signalements(tmp, r):
     essai("règle du temps peu informative", json_mod(tps("exp013-torch-r3"), lambda j: j.update(
         appels_solve=[[a * 1.05, n] for a, n in j["appels_solve"]])))
     essai("processus", json_mod(tps("exp013-coreml-ne-r1"), lambda j: j["lectures"][1].update(processus=[[90.0, "mds_stores"]])))
+    # codage : placement en partie sur le CPU accepté et rapporté, Neural Engine faible signalé (amendement 4)
+    rr = copie(tmp, r, "codage")
+    for k in (1, 2, 3):
+        json_mod(tps(f"exp013-coreml-ne-int4b32-r{k}"), lambda j: (j["coreml"].update(placement={"CPU": 211, "NeuralEngine": 150}),
+                 j["energie_puce"]["joules_solve"].update(ANE=0.5 * sum(a for a, _ in j["appels_solve"]))))(rr)
+    res = A13.analyser(rr, verifier=False)
+    assert res["configurations"]["coreml-ne-int4b32"]["placement"] == {"CPU": 211, "NeuralEngine": 150}
+    assert any("coreml-ne-int4b32 r1 : Neural Engine à" in x for x in res["signalements"]), res["signalements"]
     print("ok signalements (déterminisme, GPU hors planification, thermique, bruit, processus de fond)")
 
 

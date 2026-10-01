@@ -182,6 +182,27 @@ en cas de contradiction, cet amendement l'emporte.
 21. Essai de bout en bout avant le lancement : `vitesse.py --essai` (10 épisodes, mesures brèves, dossier de travail hors
     de resultats/) puis `analyse_exp013.py --essai` sur ses fichiers.
 
+Amendement 4 (1er octobre, 19 h 30, avant tout calcul d'EXP-013). L'essai de placement des codages
+(`essai_placement_codages.py`, `resultats/preparation-exp013/placement-codages.json`, commit `54faef4`) montre :
+- int4 par blocs de 32 sur le Neural Engine : 211 des 361 opérations du prédicteur sur le CPU, 150 sur le Neural Engine
+  (même résultat par blocs de 64) ; int4 par canal, int8 par canal et palettes : toutes sur le Neural Engine ; sur le
+  GPU, toutes les opérations sur le GPU pour les quatre codages ;
+- les opérations de décompression des poids (`constexpr_blockwise_shift_scale`, `constexpr_lut_to_dense`) n'ont aucun
+  processeur dans le plan de calcul : la décompression se fait au chargement ; l'empreinte mémoire du processus après
+  chargement et 10 appels ne baisse pas avec le codage (Neural Engine : 354 à 365 Mo ; GPU : 477 à 521 Mo).
+Changements :
+1. Codage ajouté : `int4c` (int4 linéaire symétrique par canal), sur le GPU et sur le Neural Engine, sans charge, et dans
+   le balayage du lot : 14 configurations sans charge, 24 éléments par répétition. Contraste ajouté : int4 par blocs
+   contre int4 par canal, sur chaque processeur.
+2. Placement des codages : consigné et rapporté comme un résultat, non bloquant. Le contrôle bloquant de placement reste
+   pour les configurations en 16 bits (`coreml-gpu`, `coreml-ne`, `ne-complet`, `coreml-cpu`). Le contrôle bloquant du
+   Neural Engine actif (plus de 1,0 W) reste pour `coreml-ne` et `ne-complet` en 16 bits ; pour les codages sur le Neural
+   Engine, une puissance de 1,0 W ou moins est signalée.
+3. Formulation : un codage peut faire tomber une partie du prédicteur sur le CPU (int4 par blocs sur ce Neural Engine,
+   macOS 26.6.2, coremltools 9.0) ; un codage ne réduit que la taille du fichier des poids, pas l'empreinte mémoire du
+   processus, dans ce montage.
+4. Durée estimée : environ 2 h 45.
+
 ## Questions
 
 1. Que fait gagner chaque choix de déploiement, en temps par plan, en énergie par plan et en mémoire des poids : le

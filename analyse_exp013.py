@@ -16,6 +16,7 @@ from pathlib import Path
 import numpy as np
 
 import analyse_exp003 as A
+import coreml_pred as C
 import vitesse as V
 
 # Canaux de la puce (compteurs IOReport « Energy Model »), niveau haut seulement : « CPU Energy » contient PCPU et
@@ -120,7 +121,7 @@ def lire_run(d, moteur, codage, sha_attendu=None, essai=False):
     ts = [y["t"] for y in t.get("lectures", []) if "t" in y]
     A.exiger(len(ts) >= 2 and not any(b - a > V.SEUIL_TROU_S for a, b in zip(ts, ts[1:])), f"{d.name} : pause pendant le run")
     A.exiger(essai or max(y.get("processus_run_grid", 1) for y in t["lectures"]) == 1, f"{d.name} : autre calcul run_grid pendant le run")
-    if moteur in PLACEMENT:
+    if moteur in PLACEMENT and codage == "fp16":       # codages : placement consigné comme un résultat (amendement 4)
         A.exiger(set(t["coreml"].get("placement", {})) == {PLACEMENT[moteur]}, f"{d.name} : opérations hors du processeur demandé")
     canaux_ok(e["joules_solve"], d.name)
     canaux_ok(e["joules"], d.name)
@@ -285,7 +286,8 @@ def paires_sans_charge(noms):
     p = [(x, "torch") for x in noms if x != "torch"]
     p += [(x, "coreml-gpu") for x in ("coreml-ne", "ne-complet", "coreml-cpu")]
     p += [("coreml-gpu", "torch-fp16"), ("ne-complet", "coreml-ne"), ("ne-complet", "coreml-cpu")]
-    p += [(f"{u}-{c}", u) for u in ("coreml-gpu", "coreml-ne") for c in ("int8", "int4b32", "pal4")]
+    p += [(f"{u}-{c}", u) for u in ("coreml-gpu", "coreml-ne") for c in ("int8", "int4b32", "pal4", "int4c")]
+    p += [(f"{u}-int4b32", f"{u}-int4c") for u in ("coreml-gpu", "coreml-ne")]          # blocs contre canal (amendement 4)
     return [x for i, x in enumerate(p) if x not in p[:i] and x[0] in noms and x[1] in noms]
 
 
@@ -312,8 +314,11 @@ def analyser(racine, verifier=True, essai=False):
                          f"{nom} r{k} : la charge de vision ne couvre pas les fenêtres de planification")
                 x["vision_part_seule"] = v["ips"] / seules[(mode, k)]["vision"]["ips"]   # référence : vision seule, même répétition
             w = x["composants_solve_w"]["Neural Engine"]           # repli silencieux de Core ML : le Neural Engine calcule-t-il ?
-            if runs[(nom, k)]["moteur"] in SUR_ANE:
+            if runs[(nom, k)]["moteur"] in SUR_ANE and runs[(nom, k)]["codage"] == "fp16":
                 A.exiger(w > SEUIL_ANE_ACTIF, f"{nom} r{k} : Neural Engine presque inactif ({w:.2f} W)")
+            elif runs[(nom, k)]["moteur"] in SUR_ANE:      # codage : une partie peut tomber sur le CPU (amendement 4)
+                if w <= SEUIL_ANE_ACTIF:
+                    signalements.append(f"{nom} r{k} : Neural Engine à {w:.2f} W seulement (placement {runs[(nom, k)]['temps']['coreml'].get('placement')})")
             else:
                 A.exiger(w < SEUIL_ANE_INACTIF, f"{nom} r{k} : Neural Engine actif ({w:.2f} W) pour un moteur qui ne l'utilise pas")
             if runs[(nom, k)]["moteur"] in HORS_GPU and not mode and x["composants_solve_w"]["GPU"] > SEUIL_GPU_HORS:
@@ -331,6 +336,7 @@ def analyser(racine, verifier=True, essai=False):
         c = {k: resume([x[k] for x in L]) for k in ("temps_par_plan_ms", "plans_par_s", "puissance_puce_w", "cpu_s_par_plan",
                                                     "maxrss_mo", "part_coreml", "succes", "energie_solve_brute_puce")}
         c["octets_predicteur"] = L[0]["octets_predicteur"]
+        c["placement"] = (runs[(nom, 1)]["temps"].get("coreml") or {}).get("placement")
         c["octets_par_modele"] = (runs[(nom, 1)]["temps"].get("coreml") or {}).get("octets_par_modele")
         c["octets_modules_torch"] = runs[(nom, 1)]["temps"]["energie_puce"]["octets_modules_torch"]
         c["succes_ic95"] = wilson(L[0]["succes"], runs[(nom, 1)]["n_episodes"])
@@ -446,7 +452,7 @@ def balayage(r, sha, essai):
     b = json.loads(f.read_text())
     A.exiger(b["git"] == sha and b["essai"] == essai, "balayage du lot : autre commit ou autre mode")
     if not essai:
-        A.exiger(b["lots"] == [1, 8, 32, 100, 300] and b["codages"] == ["fp16", "int8", "int4b32", "pal4"] and b["repetitions"] == 3,
+        A.exiger(b["lots"] == [1, 8, 32, 100, 300] and b["codages"] == list(C.CODAGES) and b["repetitions"] == 3,
                  "balayage du lot : plan différent du pré-enregistrement")
     A.exiger(len(b["cas"]) == 2 * len(b["lots"]) * len(b["codages"]) and all(len(c["mesures"]) == b["repetitions"] for c in b["cas"]),
              "balayage du lot incomplet")
@@ -480,18 +486,20 @@ def rapport(r):
          "une machine, une session.", "", "## Signalements", ""]
     L += [f"- {s}" for s in r["signalements"]] or ["- aucun"]
     L += ["", "## Sans charge", "",
-          "| Configuration | Temps par plan (ms) | Énergie par plan, puce (J) | calcul (J) | mémoire (J) | brute (J) | Poids du prédicteur (Mo) | Part de l'appel Core ML | Réussite, 50 épisodes (IC 95 %) |",
-          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
+          "| Configuration | Temps par plan (ms) | Énergie par plan, puce (J) | calcul (J) | mémoire (J) | brute (J) | Poids du prédicteur (Mo) | Placement | Part de l'appel Core ML | Réussite, 50 épisodes (IC 95 %) |",
+          "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for nom, c in r["configurations"].items():
         if "-vision" in nom:
             continue
         mo = f"{c['octets_predicteur'] / 1e6:.1f}" if c["octets_predicteur"] else ""
         ic = c["succes_ic95"]
         L.append(f"| {nom} | {f(c['temps_par_plan_ms'])} | {f(c.get('energie_solve_puce_j'), 2)} | {f(c.get('energie_solve_calcul_j'), 2)} | "
-                 f"{f(c.get('energie_solve_memoire_j'), 2)} | {f(c['energie_solve_brute_puce'], 2)} | {mo} | {f(c['part_coreml'], 0, 100)} | "
+                 f"{f(c.get('energie_solve_memoire_j'), 2)} | {f(c['energie_solve_brute_puce'], 2)} | {mo} | "
+                 f"{', '.join(f'{k} {v}' for k, v in (c['placement'] or {}).items())} | {f(c['part_coreml'], 0, 100)} | "
                  f"{100 * c['succes']['mediane']:.0f} [{100 * ic[0]:.0f} ; {100 * ic[1]:.0f}] |")
-    L += ["", "Codages int8 (linéaire symétrique par canal), int4b32 (blocs de 32, arrondi sans calibration) et pal4 (une palette "
-          "de 16 valeurs par tenseur, k-moyennes) : fonctions de coremltools 9.0 depuis les poids 16 bits. Réussite non établie "
+    L += ["", "Codages int8 (linéaire symétrique par canal), int4b32 (blocs de 32, arrondi sans calibration), int4c (int4 par "
+          "canal) et pal4 (une palette de 16 valeurs par tenseur, k-moyennes) : fonctions de coremltools 9.0 depuis les poids "
+          "16 bits ; leur placement est un résultat (int4 par blocs : une partie des opérations sur le CPU). Réussite non établie "
           "(50 épisodes de contrôle seulement) ; mesurée par une autre expérience. Le coût par plan ne dépend pas des valeurs "
           "des poids (CEM sans arrêt anticipé).",
           "", "| Comparaison | Temps | Énergie de la puce |", "| --- | --- | --- |"]

@@ -34,12 +34,12 @@ APPELS = {"n": 0, "coreml_s": 0.0, "total_s": 0.0}   # EXP-013 : temps dans l'ap
 
 def remise_a_zero_appels():
     APPELS.update(n=0, coreml_s=0.0, total_s=0.0)
-CODAGES = ("fp16", "int8", "int4b32", "pal4")      # EXP-013 : codage des poids dans Core ML
+CODAGES = ("fp16", "int8", "int4b32", "pal4", "int4c")   # EXP-013 : codage des poids dans Core ML (int4c : amendement 4)
 
 
 def comprimer(ml, codage):
     """EXP-013 : codage des poids du programme Core ML (fonctions de coremltools, depuis les poids 16 bits) : int8 par
-    canal, int4 par blocs de 32, palettes de 16 valeurs (k-moyennes). Vitesse et mémoire seulement : la réussite de
+    canal, int4 par blocs de 32, int4 par canal, palettes de 16 valeurs (k-moyennes). Vitesse et mémoire seulement : la réussite de
     ces codages est l'objet d'une autre expérience."""
     import coremltools.optimize.coreml as cto
     if codage == "fp16":
@@ -49,6 +49,9 @@ def comprimer(ml, codage):
         return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
     if codage == "int4b32":
         cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_block", block_size=32)
+        return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
+    if codage == "int4c":                              # amendement 4 : int4 par canal, seul int4 entièrement sur le Neural Engine
+        cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_channel")
         return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
     if codage == "pal4":
         return cto.palettize_weights(ml, cto.OptimizationConfig(global_config=cto.OpPalettizerConfig(mode="kmeans", nbits=4)))

@@ -42,7 +42,7 @@ ICI = Path(__file__).resolve().parent
 SANS_CHARGE = [("torch", "fp16"), ("torch-fp16", "fp16"), ("coreml-gpu", "fp16"), ("coreml-ne", "fp16"),
                ("coreml-gpu", "int8"), ("coreml-gpu", "int4b32"), ("coreml-gpu", "pal4"),
                ("coreml-ne", "int8"), ("coreml-ne", "int4b32"), ("coreml-ne", "pal4"), ("ne-complet", "fp16"),
-               ("coreml-cpu", "fp16")]
+               ("coreml-cpu", "fp16"), ("coreml-gpu", "int4c"), ("coreml-ne", "int4c")]   # int4c : amendement 4
 AVEC_CHARGE = [("torch", "fp16"), ("coreml-gpu", "fp16"), ("coreml-ne", "fp16"), ("ne-complet", "fp16")]
 MODES_VISION = {"vision": 0.0, "vision30": 30.0}      # pleine vitesse ; 30 images par seconde
 REUSSITE = ("ne-complet", (42, 43))                    # contrôle de réussite du planificateur hors du GPU, 500 épisodes
