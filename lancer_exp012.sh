@@ -87,10 +87,12 @@ attendre_gpu() {
   done
 }
 
+# EXP-011 passe après EXP-012 : son lanceur n'est pas attendu ici (il attend celui-ci), sinon les deux s'attendraient ;
+# un calcul run_grid d'EXP-011 en cours reste vu par le premier motif.
 # motifs ancrés sur l'exécutable : une commande qui cite seulement ces noms (un appel de shell, un test) ne compte pas
 autre_calcul() {
   pgrep -f '^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\.py( |$)' > /dev/null ||
-    pgrep -f '^(/bin/)?zsh (\./|[^ ]*/)?lancer_(exp004|exp005|exp006|exp007|exp008|exp009|exp010|exp011|grille)\.sh( |$)' > /dev/null
+    pgrep -f '^(/bin/)?zsh (\./|[^ ]*/)?lancer_(exp004|exp005|exp006|exp007|exp008|exp009|exp010|grille)\.sh( |$)' > /dev/null
 }
 
 garde() {
