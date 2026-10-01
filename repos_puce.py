@@ -7,6 +7,7 @@ Usage :
     python repos_puce.py DOSSIER ETIQUETTE [DUREE] [STABILISATION]
 """
 import json
+import os
 import subprocess
 import sys
 import time
@@ -18,7 +19,7 @@ dossier, etiquette = Path(sys.argv[1]), sys.argv[2]
 duree = float(sys.argv[3]) if len(sys.argv) > 3 else 90.0
 stab = float(sys.argv[4]) if len(sys.argv) > 4 else 60.0
 time.sleep(stab)
-motif = "^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*(run_grid|charge_vision)\\.py( |$)"
+motif = "^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*(run_grid|charge_vision|balayage_lot)\\.py( |$)"
 
 
 def compter():
@@ -26,8 +27,8 @@ def compter():
 
 
 def actifs():
-    out = subprocess.run(["ps", "-Ao", "pcpu=,comm=", "-r"], capture_output=True, text=True).stdout
-    return [[float(l.split(None, 1)[0]), l.split(None, 1)[1].strip().split("/")[-1]] for l in out.splitlines()[:4] if l.strip()]
+    from coreml_pred import processus_actifs
+    return processus_actifs(4)
 
 
 calculs, actifs_debut = compter(), actifs()
@@ -41,6 +42,8 @@ sha = subprocess.run(["git", "-C", str(Path(__file__).resolve().parent), "rev-pa
 r = {"etiquette": etiquette, "debut": e0[0], "fin": e1[0], "duree_s": dt, "joules": j, "calculs_run_grid_vus": calculs,
      "processus_debut": actifs_debut, "processus_fin": actifs(), "git": sha}
 f = dossier / f"exp013-repos-{etiquette}-{int(e0[0])}.json"
-f.write_text(json.dumps(r, indent=1))
+tmp = f.with_name(f.name + ".tmp")
+tmp.write_text(json.dumps(r, indent=1))
+os.replace(tmp, f)                                     # jamais de fichier partiel
 w = {k: j.get(k, 0) / dt for k in ("CPU Energy", "GPU Energy", "ANE", "DRAM")}
 print(f"[repos] {etiquette} : " + ", ".join(f"{k} {v:.2f} W" for k, v in w.items()) + f" ; calculs vus {calculs}", flush=True)

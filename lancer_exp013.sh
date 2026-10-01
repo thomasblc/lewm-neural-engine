@@ -11,7 +11,7 @@ main() {
   caffeinate -d -i -w $$ &!                 # écran allumé pendant tout le calcul, repos compris : affichage constant
   local PY=/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python
   local R=../resultats
-  local GARDE=/Users/thomasblanc/Documents/PRO/these-ia-thomas/outils/garde_batterie.sh
+  local GARDE=$ICI/garde_batterie.sh          # copie avec ABSENTS réglable (outils/garde_batterie.sh sert à EXP-011)
   local HEAD0=""
   verifier $PY
   HEAD0=$(git rev-parse HEAD)
@@ -67,7 +67,7 @@ attendre_batterie() {
 # un calcul run_grid d'EXP-011 en cours reste vu par le premier motif.
 # motifs ancrés sur l'exécutable : une commande qui cite seulement ces noms (un appel de shell, un test) ne compte pas
 autre_calcul() {
-  pgrep -f '^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\.py( |$)' > /dev/null ||
+  pgrep -f '^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*(run_grid|vitesse|balayage_lot|charge_vision)\.py( |$)' > /dev/null ||
     pgrep -f '^(/bin/)?zsh (\./|[^ ]*/)?lancer_(exp004|exp005|exp006|exp007|exp008|exp009|exp010|exp011|exp012|grille)\.sh( |$)' > /dev/null
 }
 
@@ -82,7 +82,7 @@ garde() {
   if pgrep -f '^(/bin/)?zsh [^ ]*garde_batterie\.sh$' > /dev/null; then
     echo "[info] une garde de batterie tourne déjà"
   else
-    GRILLE=$1 ATTENDUS=$2 PAUSE_INITIALE=0 SEUIL_BAS=15 REPRISE_1=60 REPRISE=60 zsh $GARDE > /dev/null 2>&1 &!
+    GRILLE=$1 ATTENDUS=$2 PAUSE_INITIALE=0 SEUIL_BAS=15 REPRISE_1=60 REPRISE=60 ABSENTS=8 zsh $GARDE > /dev/null 2>&1 &!
     echo "[info] garde de batterie lancée pour $1"
   fi
 }

@@ -146,11 +146,25 @@ def placement(m, cu):
         return {"indisponible": f"{type(e).__name__}: {str(e)[:120]}"}
 
 
+def etiquette_processus(commande):
+    """Nom d'un processus pour repérer un calcul de fond : « python:script.py » pour un python, sinon l'exécutable."""
+    mots = commande.split()
+    exe = mots[0].split("/")[-1] if mots else ""
+    if exe.lower().startswith("python"):
+        script = next((m.split("/")[-1] for m in mots[1:] if m.endswith(".py")), "")
+        return f"python:{script}"
+    return exe
+
+
+SCRIPTS_EXPERIENCE = ("python:vitesse.py", "python:run_grid.py", "python:repos_puce.py", "python:charge_vision.py",
+                      "python:balayage_lot.py", "caffeinate", "ps")
+
+
 def processus_actifs(n=4):
-    """EXP-013 : les n processus qui prennent le plus de CPU (pourcentage, nom), pour repérer un calcul de fond."""
+    """EXP-013 : les n processus qui prennent le plus de CPU (pourcentage, étiquette), pour repérer un calcul de fond."""
     try:
-        out = subprocess.run(["ps", "-Ao", "pcpu=,comm=", "-r"], capture_output=True, text=True, timeout=5).stdout
-        return [[float(l.split(None, 1)[0]), l.split(None, 1)[1].strip().split("/")[-1]] for l in out.splitlines()[:n] if l.strip()]
+        out = subprocess.run(["ps", "-Ao", "pcpu=,command=", "-r"], capture_output=True, text=True, timeout=5).stdout
+        return [[float(l.split(None, 1)[0]), etiquette_processus(l.split(None, 1)[1])] for l in out.splitlines()[:n] if l.strip()]
     except Exception:  # noqa: BLE001
         return []
 

@@ -374,8 +374,10 @@ def main():
         if json.dumps(ancien["protocole"], sort_keys=True, default=str) != json.dumps(protocole, sort_keys=True, default=str):
             sys.exit(f"{f_meta} décrit un autre protocole : choisir un autre dossier --out")
     else:
-        f_meta.write_text(json.dumps({"protocole": protocole, "git": sha, "git_sale": sale,
-                                      "torch": torch.__version__}, indent=1, default=str))
+        tmp_meta = f_meta.with_name("meta.json.tmp")         # jamais de meta.json partiel
+        tmp_meta.write_text(json.dumps({"protocole": protocole, "git": sha, "git_sale": sale,
+                                        "torch": torch.__version__}, indent=1, default=str))
+        os.replace(tmp_meta, f_meta)
     print(f"[info] commit {sha[:7]}{' (modifié)' if sale else ''}, {args.n} épisodes", flush=True)
 
     world = swm.World(**cfg.world, image_shape=(224, 224))

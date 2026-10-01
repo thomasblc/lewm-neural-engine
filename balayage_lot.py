@@ -103,6 +103,6 @@ with tempfile.TemporaryDirectory() as d:
            "boucle_s": BOUCLE_S, "repos_w": repos_w, "repos_avant_w": repos_avant, "repos_apres_w": repos_apres,
            "batterie_debut": batterie_debut, "batterie_fin": Puissance.lire(),
            "cas": [{k: v for k, v in c.items() if not k.startswith("_")} for c in cas]}
-tmp = sortie.with_suffix(".tmp.json")
+tmp = sortie.with_name(sortie.name + ".tmp")           # hors du motif exp013-*.json
 tmp.write_text(json.dumps(res, indent=1))
 os.replace(tmp, sortie)

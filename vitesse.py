@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 
 import energie_puce
-from coreml_pred import Puissance, processus_actifs
+from coreml_pred import SCRIPTS_EXPERIENCE, Puissance, processus_actifs
 
 PY = sys.executable
 ICI = Path(__file__).resolve().parent
@@ -116,6 +116,15 @@ def lire_jsonl(f):
     return [json.loads(l) for l in f.read_text().splitlines() if l.strip()] if f.exists() else []
 
 
+def vision_couvre(racine, dossier, etiquette):
+    """La vision d'un run avec charge a-t-elle tout écrit sur ses fenêtres de planification ?"""
+    try:
+        t = json.loads((racine / dossier / "fp32_s42.temps.json").read_text())
+        return couverture(lire_jsonl(racine / f"exp013-vision-{etiquette}.jsonl"), t["energie_puce"]["fenetres_solve"])
+    except Exception:  # noqa: BLE001  fichier illisible : pas couvert, le run est refait
+        return False
+
+
 def pid_calcul(dossier, p, attente=60):
     """PID du processus python de run_grid qui écrit dans dossier, ou None s'il a déjà fini."""
     motif = f"^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*run_grid\\.py --out {dossier}( |$)"
@@ -140,14 +149,39 @@ def charge_vision(racine, etiquette, ips):
     return subprocess.Popen([PY, "charge_vision.py", str(f), str(4 * 3600), str(ips)]), f
 
 
-def attendre_pret(f, p, attente=180):
+def attendre_pret(f, p, attente=180, pid_calcul=None):
+    """Vrai quand la vision a écrit sa ligne « prête » ; faux si elle s'arrête ou tarde. Si le calcul pid_calcul est
+    gelé par la garde pendant l'attente, la vision est gelée aussi ; rend aussi s'il y a eu un gel."""
+    gel = False
     for _ in range(attente * 2):
+        if pid_calcul is not None and gele(pid_calcul):
+            gel = True
+            p.send_signal(signal.SIGSTOP)
+            while gele(pid_calcul):
+                time.sleep(1)
+            p.send_signal(signal.SIGCONT)
         if p.poll() is not None:
-            raise SystemExit(f"[arrêt] la charge de vision s'est arrêtée au démarrage ({f.name})")
+            return False, gel
         if f.exists() and f.read_text().strip():
-            return
+            return True, gel
         time.sleep(0.5)
-    raise SystemExit(f"[arrêt] charge de vision pas prête après {attente} s ({f.name})")
+    return False, gel
+
+
+def dormir(duree, pid_calcul, vision=None):
+    """Attente de duree secondes ; rend vrai si le calcul a été gelé pendant ce temps (la vision est gelée avec lui)."""
+    gel, fin = False, time.time() + duree
+    while time.time() < fin:
+        if pid_calcul is not None and gele(pid_calcul):
+            gel = True
+            if vision is not None:
+                vision.send_signal(signal.SIGSTOP)
+            while gele(pid_calcul):
+                time.sleep(1)
+            if vision is not None:
+                vision.send_signal(signal.SIGCONT)
+        time.sleep(0.5)
+    return gel
 
 
 def arreter(p):
@@ -173,6 +207,8 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
     n = n or P["n"]
     if all((racine / dossier / f"fp32_s{g}.npz").exists() for g in graines):
         raison = next((probleme(racine / dossier, g) for g in graines if probleme(racine / dossier, g)), None) if controle else None
+        if raison is None and mode and not vision_couvre(racine, dossier, etiquette):
+            raison = "la charge de vision ne couvre pas les fenêtres de planification"
         if raison is None:
             dire(f"[saut] {dossier}")
             return
@@ -198,8 +234,12 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
                         raise SystemExit(f"[arrêt] {dossier} : run_grid arrêté avant la mise en route (code {p.returncode})")
                     time.sleep(0.5)
                 vision, fj = charge_vision(racine, etiquette, MODES_VISION[mode])
-                attendre_pret(fj, vision)
-                time.sleep(P["chauffe_vision"])
+                pret, gel = attendre_pret(fj, vision, pid_calcul=pid)
+                if not pret:
+                    raison = "la charge de vision n'a pas démarré"
+                    raise InterruptedError
+                if dormir(P["chauffe_vision"], pid, vision) or gel:
+                    raison = "pause de la garde pendant la mise en route"   # le run continue, puis il est refait
                 go.write_text(str(time.time()))
             while p.poll() is None:                    # garde : si le calcul est gelé, la vision l'est aussi
                 if pid is not None and vision is not None:
@@ -210,6 +250,8 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
                     if vision.poll() is not None:
                         raison = "la charge de vision s'est arrêtée pendant le run"
                 time.sleep(1)
+        except InterruptedError:                       # vision pas démarrée : le run est arrêté puis refait
+            pass
         finally:
             if vision_gelee:
                 vision.send_signal(signal.SIGCONT)
@@ -219,15 +261,13 @@ def run(racine, dossier, moteur, codage, n=None, graines=(42,), mode=None, etiqu
                     subprocess.run(["kill", "-TERM", str(pid)])
                 p.terminate()
             arreter(vision)                            # la vision écrit ses dernières images en s'arrêtant
-        if p.returncode != 0:
+        if p.returncode != 0 and raison is None:
             effacer(racine, dossier, graines)
             raise SystemExit(f"[arrêt] {dossier} : run_grid a échoué (code {p.returncode})")
         if raison is None and controle:
             raison = next((probleme(racine / dossier, g) for g in graines if probleme(racine / dossier, g)), None)
-        if raison is None and mode:                    # la vision a-t-elle tout écrit sur les fenêtres de planification ?
-            t = json.loads((racine / dossier / "fp32_s42.temps.json").read_text())
-            if not couverture(lire_jsonl(racine / f"exp013-vision-{etiquette}.jsonl"), t["energie_puce"]["fenetres_solve"]):
-                raison = "la charge de vision ne couvre pas les fenêtres de planification"
+        if raison is None and mode and not vision_couvre(racine, dossier, etiquette):
+            raison = "la charge de vision ne couvre pas les fenêtres de planification"
         if raison is None:
             return
         dire(f"[refait] {dossier} : {raison}")
@@ -243,7 +283,8 @@ def vision_seule(racine, mode, r, compteur, sha):
     dire(f"[vision seule] {mode} r{r}")
     p, fj = charge_vision(racine, f"seule-{mode}-r{r}", MODES_VISION[mode])
     try:
-        attendre_pret(fj, p)
+        if not attendre_pret(fj, p)[0]:
+            raise SystemExit(f"[arrêt] la vision seule {mode} r{r} n'a pas démarré")
         time.sleep(P["chauffe_vision"])                # chauffe, hors mesure
         e0 = compteur.lire()
         time.sleep(P["mesure_vision"])
@@ -259,8 +300,7 @@ def vision_seule(racine, mode, r, compteur, sha):
 
 def fond(j):
     """Processus hors de l'expérience au-dessus de 20 % d'un cœur au début ou à la fin d'une mesure au repos."""
-    return [p for p in j.get("processus_debut", []) + j.get("processus_fin", [])
-            if p[0] > SEUIL_FOND and not p[1].lower().startswith(("python", "caffeinate", "ps"))]
+    return [p for p in j.get("processus_debut", []) + j.get("processus_fin", []) if p[0] > SEUIL_FOND and p[1] not in SCRIPTS_EXPERIENCE]
 
 
 def repos(racine, etiquette):
@@ -338,7 +378,11 @@ def autre_commit(racine, sha):
         if g not in (None, sha):
             ko.append(f.name)
     for m in racine.glob("exp013-*/meta.json"):
-        if json.loads(m.read_text()).get("git") != sha:
+        try:
+            g = json.loads(m.read_text()).get("git")
+        except Exception:  # noqa: BLE001
+            g = "illisible"
+        if g != sha:
             ko.append(m.parent.name)
     return sorted(ko)
 

@@ -119,8 +119,7 @@ def lire_repos(r, etiquette, sha, essai=False):
     A.exiger(essai or j["calculs_run_grid_vus"] == 0, f"mesure au repos {etiquette} : un calcul tournait")
     A.exiger(j["git"] == sha, f"mesure au repos {etiquette} : autre commit")
     canaux_ok(j["joules"], f"mesure au repos {etiquette}")
-    fond = [x for x in j.get("processus_debut", []) + j.get("processus_fin", [])
-            if x[0] > SEUIL_FOND and not x[1].lower().startswith(("python", "caffeinate", "ps"))]
+    fond = [x for x in j.get("processus_debut", []) + j.get("processus_fin", []) if x[0] > SEUIL_FOND and x[1] not in C.SCRIPTS_EXPERIENCE]
     return {"w": {k: v / j["duree_s"] for k, v in j["joules"].items()}, "debut": j["debut"], "fin": j["fin"], "fond": fond}
 
 
@@ -147,7 +146,7 @@ def lire_run(d, moteur, codage, sha_attendu=None, essai=False):
     if sha_attendu:
         A.exiger(str(x["git"]) == sha_attendu, f"{d.name} : autre commit")
     thermique = [y.get("thermique", "") for y in t["lectures"]]
-    autres = [p for y in t["lectures"] for p in y.get("processus", []) if not p[1].lower().startswith(("python", "caffeinate"))]
+    autres = [p for y in t["lectures"] for p in y.get("processus", []) if p[1] not in C.SCRIPTS_EXPERIENCE]
     return {"temps": t, "succes": float(x["success"].mean()), "n_episodes": int(len(x["success"])), "fichier": f,
             "moteur": moteur, "codage": codage, "debut": e["debut"], "fin": e["debut"] + e["duree_s"], "git": str(x["git"]),
             "alerte_thermique": any(not all(k in s for k in THERMIQUE_NORMALE) for s in thermique),
@@ -481,11 +480,11 @@ def analyser(racine, verifier=True, essai=False):
                                   "energie_solve_puce_j": resume([x["energie_solve"]["puce"] for x in L]),
                                   "cpu_w": resume([x["composants_solve_w"]["CPU"] for x in L])}
         ep, ed = s_omp[m]["passif"]["energie_solve_puce_j"], s_omp[m]["defaut"]["energie_solve_puce_j"]
-        rap = ep["mediane"] / ed["mediane"]
+        rap = ep["mediane"] / ed["mediane"] if ep["mediane"] > 0 and ed["mediane"] > 0 else None   # non calculable sinon
         s_omp[m]["rapport_energie_passif_defaut"] = rap
         s_omp[m]["rapport_temps_passif_defaut"] = s_omp[m]["passif"]["temps_par_plan_ms"]["mediane"] / s_omp[m]["defaut"]["temps_par_plan_ms"]["mediane"]
         disjoints = ep["min"] > ed["max"] or ep["max"] < ed["min"]       # les 2 runs de chaque variante ne se recouvrent pas
-        s_omp[m]["sensible"] = disjoints and not (1 - MARGE_ENERGIE <= rap <= 1 + MARGE_ENERGIE)
+        s_omp[m]["sensible"] = rap is not None and disjoints and not (1 - MARGE_ENERGIE <= rap <= 1 + MARGE_ENERGIE)
     for nom_c, cmp in comparaisons.items():
         cmp["sensible_openmp"] = [m for m in s_omp if s_omp[m]["sensible"] and m in nom_c.split(" contre ")]
     # bruit de la référence : écart des 3 runs torch (temps, énergie), et des p99 de la vision seule
@@ -493,6 +492,13 @@ def analyser(racine, verifier=True, essai=False):
     bruit_ref = {"temps": bruit, "energie": max(et) / min(et) - 1 if min(et) > 0 else None}
     for nom_c, cmp in comparaisons.items():
         cmp["temps"]["peu_informatif"] = bruit > BRUIT_TORCH
+    for mode, q in q2.items():                         # mêmes mentions pour la question 2 (amendement 5, points 9 et 14)
+        for nom_c, cmp in q["contrastes"].items():
+            cmp["ralentissement"]["peu_informatif"] = bruit > BRUIT_TORCH
+            cmp["sensible_openmp"] = [m for m in s_omp if s_omp[m]["sensible"] and m in nom_c.split(" contre ")]
+    for ref in ("torch", "coreml-gpu"):
+        q2_principal[ref]["sensible_openmp"] = s_omp["ne-complet"]["sensible"]
+        q2_principal[ref]["ralentissement"]["peu_informatif"] = bruit > BRUIT_TORCH
     # question 3 : planificateur entièrement hors du GPU, si la puissance du GPU au-dessus du repos reste sous 0,3 W
     gpu = [lignes[("ne-complet", k)]["composants_solve_w"]["GPU"] for k in R]
     g_repos = [x["w"].get("GPU Energy", 0) for x in repos.values()]
@@ -542,6 +548,9 @@ def balayage(r, sha, essai):
     b = json.loads(f.read_text())
     canaux_ok(b["repos_avant_w"], "balayage du lot, repos d'avant")
     canaux_ok(b["repos_apres_w"], "balayage du lot, repos d'après")
+    for c in b["cas"]:
+        for m in c["mesures"]:
+            canaux_ok(m["joules"], f"balayage du lot, {c['unite']} {c['codage']} lot {c['lot']}")
     A.exiger(b["git"] == sha and b["essai"] == essai, "balayage du lot : autre commit ou autre mode")
     if not essai:
         A.exiger(b["lots"] == [1, 8, 32, 100, 300] and b["codages"] == list(C.CODAGES) and b["repetitions"] == 3,
@@ -640,7 +649,8 @@ def rapport(r):
                  " (principal, même précision float16)") + f" : **{q['reponse']}** (ralentissement : {fr(q['ralentissement'])} ; "
               f"part de la vision : {fr(q['part_vision'])} ; 30 images/s gardées : ne-complet {'oui' if q['garde_30']['ne-complet'] else 'non'}, "
               f"{ref} {'oui' if q['garde_30'][ref] else 'non'}" + ("" if qp["interpretable_30"] else
-              " ; bras à 30 images/s non interprétable : la vision seule n'y tient pas sa cadence") + ")."]
+              " ; bras à 30 images/s non interprétable : la vision seule n'y tient pas sa cadence")
+              + (" ; ne-complet sensible à OpenMP" if q.get("sensible_openmp") else "") + ")."]
     L += ["", "Les autres contrastes de la question 2 sont secondaires. Le contraste principal a été choisi après l'essai de "
           "bout en bout (10 épisodes, EXP-011 en même temps) : ce qu'il montrait est consigné dans l'amendement 6."]
     q3 = r["question_3"]
@@ -653,7 +663,8 @@ def rapport(r):
         L += ["", f"Sensibilité à l'attente active d'OpenMP ({m}, 2 runs par variante) : par défaut {f(s['defaut']['temps_par_plan_ms'])} ms, "
               f"{f(s['defaut']['energie_solve_puce_j'], 2)} J, CPU {f(s['defaut']['cpu_w'], 1)} W ; OMP_WAIT_POLICY=PASSIVE "
               f"{f(s['passif']['temps_par_plan_ms'])} ms, {f(s['passif']['energie_solve_puce_j'], 2)} J, CPU {f(s['passif']['cpu_w'], 1)} W ; "
-              f"rapport d'énergie {s['rapport_energie_passif_defaut']:.2f}, de temps {s['rapport_temps_passif_defaut']:.2f}"
+              f"rapport d'énergie {'non calculable' if s['rapport_energie_passif_defaut'] is None else format(s['rapport_energie_passif_defaut'], '.2f')}, "
+              f"de temps {s['rapport_temps_passif_defaut']:.2f}"
               + (" : sensible à OpenMP." if s["sensible"] else ".")]
     br = r["bruit_reference"]
     L += ["", "Dérive : runs torch r1, r2, r3 et final : " + ", ".join(f"{v:.0f} ms" for v in r["derive_torch_ms"]) + " par plan ; écart "

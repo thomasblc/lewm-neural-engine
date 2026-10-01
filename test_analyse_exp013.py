@@ -107,7 +107,7 @@ def fabriquer(racine):
 
     def lecture(h):
         return {"t": h, "processus_run_grid": 0, "thermique": NORMAL, "CurrentCapacity": 80, "ExternalConnected": True,
-                "processus": [[95.0, "python3.10"], [3.0, "WindowServer"]]}
+                "processus": [[95.0, "python:run_grid.py"], [3.0, "WindowServer"]]}
 
     def run(d, nom, rep_facteur, env=None, x=None):
         nonlocal t
@@ -180,6 +180,7 @@ def fabriquer(racine):
                 base = 1.0 + b / 100
                 cas.append({"unite": u, "codage": cod, "lot": b, "placement": {"NeuralEngine" if u == "ne" else "GPU": 300},
                             "octets_poids": 23.2e6, "mesures": [{"repetition": k, "mediane_ms": base * (1 + 0.01 * k), "appels": 100,
+                                                                 "joules": {c_: 3 * v for c_, v in REPOS.items()},
                                                                  "joules_nets_par_appel": {"ANE": 0.01}} for k in (1, 2, 3)]})
     (r / "exp013-balayage-lot.json").write_text(json.dumps({"git": TETE, "essai": False, "lots": [1, 8, 32, 100, 300],
         "codages": ["fp16", "int8", "int4b32", "pal4", "int4c"], "repetitions": 3, "boucle_s": 3.0, "repos_w": REPOS,
@@ -213,6 +214,8 @@ def test_valeurs(tmp):
     assert qp["torch"]["reponse"] == "oui" and qp["coreml-gpu"]["reponse"] == "oui" and qp["interpretable_30"]
     assert res["question_3"]["hors_gpu"] and res["question_3"]["gpu_repos_w"] == [1.0, 1.0]
     assert proche(c["coreml-ne-vision"]["vision_avant_ips"]["mediane"], 100.0, 0.05)      # la chauffe : vision seule
+    assert c["torch-vision"]["vision_latence_p99_max_tranches_ms"]["mediane"] == 20.0
+    assert qp["torch"]["sensible_openmp"] is False and res["question_2"]["vision"]["contrastes"]["ne-complet contre torch"]["sensible_openmp"] == []
     assert res["configurations"]["coreml-ne-int4b32"]["placement"] == {"CPU": 211, "NeuralEngine": 150}
     assert proche(res["vision_seule"]["vision"]["ips"]["mediane"], 100.0) and proche(res["vision_seule"]["vision30"]["ips"]["mediane"], 30.0)
     cmp = res["comparaisons"]
@@ -339,6 +342,13 @@ def test_signalements(tmp, r):
     jsonl_mod("exp013-vision-torch-vision30-r1.jsonl", lambda L: [dict(x, retard=[]) if "fins" in x else x for x in L])(rr)
     res = A13.analyser(rr, verifier=False)
     assert res["configurations"]["torch-vision30"]["energie_planification_30_n"] == 1 and not res["configurations"]["torch-vision30"]["garde_30"]
+    # question 3 fausse : GPU à 0,5 W au-dessus du repos pendant la planification de ne-complet
+    rr = copie(tmp, r, "q3")
+    for k in (1, 2, 3):
+        json_mod(tps(f"exp013-ne-complet-r{k}"), lambda j: j["energie_puce"]["joules_solve"].update(
+            {"GPU Energy": j["energie_puce"]["joules_solve"]["GPU Energy"] + 0.5 * sum(a for a, _ in j["appels_solve"])}))(rr)
+    res = A13.analyser(rr, verifier=False)
+    assert not res["question_3"]["hors_gpu"] and "GPU à X W" in A13.rapport(res)
     # Neural Engine faible sous charge de vision : signalé, pas refusé
     rr = copie(tmp, r, "ane-vision")
     json_mod(tps("exp013-coreml-ne-vision-r1"), lambda j: j["energie_puce"]["joules_solve"].update(ANE=0.5 * sum(a for a, _ in j["appels_solve"])))(rr)
@@ -414,6 +424,7 @@ def test_refus(tmp, r):
            ("OMP_WAIT_POLICY inattendue", json_mod(tps("exp013-sens-coreml-cpu-omp-defaut-1"), lambda j: j["energie_puce"].update(omp={"OMP_WAIT_POLICY": "PASSIVE"}))),
            ("run torch final manquant", lambda rr: shutil.rmtree(rr / "exp013-fin")),
            ("balayage du lot incomplet", json_mod("exp013-balayage-lot.json", lambda j: j["cas"].pop())),
+           ("canal IOReport manquant", json_mod("exp013-balayage-lot.json", lambda j: j["cas"][3]["mesures"][1]["joules"].pop("FAB"))),
            ("init_state différent d'EXP-003", lambda rr: (lambda f: np.savez_compressed(f, **{**dict(np.load(f)), "init_state": np.load(f)["init_state"] + 1}))(
                rr / "exp013-ne-complet-reussite" / "fp32_s43.npz"))]
     for motif, m in cas:
