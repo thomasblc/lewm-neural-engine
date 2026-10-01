@@ -36,6 +36,9 @@ def test_moteurs():
             with tempfile.TemporaryDirectory() as d:
                 info = C.brancher(model, moteur, Path(d) / "p.mlpackage")
                 assert all(torch.equal(v, avant[k]) for k, v in model.state_dict().items()), "poids modifiés"
+                attendu = "NeuralEngine" if moteur == "coreml-ne" else "GPU"
+                assert info["placement"].get(attendu, 0) > 0, (moteur, info["placement"])
+                print(f"ok {tache} {moteur} : placement {info['placement']}", flush=True)
                 for T in (1, 2, 3):
                     emb, act = entrees(model, T, g)
                     with torch.no_grad():
