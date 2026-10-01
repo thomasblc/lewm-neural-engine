@@ -4,7 +4,7 @@ Brouillon rédigé par Claude le 1er octobre 2026 à partir de 18 h 02 (heure du
 d'EXP-013. Figé par le commit enregistré dans les fichiers. Les mesures d'EXP-012 (temps par plan, 50 épisodes de pilote,
 journal d'énergie par composant pendant TwoRoom) sont connues et ont motivé ce plan ; aucun fichier d'EXP-013 n'existe.
 
-## Plan en vigueur (résumé des amendements 1 à 6 ; en cas de doute, les amendements font foi)
+## Plan en vigueur (résumé des amendements 1 à 7 ; en cas de doute, les amendements font foi)
 
 - Machine : MacBook Pro M5 Max, macOS 26.6.2, coremltools 9.0, PyTorch 2.14 (OpenMP, 6 fils). PushT, 50 épisodes de la
   sonde, graine 42, CEM 300 x 30, horizon 5, LeWM publié.
@@ -352,6 +352,20 @@ corrections », 7 P1). Ce qui suit l'emporte sur les amendements précédents.
     au repos et de meta.json ; le lanceur attend aussi vitesse.py, balayage_lot.py et charge_vision.py ; mentions
     OpenMP et « référence bruitée » portées aussi sur la question 2 ; rapport OpenMP non calculable si une énergie est
     nulle ou négative ; canaux contrôlés dans chaque mesure du balayage.
+
+Amendement 7 (1er octobre, 20 h 50, avant tout calcul d'EXP-013 ; code au commit `4563fe2`, tests passés : 36 refus).
+Dernière relecture du code (aucun P0 ; 1 P1, 7 P2) :
+1. Une pause de la garde pendant le chargement, la conversion ou la mise en route d'un run (avant le début des mesures)
+   n'était pas vue : le run aurait été mesuré sur une puce refroidie après la recharge. Tout gel du calcul, à tout moment
+   et pour tous les runs, fait maintenant refaire le run.
+2. Avant un nouvel essai d'un run, l'ancien calcul est attendu jusqu'à sa fin (jamais deux calculs à la fois).
+3. Vision seule : refaite jusqu'à 3 fois si elle ne démarre pas ou s'arrête ; sans aucune image pendant la mesure, refus
+   bloquant clair.
+4. Une mesure au repos encore contaminée au second essai est renommée avant l'arrêt (jamais reprise comme faite).
+5. Question 2 : si la vision de la référence est entièrement affamée (part 0) et pas celle de `ne-complet`, le rapport
+   est infini, donc en faveur de `ne-complet` (au lieu de « non calculable ») ; la mention OpenMP figure aussi dans le
+   tableau des contrastes secondaires.
+6. Le lanceur refuse de partir si une charge de vision tourne déjà (orpheline gelée).
 
 ## Questions
 
