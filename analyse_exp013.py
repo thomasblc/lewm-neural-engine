@@ -16,8 +16,8 @@ import numpy as np
 import analyse_exp003 as A
 import vitesse as V
 
-COMPOSANTS = ("CPU Energy", "GPU Energy", "ANE", "DRAM")
-NOMS = {"CPU Energy": "CPU", "GPU Energy": "GPU", "ANE": "Neural Engine", "DRAM": "mémoire"}
+COMPOSANTS = ("CPU Energy", "GPU Energy", "ANE", "DRAM", "AMCC", "DCS", "FAB")   # puce : calcul, mémoire et son tissu
+NOMS = {"CPU Energy": "CPU", "GPU Energy": "GPU", "ANE": "Neural Engine", "DRAM": "DRAM", "AMCC": "AMCC", "DCS": "DCS", "FAB": "FAB"}
 PLACEMENT = {"coreml-ne": "NeuralEngine", "coreml-gpu": "GPU", "ne-complet": "NeuralEngine"}
 FICHIERS_ANALYSE = ("analyse_exp013.py", "vitesse.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "encodeur_ane.py", "energie_puce.py",
                     "repos_puce.py", "charge_vision.py", "quant.py", "PREREG-EXP013.md")
@@ -56,10 +56,12 @@ def charger(racine, verifier=True):
     for rep in range(1, V.REPETITIONS + 1):
         fr = sorted(r.glob(f"exp013-repos-r{rep}-*.json"))
         A.exiger(fr, f"répétition {rep} : mesure au repos manquante")
-        j = json.loads(fr[-1].read_text())
-        A.exiger(j["calculs_run_grid_vus"] == 0, f"répétition {rep} : un calcul tournait pendant la mesure au repos")
-        repos[rep] = {k: j["joules"].get(k, 0.0) / j["duree_s"] for k in COMPOSANTS}
-        shas.add(j["git"])
+        repos[rep] = []
+        for g in fr:
+            j = json.loads(g.read_text())
+            A.exiger(j["calculs_run_grid_vus"] == 0, f"répétition {rep} : un calcul tournait pendant la mesure au repos")
+            repos[rep].append((j["fin"], {k: j["joules"].get(k, 0.0) / j["duree_s"] for k in COMPOSANTS}))
+            shas.add(j["git"])
         for nom in attendus:
             d = r / f"exp013-{nom}-r{rep}"
             f = d / "fp32_s42.npz"
@@ -71,8 +73,12 @@ def charger(racine, verifier=True):
             moteur = t["moteur"]
             if moteur in PLACEMENT:
                 A.exiger(set(t["coreml"].get("placement", {})) == {PLACEMENT[moteur]}, f"{d.name} : opérations hors du processeur demandé")
+            ts = [y["t"] for y in t.get("lectures", []) if "t" in y]
+            A.exiger(len(ts) >= 2 and not any(b - a > 12.5 for a, b in zip(ts, ts[1:])), f"{d.name} : pause de la garde pendant le run")
+            avant = [w for fin, w in repos[rep] if fin <= t["energie_puce"]["debut"]]
+            A.exiger(avant, f"{d.name} : aucune mesure au repos de la répétition avant le run")
             shas.add(str(x["git"]))
-            runs[(nom, rep)] = {"temps": t, "succes": float(x["success"].mean()), "fichier": f}
+            runs[(nom, rep)] = {"temps": t, "succes": float(x["success"].mean()), "fichier": f, "repos_w": avant[-1]}
     A.exiger(len(shas) == 1, f"EXP-013 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
     ref = r / "pilote-exp012" / "torch" / "fp32_s42.npz"
@@ -113,7 +119,7 @@ def analyser(racine, verifier=True):
         lignes = []
         for rep in range(1, V.REPETITIONS + 1):
             vis = lire_jsonl(r / f"exp013-vision-{nom}-r{rep}.jsonl") if nom.endswith("-vision") else None
-            x = par_run(runs[(nom, rep)], repos[rep], vis)
+            x = par_run(runs[(nom, rep)], runs[(nom, rep)]["repos_w"], vis)
             if nom.endswith("-vision"):
                 A.exiger(x["vision_ips"] is not None, f"{nom} r{rep} : aucune mesure de la charge de vision pendant le run")
             lignes.append(x)
@@ -122,9 +128,11 @@ def analyser(racine, verifier=True):
                     **{f"energie_{NOMS[k]}_j": resume([x["energie_par_plan_j"][k] for x in lignes]) for k in COMPOSANTS},
                     "vision_ips": resume([x["vision_ips"] for x in lignes]), "succes": resume([x["succes"] for x in lignes]),
                     "octets_poids": lignes[0]["octets_poids"]}
-    seule = resume([vision_pendant(lire_jsonl(r / f"exp013-vision-seule-r{rep}.jsonl"), 0, 1e12) for rep in range(1, V.REPETITIONS + 1)])
+    def sans_chauffe(lignes):                       # la vision seule sans ses 10 premières secondes (chauffe)
+        return vision_pendant(lignes, lignes[0]["t0"] + 10, 1e12) if lignes else None
+    seule = resume([sans_chauffe(lire_jsonl(r / f"exp013-vision-seule-r{rep}.jsonl")) for rep in range(1, V.REPETITIONS + 1)])
     return {"controles": {"commit": sha}, "configurations": res, "vision_seule_ips": seule,
-            "repos_w": {f"r{k}": v for k, v in repos.items()}, "reussite_ne_complet": reussite(r, sha)}
+            "repos_w": {f"r{k}": [w for _, w in v] for k, v in repos.items()}, "reussite_ne_complet": reussite(r, sha)}
 
 
 def reussite(r, sha):
@@ -151,6 +159,7 @@ def rapport(r):
     L = ["# EXP-013 : vitesse, énergie et mémoire de la planification (analyse pré-enregistrée, descriptive)", "",
          f"Contrôles passés, commit {r['controles']['commit'][:7]} ; runs torch identiques au pilote d'EXP-012. Médiane des 3 "
          "répétitions (minimum à maximum).", "",
+         "Énergie de la puce : CPU, GPU, Neural Engine, DRAM et tissu mémoire (AMCC, DCS, FAB), au-dessus du repos.", "",
          "| Configuration | Temps par plan (ms) | Énergie de la puce par plan (J) | dont GPU | dont Neural Engine | dont CPU | Vision (images/s) | Poids (Mo) | Réussite (contrôle) |",
          "| --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for nom, c in r["configurations"].items():

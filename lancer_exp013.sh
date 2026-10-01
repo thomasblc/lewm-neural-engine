@@ -45,7 +45,7 @@ attendre_gpu() {
   done
 }
 
-# EXP-011 passe après EXP-012 : son lanceur n'est pas attendu ici (il attend celui-ci), sinon les deux s'attendraient ;
+# EXP-013 passe après EXP-011 et EXP-012 : leurs lanceurs sont attendus ici, et eux n'attendent pas celui-ci ;
 # un calcul run_grid d'EXP-011 en cours reste vu par le premier motif.
 # motifs ancrés sur l'exécutable : une commande qui cite seulement ces noms (un appel de shell, un test) ne compte pas
 autre_calcul() {

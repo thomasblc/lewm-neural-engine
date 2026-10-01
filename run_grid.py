@@ -395,6 +395,8 @@ def main():
             model = model.to(args.device).eval()
             model.requires_grad_(False)
             model.interpolate_pos_encoding = True
+            if args.moteur == "torch-fp16":                   # EXP-013 : poids en float16 une fois pour toutes
+                model = model.half()
             moteur = coreml_pred.brancher(model, args.moteur, out / f"{f.stem}.mlpackage", args.codage)   # {} pour torch
             recs, temps = [], []
             e0 = compteur.lire() if compteur else None

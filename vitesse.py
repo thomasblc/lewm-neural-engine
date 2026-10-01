@@ -44,12 +44,28 @@ def run(racine, dossier, moteur, codage, n=50, graines=(42,)):
     cmd = [PY, "run_grid.py", "--out", str(racine / dossier), "--n", str(n), "--chunk", "50", "--specs", "fp32",
            "--seeds", *map(str, graines), "--moteur", moteur, "--energie-puce"] + \
         ([] if moteur.startswith("torch") else ["--codage", codage]) + (["--device", "cpu"] if moteur == "ne-complet" else [])
-    dire(f"[run] {dossier}")
-    subprocess.run(["caffeinate", "-i"] + cmd, check=True, stdout=subprocess.DEVNULL)
+    for essai in (1, 2, 3):
+        dire(f"[run] {dossier}" + (f" (essai {essai})" if essai > 1 else ""))
+        subprocess.run(["caffeinate", "-i"] + cmd, check=True, stdout=subprocess.DEVNULL)
+        if graines != (42,) or not pause_pendant(racine / dossier):
+            return
+        dire(f"[pause] {dossier} : pause de la garde pendant le run, run refait")
+        for g in graines:
+            for suffixe in (".npz", ".temps.json"):
+                (racine / dossier / f"fp32_s{g}{suffixe}").unlink(missing_ok=True)
+    raise SystemExit(f"[arrêt] {dossier} : pause pendant 3 essais")
 
 
 def charge_vision(racine, etiquette):
-    return subprocess.Popen([PY, "charge_vision.py", str(racine / f"exp013-vision-{etiquette}.jsonl"), "1800"])
+    return subprocess.Popen([PY, "charge_vision.py", str(racine / f"exp013-vision-{etiquette}.jsonl"), str(4 * 3600)])
+
+
+def pause_pendant(dossier):
+    """Vrai si le fil de lecture du run a été gelé plus de 12,5 s (pause de la garde de batterie) : lectures toutes les
+    5 s dans le fichier de temps."""
+    t = json.loads((dossier / "fp32_s42.temps.json").read_text())
+    ts = [x["t"] for x in t["lectures"] if "t" in x]
+    return any(b - a > 12.5 for a, b in zip(ts, ts[1:]))
 
 
 def arreter(p):
@@ -74,19 +90,28 @@ def main():
     racine = Path(a.racine).resolve()
     rng = np.random.default_rng(13)
     configs = [(m, c, False) for m, c in SANS_CHARGE] + [(m, c, True) for m, c in AVEC_CHARGE] + [("charge-seule", "", True)]
-    ordres = [rng.permutation(len(configs)).tolist() for _ in range(REPETITIONS)]
+    ordres = []
+    for _ in range(REPETITIONS):                      # la charge seule jamais en premier : la garde voit un calcul tout de suite
+        o = rng.permutation(len(configs)).tolist()
+        if configs[o[0]][0] == "charge-seule":
+            o[0], o[1] = o[1], o[0]
+        ordres.append(o)
     (racine / "exp013-ordre.json").write_text(json.dumps({"configs": [nom(*c) for c in configs], "ordres": ordres}, indent=1))
     for r, ordre in enumerate(ordres, start=1):
-        # repos : 45 s de stabilisation et 75 s de mesure (moins de 3 min sans calcul : la garde ne croit pas à un arrêt)
-        subprocess.run([PY, "repos_puce.py", str(racine), f"r{r}", "75", "45"], check=True)
+        # repos : 30 s de stabilisation et 60 s de mesure (moins de 2 min sans calcul : la garde ne croit pas à un arrêt) ;
+        # jamais refait à la reprise, pour que chaque run garde la mesure faite avant lui
+        if not list(racine.glob(f"exp013-repos-r{r}-*.json")):
+            subprocess.run([PY, "repos_puce.py", str(racine), f"r{r}", "60", "30"], check=True)
         for i in ordre:
             m, c, charge = configs[i]
             if m == "charge-seule":                    # vitesse de référence de la vision, placée au hasard dans l'ordre
                 if not (racine / f"exp013-vision-seule-r{r}.jsonl").exists():
                     dire(f"[charge seule] r{r}")
                     p = charge_vision(racine, f"seule-r{r}")
-                    time.sleep(60)
-                    arreter(p)
+                    try:
+                        time.sleep(45)
+                    finally:
+                        arreter(p)
                 continue
             dossier = f"exp013-{nom(m, c, charge)}-r{r}"
             if charge:
@@ -94,8 +119,10 @@ def main():
                     dire(f"[saut] {dossier}")
                     continue
                 p = charge_vision(racine, f"{nom(m, c, charge)}-r{r}")
-                time.sleep(30)
                 try:
+                    time.sleep(15)
+                    if p.poll() is not None:
+                        raise SystemExit(f"[arrêt] la charge de vision s'est arrêtée avant {dossier}")
                     run(racine, dossier, m, c)
                 finally:
                     arreter(p)

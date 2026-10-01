@@ -22,13 +22,14 @@ RES = A13.ICI.parent / "resultats"
 TETE = subprocess.run(["git", "-C", str(A13.ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 PROPRE = subprocess.run(["git", "-C", str(A13.ICI), "status", "--porcelain", "--untracked-files=no"],
                         capture_output=True, text=True).stdout.strip() == ""
-REPOS = {"CPU Energy": 2.0, "GPU Energy": 1.0, "ANE": 0.0, "DRAM": 0.5}          # W
+REPOS = {"CPU Energy": 2.0, "GPU Energy": 1.0, "ANE": 0.0, "DRAM": 0.5, "AMCC": 1.0, "DCS": 0.5, "FAB": 0.5}   # W
 
 
 def puissance(nom):                                    # W pendant le run, par composant
     gpu = 30.0 if "torch" in nom or "coreml-gpu" in nom else 1.0
     ane = 4.0 if "coreml-ne" in nom or "ne-complet" in nom else 0.0
-    return {"CPU Energy": 6.0, "GPU Energy": gpu + (20.0 if nom.endswith("-vision") else 0.0), "ANE": ane, "DRAM": 1.5}
+    return {"CPU Energy": 6.0, "GPU Energy": gpu + (20.0 if nom.endswith("-vision") else 0.0), "ANE": ane, "DRAM": 1.5,
+            "AMCC": 2.0, "DCS": 1.0, "FAB": 1.0, "DISP": 0.3}
 
 
 def fabriquer(racine):
@@ -42,7 +43,8 @@ def fabriquer(racine):
     t = 1000.0
     for rep in (1, 2, 3):
         (r / f"exp013-repos-r{rep}-{int(t)}.json").write_text(json.dumps({
-            "joules": {k: v * 75 for k, v in REPOS.items()}, "duree_s": 75.0, "calculs_run_grid_vus": 0, "git": TETE}))
+            "joules": {k: v * 75 for k, v in REPOS.items()}, "duree_s": 75.0, "debut": t, "fin": t + 75,
+            "calculs_run_grid_vus": 0, "git": TETE}))
         t += 200
         lignes_seule = [{"t0": t + 5 * i, "t1": t + 5 * (i + 1), "images": 500} for i in range(12)]   # 100 images/s
         (r / f"exp013-vision-seule-r{rep}.jsonl").write_text("\n".join(json.dumps(x) for x in lignes_seule) + "\n")
@@ -68,7 +70,8 @@ def fabriquer(racine):
                           "octets_poids": {"int8": 11e6, "int4b32": 6e6, "pal4": 5.5e6}.get(nom.split("-")[2] if nom.count("-") >= 2 and "vision" not in nom else "", 21.5e6)}
             (d / "fp32_s42.temps.json").write_text(json.dumps({
                 "moteur": nom.replace("-vision", "").rsplit("-int", 1)[0].rsplit("-pal", 1)[0], "git": TETE, "appels_solve": appels,
-                "plans": plans, "coreml": coreml, "energie_puce": {"joules": j, "duree_s": duree, "debut": t}}))
+                "plans": plans, "coreml": coreml, "energie_puce": {"joules": j, "duree_s": duree, "debut": t},
+                "lectures": [{"t": t + 5 * i} for i in range(25)]}))
             if nom.endswith("-vision"):
                 lv = [{"t0": t + 5 * i, "t1": t + 5 * (i + 1), "images": 300 if "coreml-ne" in nom else 200} for i in range(24)]
                 (r / f"exp013-vision-{nom}-r{rep}.jsonl").write_text("\n".join(json.dumps(x) for x in lv) + "\n")
@@ -151,7 +154,9 @@ def test_refus(tmp, r):
            ("configurations différentes", json_mod("exp013-ordre.json", lambda j: j.update(configs=j["configs"][:5]))),
            ("init_state différent d'EXP-003", champ("exp013-ne-complet-reussite", "init_state", lambda x: x["init_state"] + 1) if False else
             (lambda rr: (lambda f: np.savez_compressed(f, **{**dict(np.load(f)), "init_state": np.load(f)["init_state"] + 1}))(rr / "exp013-ne-complet-reussite" / "fp32_s43.npz"))),
-           ("hors du processeur demandé", json_mod("exp013-ne-complet-r2/fp32_s42.temps.json", lambda j: j["coreml"].update(placement={"NeuralEngine": 200, "GPU": 5})))]
+           ("hors du processeur demandé", json_mod("exp013-ne-complet-r2/fp32_s42.temps.json", lambda j: j["coreml"].update(placement={"NeuralEngine": 200, "GPU": 5}))),
+           ("pause de la garde", json_mod("exp013-coreml-ne-r3/fp32_s42.temps.json", lambda j: j.update(lectures=[{"t": 0}, {"t": 5}, {"t": 600}]))),
+           ("aucune mesure au repos de la répétition avant", json_mod("exp013-torch-fp16-r1/fp32_s42.temps.json", lambda j: j["energie_puce"].update(debut=0)))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")

@@ -337,8 +337,10 @@ def chronometrer(solver, temps):
 
 
 def autocast_fp16(solver):
-    """EXP-013, moteur torch-fp16 : la planification sous torch.autocast en float16 sur le GPU (PyTorch), témoin du 16 bits
-    sans Core ML."""
+    """EXP-013, moteur torch-fp16 : poids du modèle convertis une fois en float16 (run_grid appelle model.half()), tirages
+    et coût de la CEM gardés en float32 (solver._dtype), et torch.autocast en float16 sur le GPU pour les entrées en
+    float32 (pixels, actions) : témoin du 16 bits dans PyTorch, sans reconversion des poids à chaque appel."""
+    solver._dtype = torch.float32
     solve = solver.solve
 
     def solve_fp16(*a, **k):
