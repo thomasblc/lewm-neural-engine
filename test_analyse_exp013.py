@@ -130,7 +130,7 @@ def test_refus(tmp, r):
            ("un calcul tournait", lambda rr: json_mod(repos2(rr), lambda j: j.update(calculs_run_grid_vus=1))(rr)),
            ("manquant", lambda rr: (rr / "exp013-coreml-ne-pal4-r2" / "fp32_s42.npz").unlink()),
            ("hors du processeur demandé", json_mod("exp013-coreml-ne-r1/fp32_s42.temps.json", lambda j: j["coreml"].update(placement={"NeuralEngine": 200, "CPU": 100}))),
-           ("aucune mesure de la charge", lambda rr: (rr / "exp013-coreml-gpu-vision-r3.jsonl").unlink()),
+           ("aucune mesure de la charge", lambda rr: (rr / "exp013-vision-coreml-gpu-vision-r3.jsonl").unlink()),
            ("différent du pilote", champ("exp013-torch-r2", "success", lambda x: ~x["success"])),
            ("différent du pilote", champ("exp013-fin", "start_steps", lambda x: x["start_steps"] + 1)),
            ("plusieurs commits", lambda rr: (champ("exp013-torch-fp16-r1", "git", lambda x: np.str_("b" * 40))(rr),
