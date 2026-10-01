@@ -26,7 +26,7 @@ TACHES = {  # dossier, référence fp32, calibration d'EXP-009, évaluations à 
     "tworoom": {"dossier": "exp011-tworoom", "fp32": "exp006", "calib": "exp009-calib-tworoom", "evals": ("exp006",)},
 }
 TESTS = (("G1", "pusht", "gptq_rtn"), ("G2", "tworoom", "gptq_rtn"), ("N1", "pusht", "gptq_fp32"), ("N2", "tworoom", "gptq_fp32"))
-FICHIERS_ANALYSE = ("analyse_exp011.py", "analyse_exp009.py", "analyse_exp006.py", "analyse_exp003.py", "metriques.py",
+FICHIERS_ANALYSE = ("analyse_exp011.py", "erreur_reconstruction.py", "analyse_exp009.py", "analyse_exp006.py", "analyse_exp003.py", "metriques.py",
                     "gptq.py", "quant.py", "run_grid.py", "verifier_gptq.py", "PREREG-EXP011.md")
 ICI = Path(__file__).resolve().parent
 
@@ -50,8 +50,13 @@ def charger(racine, verifier=True, calib_torch=True):
         A9.identiques(r / f"exp011-repro-{t}" / "fp32_s42.npz", r / c["fp32"] / "fp32_s42.npz", f"reproduction {t}")
         proto = json.loads((r / c["dossier"] / "meta.json").read_text())["protocole"]
         fcal = r / c["calib"] / "calib.pt"
-        A.exiger(proto.get("gptq_calib", {}).get("sha256") == hashlib.sha256(fcal.read_bytes()).hexdigest(),
-                 f"{t} : calibration différente de celle du protocole")
+        sha_cal = hashlib.sha256(fcal.read_bytes()).hexdigest()
+        A.exiger(proto.get("gptq_calib", {}).get("sha256") == sha_cal, f"{t} : calibration différente de celle du protocole")
+        p9 = json.loads((r / f"exp009-{t}" / "meta.json").read_text())["protocole"]
+        A.exiger(p9.get("gptq_calib", {}).get("sha256") == sha_cal, f"{t} : calibration différente de celle d'EXP-009")
+        reste = {k: v for k, v in proto.items() if k != "gptq_calib"}
+        A.exiger(reste == json.loads((r / c["fp32"] / "meta.json").read_text())["protocole"],
+                 f"{t} : protocole différent de celui de la référence {c['fp32']}")
         A.exiger(proto.get("tache", "pusht") == t and proto["n"] == 500, f"{t} : protocole")
         if calib_torch:
             import torch
@@ -86,6 +91,9 @@ def charger(racine, verifier=True, calib_torch=True):
             K[(t, v)] = S
     A.exiger(len(shas) == 1, f"EXP-011 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
+    for t in TACHES:                                 # la reproduction vient du même commit, arbre propre
+        x = np.load(r / f"exp011-repro-{t}" / "fp32_s42.npz")
+        A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"reproduction {t} : autre commit ou arbre modifié")
     if verifier:
         verifier_code(sha)
     return K, sha

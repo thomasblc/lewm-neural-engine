@@ -1,15 +1,23 @@
 # Pré-enregistrement d'EXP-011 : le prédicteur à 2 bits avec GPTQ, sur PushT et TwoRoom
 
-Rédigé par Claude le 1er octobre 2026 vers 11 h 45, avant tout calcul d'EXP-011 (seules ont été calculées, sur la
-calibration d'EXP-009 et sans aucun épisode d'évaluation, des erreurs de reconstruction des couches : voir
-Motivation). Figé par le commit enregistré dans les fichiers.
+Rédigé par Claude le 1er octobre 2026 entre 11 h 20 et 11 h 28 (heure du Mac), avant tout calcul d'EXP-011 (seules
+ont été calculées, sur la calibration d'EXP-009 et sans aucun épisode d'évaluation, des erreurs de reconstruction des
+couches : voir Motivation). Figé par le commit enregistré dans les fichiers.
+
+Amendement 1 (1er octobre, vers 12 h, avant tout calcul : le lanceur attendait le GPU et a été arrêté à 11 h 43 sans
+avoir écrit de fichier). Suite à la relecture du commit `d3f0dda` : l'heure de rédaction ci-dessus est corrigée (le
+texte d'origine disait « vers 11 h 45 », alors que le commit qui le figeait date de 11 h 28) ; les erreurs de
+reconstruction citées sont produites par `erreur_reconstruction.py` (sortie dans `resultats/exp011-preparation/`) ;
+l'analyse vérifie en plus le protocole entier contre celui de la référence, la calibration contre celle d'EXP-009 et
+le commit de la reproduction ; les tests de l'analyse couvrent des p intermédiaires et la correction de Holm. Les
+hypothèses, les versions, les tests et les marges ne changent pas.
 
 ## Motivation et question
 
 Le prédicteur est la partie appelée à chaque pas de la CEM (150 appels par plan, contre un seul pour l'encodeur) :
 c'est lui qu'il faut compresser pour décider plus vite. Il est aussi la partie robuste : à 3 bits en RTN, il ne
 coûte que 2,2 points sur PushT (EXP-003, intervalle 0,2 à 4,3). Sur la calibration d'EXP-009, l'erreur de
-reconstruction du prédicteur (rapportée à celle de tout mettre à zéro) vaut, sur PushT, 0,023 en RTN à 3 bits, 0,248
+reconstruction du prédicteur (rapportée à celle de tout mettre à zéro, `erreur_reconstruction.py`) vaut, sur PushT, 0,023 en RTN à 3 bits, 0,248
 en RTN à 2 bits et 0,070 en GPTQ à 2 bits (TwoRoom : 0,021, 0,267, 0,060). Question : à 2 bits, GPTQ rend-il le
 prédicteur utilisable, et à quel prix ?
 
@@ -39,7 +47,7 @@ K(e, v) : nombre de succès de l'épisode e sur les 5 graines.
   seulement si l'écart moyen de réussite dépasse -3 points), sens « plus ».
 
 Soutenue si la p corrigée par Holm (sur les 4) est sous 0,05. Marge de 3 points : demi-intervalle à 95 % attendu de
-0,9 à 2,0 points à 500 épisodes et 5 graines (écarts du prédicteur à 4 et 3 bits dans EXP-003 et EXP-006).
+0,9 à 2,0 points à 500 épisodes et 5 graines (écarts du prédicteur à 4 et 3 bits dans EXP-003, EXP-006 et EXP-008).
 
 Descriptifs, avec intervalles bootstrap (`default_rng(2)`) : réussites ; GPTQ moins RTN ; GPTQ moins pleine précision ;
 part de la perte de RTN rattrapée comme dans EXP-009 ; sur PushT, GPTQ à 2 bits moins RTN à 3 bits (EXP-003, à
