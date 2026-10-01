@@ -28,7 +28,12 @@ import torch.nn.functional as F
 
 import predicteur_ane as P
 
-MOTEURS = ("torch", "torch-fp16", "coreml-gpu", "coreml-ne", "ne-complet")
+MOTEURS = ("torch", "torch-fp16", "coreml-gpu", "coreml-ne", "ne-complet", "coreml-cpu")
+APPELS = {"n": 0, "coreml_s": 0.0, "total_s": 0.0}   # EXP-013 : temps dans l'appel Core ML et autour (conversions, transferts)
+
+
+def remise_a_zero_appels():
+    APPELS.update(n=0, coreml_s=0.0, total_s=0.0)
 CODAGES = ("fp16", "int8", "int4b32", "pal4")      # EXP-013 : codage des poids dans Core ML
 
 
@@ -156,7 +161,7 @@ def _module_coreml(module, entrees, chemin, cu, codage):
                "octets_poids": sum(x.stat().st_size for x in chemin.rglob("weight.bin"))}
 
 
-def brancher_complet(model, chemin, codage="fp16"):
+def brancher_complet(model, chemin, codage="fp16", unite="ne"):
     """EXP-013, moteur ne-complet : tout le world model sur le Neural Engine (prédicteur réécrit « 1ctb », encodeur
     d'images réécrit en (B, C, 1, S) et encodeur d'actions réécrit, encodeur_ane.py), la CEM et le coût sur le CPU (le
     calcul run_grid doit tourner avec --device cpu). L'encodeur d'images n'est appelé que 2 fois par plan (but et
@@ -164,8 +169,11 @@ def brancher_complet(model, chemin, codage="fp16"):
     import coremltools as ct
     import encodeur_ane as E
     assert next(model.parameters()).device.type == "cpu", "ne-complet : modèle sur le CPU (--device cpu)"
-    cu = ct.ComputeUnit.CPU_AND_NE
+    cu = ct.ComputeUnit.CPU_AND_NE if unite == "ne" else ct.ComputeUnit.CPU_ONLY   # coreml-cpu : témoin hors GPU sans Neural Engine
     m_pred, info = convertir(model, "coreml-ne", Path(str(chemin) + "-predicteur.mlpackage"), codage)
+    if unite != "ne":
+        m_pred = ct.models.MLModel(str(Path(str(chemin) + "-predicteur.mlpackage")), compute_units=cu)
+        info["placement"] = placement(m_pred, cu)
     g = torch.Generator().manual_seed(0)
     m_enc, i_enc = _module_coreml(E.CoeurEncodeurANE(model).eval(), {"pixels": torch.randn(1, 3, E.TAILLE, E.TAILLE, generator=g)},
                                   Path(str(chemin) + "-encodeur.mlpackage"), cu, codage)
@@ -175,14 +183,21 @@ def brancher_complet(model, chemin, codage="fp16"):
     disp = info["disposition"]
 
     def predict(emb, act_emb):
+        t0 = time.perf_counter()
         B, T, _ = emb.shape
         assert B == LOT and T <= T_FIXE, (B, T)
         if T < T_FIXE:
             emb = F.pad(emb, (0, 0, 0, T_FIXE - T))
             act_emb = F.pad(act_emb, (0, 0, 0, T_FIXE - T))
         e, a = P.vers_disposition(emb.detach().float().numpy(), disp), P.vers_disposition(act_emb.detach().float().numpy(), disp)
-        y = P.depuis_disposition(list(m_pred.predict({"emb": np.ascontiguousarray(e), "act": np.ascontiguousarray(a)}).values())[0], disp)
-        return torch.from_numpy(np.ascontiguousarray(y[:, :T], dtype=np.float32))
+        t1 = time.perf_counter()
+        y = list(m_pred.predict({"emb": np.ascontiguousarray(e), "act": np.ascontiguousarray(a)}).values())[0]
+        t2 = time.perf_counter()
+        r = torch.from_numpy(np.ascontiguousarray(P.depuis_disposition(y, disp)[:, :T], dtype=np.float32))
+        APPELS["n"] += 1
+        APPELS["coreml_s"] += t2 - t1
+        APPELS["total_s"] += time.perf_counter() - t0
+        return r
 
     model.predict = predict
     model.action_encoder.forward = E.actions_coreml(m_act)
@@ -191,7 +206,8 @@ def brancher_complet(model, chemin, codage="fp16"):
     for d in (info["placement"], i_enc["placement"], i_act["placement"]):
         for k, v in d.items():
             placements[k] = placements.get(k, 0) + v
-    return {"moteur": "ne-complet", "disposition": "1ctb, (B, C, 1, S), 1ctb", "precision": "float16", "codage": codage,
+    return {"moteur": "ne-complet" if unite == "ne" else "coreml-cpu", "disposition": "1ctb, (B, C, 1, S), 1ctb",
+            "precision": "float16", "codage": codage,
             "coremltools": info["coremltools"], "macos": info["macos"], "fichier": Path(chemin).name,
             "sha256_poids": "|".join(x["sha256_poids"] for x in (info, i_enc, i_act)),
             "sha256_modele": "|".join(x["sha256_modele"] for x in (info, i_enc, i_act)),
@@ -204,12 +220,13 @@ def brancher(model, moteur, chemin, codage="fp16"):
     """Remplace model.predict par l'appel Core ML. Rend la description (vide pour les moteurs PyTorch)."""
     if moteur in ("torch", "torch-fp16"):
         return {}
-    if moteur == "ne-complet":
-        return brancher_complet(model, str(chemin).removesuffix(".mlpackage"), codage)
+    if moteur in ("ne-complet", "coreml-cpu"):
+        return brancher_complet(model, str(chemin).removesuffix(".mlpackage"), codage, "ne" if moteur == "ne-complet" else "cpu")
     m, info = convertir(model, moteur, chemin, codage)
     disp = None if info["disposition"] == "origine" else info["disposition"]
 
     def predict(emb, act_emb):
+        t0 = time.perf_counter()
         B, T, _ = emb.shape
         assert B == LOT and T <= T_FIXE, (B, T)
         if T < T_FIXE:
@@ -218,9 +235,15 @@ def brancher(model, moteur, chemin, codage="fp16"):
         e, a = emb.detach().to("cpu", torch.float32).numpy(), act_emb.detach().to("cpu", torch.float32).numpy()
         if disp is not None:
             e, a = P.vers_disposition(e, disp), P.vers_disposition(a, disp)
+        t1 = time.perf_counter()
         y = list(m.predict({"emb": np.ascontiguousarray(e), "act": np.ascontiguousarray(a)}).values())[0]
+        t2 = time.perf_counter()
         y = y if disp is None else P.depuis_disposition(y, disp)
-        return torch.from_numpy(np.ascontiguousarray(y[:, :T], dtype=np.float32)).to(emb.device, emb.dtype)
+        r = torch.from_numpy(np.ascontiguousarray(y[:, :T], dtype=np.float32)).to(emb.device, emb.dtype)
+        APPELS["n"] += 1
+        APPELS["coreml_s"] += t2 - t1
+        APPELS["total_s"] += time.perf_counter() - t0
+        return r
 
     model.predict = predict
     return info
@@ -316,7 +339,7 @@ def resume_puissance(lectures, pas=5.0):
             "segments": len(segments)}
 
 
-def chronometrer(solver, temps):
+def chronometrer(solver, temps, compteur=None, energie=None):
     """Ajoute à la liste temps, pour chaque appel de solve (tous les épisodes encore en cours d'un paquet, planifiés
     l'un après l'autre, 12 à 50 plans), le couple (durée en s, nombre de plans) ; temps moyen par plan de l'appel =
     durée / nombre. Une pause de la garde de batterie (SIGSTOP) tombe dans la durée de l'appel en cours : à résumer
@@ -326,11 +349,16 @@ def chronometrer(solver, temps):
     def solve_chrono(*a, **k):
         if torch.backends.mps.is_available():
             torch.mps.synchronize()
+        e0 = compteur.lire() if compteur else None
         t0 = time.perf_counter()
         r = solve(*a, **k)
         if torch.backends.mps.is_available():
             torch.mps.synchronize()
         temps.append((time.perf_counter() - t0, int(r["actions"].shape[0])))
+        if compteur:                                   # EXP-013 : énergie pendant la planification seule
+            j, _ = compteur.ecart(e0, compteur.lire())
+            for k_, v in j.items():
+                energie[k_] = energie.get(k_, 0.0) + v
         return r
     solver.solve = solve_chrono
     return solver
@@ -348,3 +376,19 @@ def autocast_fp16(solver):
             return solve(*a, **k)
     solver.solve = solve_fp16
     return solver
+
+
+def echauffer(model, moteur):
+    """EXP-013 : mise en route avant la mesure (compilation des noyaux du GPU, premier appel Core ML) : un appel du
+    prédicteur, de l'encodeur d'actions et de l'encodeur sur des entrées de la bonne forme, hors des mesures."""
+    dev = next(model.parameters()).device
+    dt = next(model.parameters()).dtype
+    D = model.predictor.pos_embedding.shape[-1]
+    nb = model.action_encoder.patch_embed.in_channels
+    with torch.no_grad(), torch.autocast(device_type="mps", dtype=torch.float16, enabled=moteur == "torch-fp16"):
+        emb = torch.zeros(LOT, T_FIXE, D, device=dev, dtype=torch.float32 if moteur != "torch-fp16" else dt)
+        act = model.action_encoder(torch.zeros(LOT, 5, nb, device=dev, dtype=emb.dtype))
+        model.predict(emb, act[:, :T_FIXE])
+        model.encode({"pixels": torch.zeros(1, 1, 3, 224, 224, device=dev, dtype=emb.dtype)})
+    if dev.type == "mps":
+        torch.mps.synchronize()

@@ -21,6 +21,7 @@ Usage :
 import argparse
 import hashlib
 import platform
+import resource
 import json
 import os
 import subprocess
@@ -348,8 +349,8 @@ def main():
                                    "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
     if args.calibrer_gptq:
         protocole["calibration_gptq"] = True
-    if args.moteur == "ne-complet" and args.device != "cpu":
-        sys.exit("ne-complet : la CEM tourne sur le CPU, lancer avec --device cpu")
+    if args.moteur in ("ne-complet", "coreml-cpu") and args.device != "cpu":
+        sys.exit(f"{args.moteur} : la CEM tourne sur le CPU, lancer avec --device cpu")
     if args.moteur == "torch-fp16":                           # EXP-013, absent des protocoles précédents
         protocole["moteur"] = {"nom": args.moteur, "macos": platform.mac_ver()[0], "precision": "float16 (autocast)"}
     elif args.moteur != "torch":                              # absent des protocoles précédents
@@ -398,7 +399,12 @@ def main():
             if args.moteur == "torch-fp16":                   # EXP-013 : poids en float16 une fois pour toutes
                 model = model.half()
             moteur = coreml_pred.brancher(model, args.moteur, out / f"{f.stem}.mlpackage", args.codage)   # {} pour torch
-            recs, temps = [], []
+            recs, temps, energie_solve = [], [], {}
+            if args.energie_puce:                          # EXP-013 : mise en route hors mesure, compteurs à zéro
+                coreml_pred.echauffer(model, args.moteur)
+                coreml_pred.remise_a_zero_appels()
+            octets_torch = sum(q.numel() * q.element_size() for q in model.parameters()) if not moteur else None
+            ru0 = resource.getrusage(resource.RUSAGE_SELF)
             e0 = compteur.lire() if compteur else None
             with coreml_pred.Puissance() as puissance:
                 for c in range(args.n // args.chunk):
@@ -406,7 +412,7 @@ def main():
                     solver = CEMParEpisode(model=model, graine=seed, **solver_kw)
                     if args.moteur == "torch-fp16":
                         solver = coreml_pred.autocast_fp16(solver)
-                    solver = coreml_pred.chronometrer(solver, temps)
+                    solver = coreml_pred.chronometrer(solver, temps, compteur, energie_solve)
                     policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
                                                          process=process, transform=transform)
                     world.set_policy(policy)
@@ -414,7 +420,11 @@ def main():
             energie_fichier = None
             if compteur:
                 j, dt = compteur.ecart(e0, compteur.lire())
-                energie_fichier = {"joules": j, "duree_s": dt, "debut": e0[0]}
+                ru1 = resource.getrusage(resource.RUSAGE_SELF)
+                energie_fichier = {"joules": j, "duree_s": dt, "debut": e0[0], "joules_solve": energie_solve,
+                                   "cpu_s": (ru1.ru_utime + ru1.ru_stime) - (ru0.ru_utime + ru0.ru_stime),
+                                   "maxrss_octets": ru1.ru_maxrss, "appels_predict": dict(coreml_pred.APPELS),
+                                   "octets_modele_torch": octets_torch}
             data = {}
             for k in recs[0]:
                 if k in ("init_state", "goal_state") or recs[0][k].ndim < 2:
