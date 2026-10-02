@@ -246,7 +246,7 @@ def test_refus(tmp, r):
     rr = Path(tmp) / "temoin"                                # témoin 16 bits différent d'EXP-012 : rapporté, pas bloquant
     shutil.rmtree(rr, ignore_errors=True)
     shutil.copytree(r, rr)
-    champ("exp014-ne16-pusht", "fp32_s42.npz", "success", lambda x: ~x["success"])(rr)
+    champ("exp014-ne16-pusht", "fp32_s42.npz", "positions", lambda x: x["positions"][::-1].copy())(rr)
     res = A14.analyser(rr, verifier=False)
     assert not res["descriptifs"]["pusht"]["temoin_ne16_identique_exp012"] and "autre session" in A14.rapport(res)
     print("ok témoin 16 bits différent d'EXP-012 : rapporté, non bloquant")
