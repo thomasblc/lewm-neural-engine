@@ -76,9 +76,10 @@ def fabriquer(racine, scenario="A", session=False, avec_sp=False):
     r = Path(racine)
     shutil.copytree(RES / "exp003", r / "exp003", ignore=shutil.ignore_patterns("*.log"))
     S = SOURCES[scenario]
-    for d, g in (("exp015-repro-pusht", 42), ("exp015-fin-pusht", 46)):
-        (r / d).mkdir()
-        ecrire(r / d / f"fp32_s{g}.npz", np.load(r / "exp003" / f"fp32_s{g}.npz"))
+    for pre, git in (("exp015", TETE), ("exp012", GIT12), ("exp014", GIT14)):   # reproductions de chaque expérience
+        for d, g in ((f"{pre}-repro-pusht", 42), (f"{pre}-fin-pusht", 46)):
+            (r / d).mkdir()
+            ecrire(r / d / f"fp32_s{g}.npz", np.load(r / "exp003" / f"fp32_s{g}.npz"), git)
     bras_ne(r, "exp012-ne-pusht", "fp16", S["ne16"], GIT12)
     bras_ne(r, "exp014-int4c-pusht", "int4c", S["int4c"], GIT14)
     # runs refaits dans la session ; session=True : différents des séries réutilisées, séries refaites sur 5 graines
@@ -100,8 +101,11 @@ def fabriquer(racine, scenario="A", session=False, avec_sp=False):
             x["positions"] = x["positions"][::-1].copy()
             np.savez_compressed(r / dd / f, **x)
     (r / "exp015-etape0b").mkdir()
-    (r / "exp015-etape0b" / "resultats.json").write_text(json.dumps({"git": TETE, "git_sale": False, "resume": {"fp16": {}},
-                                                                     "sp_et_bl_identiques_sur_le_neural_engine": not avec_sp}))
+    codages = {c: {"sha256_poids": f"sha-{c}" * 4} for c in ("fp16", "int4c", "int4c-bl", "int4c-pp", "int4c-sp", "pal4")}
+    (r / "exp015-etape0b" / "resultats.json").write_text(json.dumps({
+        "git": TETE, "git_sale": False, "valide": True, "coremltools": "9.0", "macos": "26.6.2", "codages": codages,
+        "R1": {c: "H2 écartée" for c in codages if c != "fp16"}, "resume": {"fp16": {}},
+        "sp_et_bl_identiques_sur_le_neural_engine": not avec_sp}))
     return r
 
 
@@ -143,19 +147,22 @@ def series(r, session=False):
             "pp": K(r, "exp015-int4c-pp-pusht"), "s_pp": K(r, "exp015-sim-pusht", "predproj:4"), "s_pr": K(r, "exp015-sim-pusht", "predict:4")}
 
 
-def verifier(r, res, session=False):
+def verifier(r, res, session=False, avec_sp=False):
     S = series(r, session)
+    if avec_sp:
+        S["sp"] = K(r, "exp015-int4c-sp-pusht")
     ps = []
-    for nom, b, sorte in A15.TESTS:
-        ref = "fp32" if b.startswith("s_") else "ne16"
+    famille = A15.TESTS + ((A15.L5,) if avec_sp else ())
+    assert list(res["tests"]) == [n for n, *_ in famille], list(res["tests"])
+    for nom, b, ref, sorte in famille:
         x = S[b] - S[ref]
-        y = 20 * x + 2 if sorte == "non_inferiorite" else -20 * x - 2
+        y = {"non_inferiorite": 20 * x + 2, "perte": -20 * x - 2, "pas_mieux": -20 * x + 2}[sorte]
         s, bt = p_signe(y), p_boot_t(y)
         T = res["tests"][nom]
         assert T["p_signe"] == s and abs(T["p_bootstrap_t"] - bt) < 1e-12 and T["p"] == max(s, bt), (nom, T, s, bt)
         assert abs(T["ecart_points"]["moyenne"] - 100 * x.mean() / 5) < 1e-9, nom
         ps.append(max(s, bt))
-    for (nom, *_), q in zip(A15.TESTS, holm_numpy(ps)):
+    for (nom, *_), q in zip(famille, holm_numpy(ps)):
         assert abs(res["tests"][nom]["p_holm"] - q) < 1e-12, nom
         assert res["tests"][nom]["verdict"] == ("soutenue" if q < 0.05 else "non soutenue"), nom
         assert res["tests"][nom]["borne_et_verdict_concordent"], (nom, res["tests"][nom])
@@ -169,6 +176,13 @@ def verifier(r, res, session=False):
     assert abs(D3["pred_proj"]["moyenne"] - m(S["pp"] - S["ne16"] - S["s_pp"] + S["fp32"])) < 1e-9
     assert abs(D3["blocs"]["moyenne"] - m(S["bl"] - S["ne16"] - S["predictor4"] + S["fp32"])) < 1e-9
     assert abs(D3["tout"]["moyenne"] - m(S["int4c"] - S["ne16"] - S["s_pr"] + S["fp32"])) < 1e-9
+    assert abs(D1["pp - fp32"]["moyenne"] - m(S["pp"] - S["fp32"])) < 1e-9 and abs(D1["bl - fp32"]["moyenne"] - m(S["bl"] - S["fp32"])) < 1e-9
+    for b in ("bl", "pp") + (("sp",) if avec_sp else ()):
+        assert res["lecture"]["perte_etablie"][b] == (D1[f"{b} - ne16"]["haut"] < 0), b
+    if avec_sp:
+        assert abs(D2["puce_avec_sp"]["moyenne"] - m(S["int4c"] - S["sp"] - S["pp"] + S["ne16"])) < 1e-9
+    sout = lambda n: res["tests"][n]["verdict"] == "soutenue"
+    assert res["lecture"]["perte_vient_de_pred_proj"] == (sout("L1") and sout("L2") and sout("L4"))
     D4 = res["D4_part_pred_proj"]
     if D4["rapportee"]:
         assert abs(D4["part"] - (S["pp"] - S["ne16"]).sum() / (S["int4c"] - S["ne16"]).sum()) < 1e-12 and D4["bas"] <= D4["part"] <= D4["haut"]
@@ -180,7 +194,9 @@ def test_scenario_a(tmp):
     res = A.pur(A15.analyser(r, verifier=False))
     verifier(r, res)
     T = res["tests"]
-    assert (T["L1"]["verdict"], T["L2"]["verdict"], T["L3"]["verdict"]) == ("non soutenue", "soutenue", "non soutenue"), T
+    assert [T[n]["verdict"] for n in T] == ["non soutenue", "soutenue", "non soutenue", "soutenue"], T
+    assert not res["lecture"]["perte_vient_de_pred_proj"] and res["lecture"]["deploiement_sans_pred_proj_appuye_sur"] == "L2"
+    assert res["D5"]["temps_par_plan_ms"]["bl"] == 800.0
     c = res["controles"]
     assert c["ne16_identique"] and c["int4c_identique"] and c["predictor4_identique_exp003"] and not c["avec_sp"]
     assert c["source_ne16"] == "exp012-ne-pusht" and c["source_int4c"] == "exp014-int4c-pusht"
@@ -188,7 +204,7 @@ def test_scenario_a(tmp):
     assert not res["D4_part_pred_proj"]["rapportee"] and res["D5"]["octets_poids"]["ne16"] == OCTETS["fp16"]
     txt = A15.rapport(res)
     assert "| L2 (non_inferiorite) | bl contre ne16 |" in txt and "non lancé" in txt
-    print("ok scénario A : aucun effet ; L2 soutenue, L1 et L3 non ; références d'EXP-003, 012 et 014 ancrées")
+    print("ok scénario A : aucun effet ; L2 et L4 soutenues, L1 et L3 non ; références d'EXP-003, 012 et 014 ancrées")
     return r
 
 
@@ -199,20 +215,20 @@ def test_scenario_c(tmp):
     assert any(1 / 10_001 < p < 1 for p in ps), ps
     assert res["D4_part_pred_proj"]["rapportee"]
     T = res["tests"]
-    print(f"ok scénario C : p ({', '.join(f'{p:.4f}' for p in ps)}), Holm sur 3, D1 à D4 recomptés ; verdicts "
+    print(f"ok scénario C : p ({', '.join(f'{p:.4f}' for p in ps)}), Holm sur 4, D1 à D4 et lecture recomptés ; verdicts "
           f"{[T[n]['verdict'] for n in T]}")
 
 
 def test_scenario_s(tmp):
     r = fabriquer(Path(tmp) / "s", "C", session=True, avec_sp=True)
     res = A.pur(A15.analyser(r, verifier=False))
-    verifier(r, res, session=True)
+    verifier(r, res, session=True, avec_sp=True)
     c = res["controles"]
     assert not (c["ne16_identique"] or c["int4c_identique"] or c["predictor4_identique_exp003"]) and c["avec_sp"], c
     assert c["source_ne16"] == "exp015-ne16-pusht" and c["source_int4c"] == "exp015-int4c-pusht"
     assert "sp - ne16" in res["D1_ecarts"] and c["constantes"]["sp"] == {"blocs": 30, "pred_proj": 0, "reecriture": 2}
     assert res["D2_interaction"]["matrices_0_1_non_inertes_comprises"]
-    print("ok scénario S : témoins différents, séries refaites dans la session utilisées ; bras int4c-sp lu")
+    print("ok scénario S : témoins différents, séries refaites dans la session utilisées ; bras int4c-sp lu, L5 dans la famille (Holm sur 5)")
 
 
 def test_refus(tmp, r):
@@ -296,6 +312,16 @@ def test_refus(tmp, r):
            ("constantes codées", lambda rr: (rr / PP / "fp32_s42.mlpackage" / "constantes.json").write_text(json.dumps(CONST["int4c"]))),
            ("constantes codées illisibles", lambda rr: (rr / PP / "fp32_s42.mlpackage" / "constantes.json").write_text(json.dumps({"erreur": "x"}))),
            ("pas plus petit que le 16 bits", lambda rr: [taille(PP, g, 30_000_000)(rr) for g in G]),
+           ("reproduction de exp012, graine 42", champ("exp012-repro-pusht", "fp32_s42.npz", "success", lambda x: ~x["success"])),
+           ("reproduction de exp014, graine 46", champ("exp014-fin-pusht", "fp32_s46.npz", "success", lambda x: ~x["success"])),
+           ("reproduction d'un autre commit que la série", champ("exp012-fin-pusht", "fp32_s46.npz", "git", lambda x: np.str_("7" * 40))),
+           ("exp014-repro-pusht/fp32_s42.npz manquant", lambda rr: shutil.rmtree(rr / "exp014-repro-pusht")),
+           ("exp012-ne-pusht/meta.json manquant", lambda rr: (rr / "exp012-ne-pusht" / "meta.json").unlink()),
+           ("étape 0 b invalide", json_("exp015-etape0b/resultats.json", lambda j: j.update(valide=False))),
+           ("étape 0 b : sortie manquante", lambda rr: shutil.rmtree(rr / "exp015-etape0b")),
+           ("étape 0 b : modèle int4c-pp différent", json_("exp015-etape0b/resultats.json", lambda j: j["codages"]["int4c-pp"].update(sha256_poids="x"))),
+           ("étape 0 b : modèle fp16 différent", json_("exp015-etape0b/resultats.json", lambda j: j["codages"]["fp16"].update(sha256_poids="x"))),
+           ("étape 0 b : versions", json_("exp015-etape0b/resultats.json", lambda j: j.update(macos="27.0"))),
            ("même modèle", lambda rr: [champ(BL, f"fp32_s{g}.npz", "coreml_sha256", lambda x: np.str_("sha-int4c-pp" * 4))(rr) or
                                        json_(f"{BL}/fp32_s{g}.temps.json", lambda j: j["coreml"].update(sha256_poids="sha-int4c-pp" * 4))(rr)
                                        for g in G])]

@@ -3,6 +3,46 @@
 Rédigé par Claude le 2 octobre 2026 à partir de 8 h 31 (heure du Mac, lue avec `date`), avant tout run de réussite
 d'EXP-015 et avant l'étape 0 b. Figé par le commit enregistré dans les fichiers. Tâche : PushT seulement.
 
+Amendement 1 (2 octobre, à partir de 8 h 57, avant l'étape 0 b et avant tout run de réussite ; relecture du plan et du
+code : 1 P0, 6 P1). Il l'emporte sur le texte qui suit.
+1. Conclusion principale (P0) : L1 et L2 ne disent pas que `pred_proj` porte la perte d'int4c (une perte de 5 points de
+   PP avec BL près de 0 les soutiendrait toutes deux). Test ajouté, L4 : PP ne fait pas mieux qu'int4c de plus de 2
+   points (x = PP - int4c par épisode, y = -20 x + 2). « La perte d'int4c sur le Neural Engine vient de `pred_proj` » est
+   soutenue seulement si L1, L2 et L4 le sont (Holm sur 4). La part portée par `pred_proj` ne se dit que par D4 et son
+   intervalle.
+2. Bras SP : s'il est lancé (R2), L5 est ajouté à la famille : SP ne perd pas plus de 2 points face à ne16 (y = 20 x +
+   2), Holm sur 5. Le conseil de déploiement « tout coder sauf `pred_proj` » ne s'appuie que sur L5 si SP est lancé, sur
+   L2 sinon (alors à poids décodés égaux, R2), et toujours contre ne16 : contre PyTorch float32, il s'écrit avec les deux
+   écarts (BL ou SP contre fp32, descriptif ajouté à D1), sans enchaîner les marges en une affirmation.
+3. Lecture des « non soutenue » : un test non soutenu dit « non établi », jamais l'inverse. « Coûte » ne s'écrit que si
+   la perte est établie (intervalle à 95 % entièrement sous 0, comme EXP-014), calculé pour BL, PP et SP. Les branches de
+   lecture plus bas se lisent ainsi.
+4. Puce contre simulation : « la simulation ne prédit pas la puce » pour une portée seulement si l'intervalle D3 de cette
+   portée exclut 0. Un désaccord des verdicts (L1 contre L3) seul se dit « non concluant ».
+5. Règle R1, précisée : pour chaque codage, R1 est vérifiée lot par lot (e_exec au plus 2 fois celle du 16 bits sur
+   chacun des 3 lots). Plancher de validité : si e_exec du 16 bits ou l'écart du 16 bits sur la puce à PyTorch float32
+   dépasse 1e-2 sur un lot, l'étape 0 b est invalide (la puce ou le montage calcule autre chose) et EXP-015 ne se lance
+   pas. Matérialité rapportée : e_exec / e_quant et la pire erreur par échantillon. Le verdict R1 est écrit par l'étape
+   0 b et repris par l'analyse.
+6. Référence de l'étape 0 b : le graphe float32 reçoit toutes les constantes arrondies en float16 comme Core ML (biais,
+   normes, plongement de position), sauf la première couche de `pred_proj`, que Core ML fusionne avec sa BatchNorm (poids
+   décodés divisés par le facteur, BatchNorm gardée en float32). Entrées du Neural Engine passées en mémoire contiguë,
+   comme dans les runs.
+7. Séries réutilisées : en plus de l'ancre de la graine 42, leurs propres reproductions (graine 42 au début, 46 à la fin,
+   d'EXP-012 et d'EXP-014) doivent être identiques à EXP-003 et de leur commit, sinon la série n'est pas utilisée (arrêt).
+8. Descriptifs ajoutés : temps par plan médian de chaque bras sur le Neural Engine (D5) ; BL, PP et SP contre fp32 (D1) ;
+   si SP est lancé, l'interaction sur la puce se calcule aussi avec SP (plan complet ne16, SP, PP, int4c), qui ne laisse
+   pas les matrices 0/1 dans le terme d'interaction. L'analyse vérifie que les modèles de l'étape 0 b sont ceux des runs
+   (empreintes) et que l'étape 0 b a les versions des runs (coremltools, macOS).
+9. Formulations : `const_7` est à 4,4e-4 du maximum de ligne près de float16 de son attendu, pas égale bit pour bit ; la
+   taille d'int4c-sp sera celle mesurée (D5), pas le chiffre de la console des tests ; la correspondance des 30 couches
+   est écrite dans la sortie de l'étape 0 (refaite au commit final) ; la perte à décomposer est int4c contre ne16 (environ
+   9 points, calcul ad hoc ; contre fp32, 8,6), chiffres officiels par les analyses.
+10. Lanceur : batterie revérifiée au départ (après l'attente du GPU) ; garde de batterie toujours lancée pour EXP-015
+   (les gardes ne suivent que leur propre préfixe) ; macOS 26.6.2 et coremltools 9.0 exigés avant le départ ; un fichier
+   de référence manquant arrête le lanceur au lieu de compter comme « différent » ; la validation de l'énergie et les
+   tests des portées comptent comme calculs en cours.
+
 ## Origine de l'hypothèse (divulgation)
 
 L'hypothèse vient de données déjà vues, pas d'une prédiction faite à l'aveugle :
@@ -98,15 +138,18 @@ la simulation PyTorch le montre aussi. « Non soutenue » veut dire « non étab
   percentile sur les épisodes ; rapportée seulement si int4c - ne16 a un intervalle entièrement sous 0.
 - D5 : réussites, taille du fichier des poids par bras, temps par plan (descriptif, sans comparaison à EXP-013).
 
-## Ce que chaque issue voudrait dire
+## Ce que chaque issue voudrait dire (réécrit par l'amendement 1)
 
-- L1 et L2 soutenues : la perte vient de `pred_proj` ; pour déployer, coder tout sauf `pred_proj` (int4c-sp, 7,12 Mo,
-  test de portée du 2 octobre). La réussite d'int4c-sp elle-même n'est mesurée que si R2 la demande ; sinon c'est celle
-  d'int4c-bl, à poids décodés égaux (R2).
-- L1 soutenue, L2 non : les deux portées coûtent ; D2 dit si les pertes s'additionnent.
-- L1 non soutenue : `pred_proj` seule ne porte pas une perte de plus de 2 points sur la puce ; la perte vient des blocs
-  sur la puce ou de leur interaction (D2), à lire avec R1.
-- L1 et L3 en désaccord, ou D3 loin de 0 : la simulation ne prédit pas la puce pour cette portée ; à lire avec R1.
+- L1, L2 et L4 soutenues : la perte d'int4c sur le Neural Engine vient de `pred_proj` (à 2 points près) ; pour déployer,
+  coder tout sauf `pred_proj`, appuyé sur L5 si SP est lancé, sur L2 sinon.
+- L1 et L2 soutenues, L4 non : `pred_proj` seule perd plus de 2 points et les blocs seuls moins de 2, mais la perte de
+  `pred_proj` seule n'est pas établie égale à celle d'int4c ; D2 et D4 disent le reste, sans conclusion de plus.
+- L1 non soutenue : une perte de plus de 2 points de `pred_proj` seule n'est pas établie (pas « `pred_proj` ne coûte
+  rien ») ; « coûte » seulement si la perte de PP est établie (intervalle sous 0).
+- L2 non soutenue : la non-infériorité des blocs n'est pas établie ; « les blocs coûtent » seulement si leur perte est
+  établie.
+- Puce contre simulation : « la simulation ne prédit pas la puce » pour une portée seulement si son intervalle D3 exclut
+  0 ; L1 et L3 en désaccord sans cela : « non concluant ». À lire avec R1.
 
 ## Limites écrites d'avance
 

@@ -110,6 +110,14 @@ def main(sortie):
     ref = references(model)
     assert set(ref) | {n for n in k16 if "tetes" in n} == set(k16), sorted(set(k16) ^ set(ref))
     res = {"git": git, "git_sale": sale, "coremltools": ct.__version__, "torch": torch.__version__, "constantes": {}}
+    # les couches que quant.py arrondit (predictor:4, predproj:4) sont exactement celles des constantes correspondantes
+    _, t_pred = quant.quantifier(swm.wm.utils.load_pretrained("pusht/lewm").eval(), "predictor:4")
+    _, t_pp = quant.quantifier(swm.wm.utils.load_pretrained("pusht/lewm").eval(), "predproj:4")
+    res["correspondance"] = {
+        "predictor4": sorted(t_pred) == sorted(v[0] for n, v in ref.items() if n.startswith("blocs_")),
+        "predproj4": sorted(t_pp) == sorted(v[0] for n, v in ref.items() if not n.startswith("blocs_")),
+        "couches_predictor4": len(t_pred), "couches_predproj4": len(t_pp)}
+    assert res["correspondance"]["predictor4"] and res["correspondance"]["predproj4"], res["correspondance"]
 
     # 1. le poids 16 bits contre float16 du poids attendu
     for n, (nom_t, w32, f) in ref.items():
@@ -189,7 +197,7 @@ def main(sortie):
     out = Path(sortie)
     out.mkdir(parents=True, exist_ok=True)
     (out / "resultats.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
-    print(json.dumps({k: res[k] for k in ("git", "git_sale", "par_categorie", "portees")}, indent=1, ensure_ascii=False))
+    print(json.dumps({k: res[k] for k in ("git", "git_sale", "correspondance", "par_categorie", "portees")}, indent=1, ensure_ascii=False))
     print(json.dumps({n: v for n, v in res["constantes"].items() if v["categorie"] != "blocs"}, indent=1, ensure_ascii=False))
 
 

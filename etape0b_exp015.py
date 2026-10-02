@@ -7,7 +7,10 @@ comme celles de la CEM (plongements N(0, 1), que SIGReg vise ; actions N(0, 1) d
 l'encodeur d'action) :
 - y_ne : le prédicteur Core ML exécuté sur le Neural Engine (même conversion que les runs, coreml_pred.convertir) ;
 - y_dec : le même graphe réécrit (predicteur_ane.CoeurANE) en float32 sur CPU, avec exactement les poids décodés par
-  coremltools (materialized_val_inference) ; seule l'arithmétique diffère de y_ne ;
+  coremltools (materialized_val_inference) et toutes les autres constantes arrondies en float16 comme dans Core ML
+  (biais, normes, plongement de position), sauf la première couche de pred_proj, que Core ML fusionne avec sa
+  BatchNorm (poids décodés divisés par le facteur, BatchNorm gardée en float32) : à cette couche près, seule
+  l'arithmétique diffère de y_ne ;
 - y_sim : la quantification simulée de quant.py (groupe de même portée : predict, predictor, predproj), float32 sur
   CPU, modèle d'origine ;
 - y32 : la pleine précision float32.
@@ -16,12 +19,16 @@ Mesures (erreur relative ||a - b|| / ||b|| sur tout le lot, et la pire par écha
 - e_code = err(y_dec, y_sim) : codage de coremltools contre celui de quant.py, calcul float32 des deux côtés ;
 - e_quant = err(y_sim, y32) : taille de l'effet de la quantification simulée.
 Plus : les sorties sur le Neural Engine d'int4c-sp et d'int4c-bl sont-elles identiques bit pour bit (matrices 0/1
-inertes) ? Règles de lecture fixées dans PREREG-EXP015.md avant ce calcul.
+inertes) ? Règles fixées dans PREREG-EXP015.md (amendement 1) avant ce calcul, et écrites ici :
+- validité : e_exec du 16 bits et l'écart du 16 bits sur la puce à float32 sous 1e-2 sur chaque lot, sinon invalide ;
+- R1 : pour chaque codage, H2 écartée si e_exec au plus 2 fois celle du 16 bits sur chacun des 3 lots, sinon retenue ;
+  matérialité rapportée (e_exec / e_quant, pire échantillon).
 
 Usage (depuis code-exp015, environnement de le-wm ; aucun autre calcul sur le Neural Engine en même temps) :
     python etape0b_exp015.py ../resultats/exp015-etape0b
 """
 import json
+import platform
 import subprocess
 import sys
 import tempfile
@@ -39,6 +46,7 @@ import stable_worldmodel as swm
 CODAGES = ("fp16", "int4c", "int4c-bl", "int4c-pp", "int4c-sp", "pal4")
 SIMULE = {"int4c": "predict:4", "int4c-bl": "predictor:4", "int4c-pp": "predproj:4", "int4c-sp": "predictor:4"}
 LOTS = (1, 2, 3)
+PLANCHER = 1e-2
 
 
 def err(a, b):
@@ -84,6 +92,10 @@ def poids_decodes(model, codage, k16, ref):
             for nom in ("somme_tetes", "etale_tetes"):
                 v = vals[f"blocs_0_{nom}_to_fp16"].astype(np.float32)
                 assert np.array_equal(v, getattr(b, nom).numpy()), nom
+        # toutes les constantes en float16 comme dans Core ML, sauf la couche fusionnée avec sa BatchNorm (proj.0, proj.1)
+        for nom, x in list(coeur.named_parameters()) + list(coeur.named_buffers()):
+            if not nom.startswith(("proj.0.", "proj.1.")) and x.is_floating_point():
+                x.copy_(x.half().float())
     return coeur
 
 
@@ -94,8 +106,8 @@ def sortie_coeur(coeur, emb, act):
 
 
 def sortie_ne(m, emb, act):
-    out = m.predict({"emb": P.vers_disposition(emb.numpy(), "1ctb").astype(np.float32),
-                     "act": P.vers_disposition(act.numpy(), "1ctb").astype(np.float32)})
+    out = m.predict({"emb": np.ascontiguousarray(P.vers_disposition(emb.numpy(), "1ctb"), dtype=np.float32),
+                     "act": np.ascontiguousarray(P.vers_disposition(act.numpy(), "1ctb"), dtype=np.float32)})
     assert len(out) == 1, list(out)
     return P.depuis_disposition(np.asarray(next(iter(out.values())), np.float32), "1ctb")
 
@@ -115,7 +127,9 @@ def main(sortie):
         q, touches = quant.quantifier(charger(), spec)
         with torch.no_grad():
             sims[spec] = [q.predict(e, a).numpy() for e, a in X]
-    res = {"git": git, "git_sale": sale, "lots": list(LOTS), "codages": {}}
+    import coremltools as ct
+    res = {"git": git, "git_sale": sale, "lots": list(LOTS), "coremltools": ct.__version__, "macos": platform.mac_ver()[0],
+           "codages": {}}
     ne = {}
     with tempfile.TemporaryDirectory() as d:
         for c in CODAGES:
@@ -135,16 +149,27 @@ def main(sortie):
             res["codages"][c] = r
     res["sp_et_bl_identiques_sur_le_neural_engine"] = bool(all(np.array_equal(a, b) for a, b in zip(ne["int4c-sp"], ne["int4c-bl"])))
     res["sp_contre_bl"] = [err(a, b) for a, b in zip(ne["int4c-sp"], ne["int4c-bl"])]
-    resume = {c: {k: float(np.mean([x["relative"] for x in v["e_exec" if k == "e_exec" else k]]))
+    resume = {c: {k: float(np.mean([x["relative"] for x in v[k]]))
                   for k in ("e_exec", "e_code", "e_quant", "err_ne_contre_fp32") if k in v} for c, v in res["codages"].items()}
-    for c in resume:
-        resume[c]["e_exec_sur_e_exec_16_bits"] = resume[c]["e_exec"] / resume["fp16"]["e_exec"]
+    C16 = res["codages"]["fp16"]
+    res["valide"] = bool(all(C16["e_exec"][i]["relative"] < PLANCHER and C16["err_ne_contre_fp32"][i]["relative"] < PLANCHER
+                             for i in range(len(LOTS))))
+    res["R1"] = {}
+    for c, v in res["codages"].items():
+        rapports = [v["e_exec"][i]["relative"] / C16["e_exec"][i]["relative"] for i in range(len(LOTS))]
+        resume[c]["e_exec_sur_e_exec_16_bits_par_lot"] = rapports
+        resume[c]["pire_echantillon_sur_16_bits_par_lot"] = [v["e_exec"][i]["pire_echantillon"] / C16["e_exec"][i]["pire_echantillon"]
+                                                            for i in range(len(LOTS))]
+        if "e_quant" in v:
+            resume[c]["e_exec_sur_e_quant"] = resume[c]["e_exec"] / resume[c]["e_quant"]
+        if c != "fp16":
+            res["R1"][c] = "H2 écartée" if all(x <= 2 for x in rapports) else "H2 retenue"
     res["resume"] = resume
     out = Path(sortie)
     out.mkdir(parents=True, exist_ok=True)
     (out / "resultats.json").write_text(json.dumps(res, indent=1, ensure_ascii=False))
-    print(json.dumps({"git": git, "git_sale": sale, "resume": resume,
-                      "sp_et_bl_identiques_sur_le_neural_engine": res["sp_et_bl_identiques_sur_le_neural_engine"]}, indent=1))
+    print(json.dumps({k: res[k] for k in ("git", "git_sale", "valide", "R1", "resume", "sp_et_bl_identiques_sur_le_neural_engine")},
+                     indent=1, ensure_ascii=False))
 
 
 if __name__ == "__main__":
