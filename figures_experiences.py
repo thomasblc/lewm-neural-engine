@@ -89,6 +89,24 @@ def exp015():
     return [(l[0], fr(l[1]["moyenne"])) for l in lignes + l3]
 
 
+def exp017():
+    r = json.loads((R / "analyse-exp017" / "resultats.json").read_text())
+    T, E = r["tests"], r["descriptifs"]["ecarts"]
+    lignes = [("GPTQ sur la puce contre le 16 bits (G1)", T["G1"]["ecart_points"], V_ if T["G1"]["verdict"] == "soutenue" else B),
+              ("GPTQ sur la puce contre int4c RTN (G2)", T["G2"]["ecart_points"], V_ if T["G2"]["verdict"] == "soutenue" else B),
+              ("GPTQ sur la puce contre PyTorch float32", E["g - fp32"], G), ("GPTQ simulé contre PyTorch float32", E["gs - fp32"], G),
+              ("GPTQ sur la puce contre tout sauf pred_proj (RTN)", E["g - sp"], G), ("Puce contre simulation", E["puce contre simulation"], G)]
+    v = [l[1][k] for l in lignes for k in ("bas", "haut")]
+    xmin, xmax = min(-4, 2 * (min(v) // 2)), max(2, 2 * (max(v) // 2 + 1))
+    o = r["descriptifs"]["octets_poids"]
+    f1 = foret("Codes de GPTQ écrits dans Core ML, prédicteur sur le Neural Engine (PushT, 500 épisodes, 5 graines)",
+               f"Vert : test soutenu ; bleu : test non soutenu ; gris : descriptif. Fichier des poids : GPTQ {fr(o['g'] / 1e6)} Mo, int4c "
+               f"{fr(o['int4c'] / 1e6)} Mo, sans pred_proj {fr(o['sp'] / 1e6)} Mo, 16 bits {fr(o['ne16'] / 1e6)} Mo. Lecture : {r['lecture']}.",
+               lignes, xmin, xmax, list(range(int(xmin), int(xmax) + 1, 2)), marge=-2)
+    (F / "exp017.html").write_text(f1)
+    return [(l[0], fr(l[1]["moyenne"])) for l in lignes]
+
+
 if __name__ == "__main__":
     for e in sys.argv[1:]:
         print(e, globals()[e]())
