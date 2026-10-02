@@ -27,6 +27,10 @@ SOURCES = {"A": {(t, c): "fp32" for t in A14.TACHES for c in A14.CODAGES},
            "C": {("pusht", "int8"): "all-6", ("pusht", "int4c"): "predictor-3", ("pusht", "pal4"): "fp32",
                  ("tworoom", "int8"): "all-6", ("tworoom", "int4c"): "autres-4", ("tworoom", "pal4"): "fp32"}}
 OCTETS = {"int8": 11.7e6, "int4c": 5.9e6, "pal4": 5.9e6}
+OCTETS16 = 23_232_128
+SHA16 = "f16" * 8
+GIT12 = "e" * 40
+SHA = lambda t, c: f"{t}-{c}" * 4
 
 
 def ecrire_temps(f, c, g, empreinte):
@@ -54,11 +58,24 @@ def fabriquer(racine, scenario="A"):
         for d, g in ((f"exp014-repro-{t}", 42), (f"exp014-fin-{t}", 46)):
             (r / d).mkdir()
             ecrire(r / d / f"fp32_s{g}.npz", np.load(r / ref_d / f"fp32_s{g}.npz"))
-        (r / f"exp012-ne-{t}").mkdir()                          # le 16 bits sur le Neural Engine d'EXP-012 : copie du fp32
-        for g in A14.GRAINES:
-            ecrire(r / f"exp012-ne-{t}" / f"fp32_s{g}.npz", np.load(r / ref_d / f"fp32_s{g}.npz"), git=np.str_("e" * 40),
-                   moteur=np.str_("coreml-ne"))
         proto = json.loads((r / ref_d / "meta.json").read_text())["protocole"]
+        d12 = r / f"exp012-ne-{t}"                                # le 16 bits sur le Neural Engine d'EXP-012 : copie du fp32
+        d12.mkdir()
+        p12 = dict(proto, moteur={"nom": "coreml-ne", "coremltools": "9.0", "macos": "26.6.2", "precision": "float16"})
+        (d12 / "meta.json").write_text(json.dumps({"protocole": p12, "git": GIT12, "git_sale": False}))
+        for g in A14.GRAINES:
+            ecrire(d12 / f"fp32_s{g}.npz", np.load(r / ref_d / f"fp32_s{g}.npz"), git=np.str_(GIT12), moteur=np.str_("coreml-ne"),
+                   coreml_sha256=np.str_(SHA16))
+        (d12 / "fp32_s42.mlpackage" / "Data" / "weights").mkdir(parents=True)
+        with open(d12 / "fp32_s42.mlpackage" / "Data" / "weights" / "weight.bin", "wb") as f:
+            f.truncate(OCTETS16)
+        (r / f"exp014-ne16-{t}").mkdir()                          # témoin 16 bits refait dans EXP-014
+        ecrire(r / f"exp014-ne16-{t}" / "fp32_s42.npz", np.load(r / ref_d / "fp32_s42.npz"), moteur=np.str_("coreml-ne"),
+               coreml_sha256=np.str_(SHA16))
+        if t == "pusht":                                         # les modèles dont EXP-013 a mesuré le temps
+            for c in A14.CODAGES:
+                (r / f"exp013-coreml-ne-{c}-r1").mkdir()
+                (r / f"exp013-coreml-ne-{c}-r1" / "fp32_s42.temps.json").write_text(json.dumps({"coreml": {"sha256_poids": SHA(t, c)}}))
         for c in A14.CODAGES:
             d = r / A14.dossier(t, c)
             d.mkdir()
@@ -66,8 +83,8 @@ def fabriquer(racine, scenario="A"):
             (d / "meta.json").write_text(json.dumps({"protocole": pm, "git": TETE, "git_sale": False}))
             for g in A14.GRAINES:
                 ecrire(d / f"fp32_s{g}.npz", np.load(r / ref_d / f"{SOURCES[scenario][(t, c)]}_s{g}.npz"), spec=np.str_("fp32"),
-                       n_couches=np.int64(0), moteur=np.str_("coreml-ne"), coreml_sha256=np.str_(f"{t}-{c}" * 4))
-                ecrire_temps(d / f"fp32_s{g}.npz", c, g, f"{t}-{c}" * 4)
+                       n_couches=np.int64(0), moteur=np.str_("coreml-ne"), coreml_sha256=np.str_(SHA(t, c)))
+                ecrire_temps(d / f"fp32_s{g}.npz", c, g, SHA(t, c))
     return r
 
 
@@ -135,7 +152,10 @@ def test_scenario_a(tmp):
     for t in A14.TACHES:
         d = res["descriptifs"][t]
         assert all(abs(d["temps_par_plan_ms"][c] - 800) < 1e-9 and d["octets_poids"][c] == OCTETS[c] for c in A14.CODAGES), d
-    assert "Effet du codage seul" in A14.rapport(res)
+    assert all(res["descriptifs"][t]["octets_poids_fp16"] == OCTETS16 and res["descriptifs"][t]["temoin_ne16_identique_exp012"] for t in A14.TACHES)
+    assert all(not res["tests"][n]["perte_etablie"] for n in res["tests"])
+    txt = A14.rapport(res)
+    assert "Effet du codage seul" in txt and "23.2" in txt and "identique octet pour octet" in txt
     print("ok scénario A : 6 hypothèses soutenues, contrôle négatif, sensibilité et effet du codage seul recomptés, "
           "temps par plan avec l'appel allongé écarté")
     return r
@@ -207,10 +227,29 @@ def test_refus(tmp, r):
            ("plusieurs commits", lambda rr: (champ("exp014-pal4-tworoom", "fp32_s45.npz", "git", lambda x: np.str_("b" * 40))(rr),
                                              temps("exp014-pal4-tworoom", "fp32_s45.temps.json", lambda j: j.update(git="b" * 40))(rr))),
            ("fichier de temps", champ("exp014-int8-pusht", "fp32_s46.npz", "git", lambda x: np.str_("d" * 40))),
-           ("fichier de temps", temps("exp014-int4c-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="torch")))]
+           ("fichier de temps", temps("exp014-int4c-pusht", "fp32_s43.temps.json", lambda j: j.update(moteur="torch"))),
+           ("autre commit que celui d'EXP-012", champ("exp012-ne-pusht", "fp32_s44.npz", "git", lambda x: np.str_("f" * 40))),
+           ("moteur", meta("exp012-ne-tworoom", lambda p: p["moteur"].update(nom="coreml-gpu"))),
+           ("moteur", champ("exp012-ne-pusht", "fp32_s42.npz", "moteur", lambda x: np.str_("coreml-gpu"))),
+           ("modèle Core ML différent", champ("exp012-ne-tworoom", "fp32_s43.npz", "coreml_sha256", lambda x: np.str_("autre"))),
+           ("versions", meta("exp014-pal4-pusht", lambda p: p["moteur"].update(macos="26.7"))),
+           ("versions", meta("exp014-int8-tworoom", lambda p: p["moteur"].update(coremltools="9.1"))),
+           ("codage non appliqué", temps("exp014-int8-pusht", "fp32_s42.temps.json", lambda j: j["coreml"].update(octets_poids=30e6))),
+           ("modèle différent de celui d'EXP-013", lambda rr: (rr / "exp013-coreml-ne-pal4-r1" / "fp32_s42.temps.json").write_text(
+               json.dumps({"coreml": {"sha256_poids": "autre"}}))),
+           ("témoin 16 bits manquant", lambda rr: shutil.rmtree(rr / "exp014-ne16-tworoom")),
+           ("modèle 16 bits différent", champ("exp014-ne16-pusht", "fp32_s42.npz", "coreml_sha256", lambda x: np.str_("x"))),
+           ("plusieurs commits", champ("exp014-ne16-tworoom", "fp32_s42.npz", "git", lambda x: np.str_("a" * 40)))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")
+    rr = Path(tmp) / "temoin"                                # témoin 16 bits différent d'EXP-012 : rapporté, pas bloquant
+    shutil.rmtree(rr, ignore_errors=True)
+    shutil.copytree(r, rr)
+    champ("exp014-ne16-pusht", "fp32_s42.npz", "success", lambda x: ~x["success"])(rr)
+    res = A14.analyser(rr, verifier=False)
+    assert not res["descriptifs"]["pusht"]["temoin_ne16_identique_exp012"] and "autre session" in A14.rapport(res)
+    print("ok témoin 16 bits différent d'EXP-012 : rapporté, non bloquant")
 
 
 def test_code():

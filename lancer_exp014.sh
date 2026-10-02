@@ -30,12 +30,16 @@ main() {
     [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] ${d:t} commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
   done
 
+  # un seul lanceur : un second effacerait les reproductions finales du premier (pgrep s'exclut lui-même et ses ancêtres,
+  # donc ce lanceur : 0 attendu)
+  [ $(pgrep -f '^(/bin/)?zsh (\./|[^ ]*/)?lancer_exp014\.sh( |$)' | wc -l) -eq 0 ] || { echo "[arrêt] un autre lanceur d'EXP-014 tourne"; exit 1; }
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite, 24 h au plus
   # une reproduction finale d'un lancement précédent ferait sortir la garde tout de suite : elle est refaite
   rm -rf $R/exp014-fin-pusht $R/exp014-fin-tworoom
   local debut=$(date +%s)
   attendre_gpu
-  echo "[info] GPU libre, lancement à $(date '+%H:%M')"
+  attendre_batterie
+  echo "[info] GPU libre, batterie à $(batterie) %, lancement à $(date '+%H:%M')"
 
   local t opts ref g
   for t in pusht tworoom; do
@@ -47,11 +51,16 @@ main() {
     rm -rf $R/exp014-repro-$t
     caffeinate -i $PY run_grid.py --out $R/exp014-repro-$t $opts --n 500 --specs fp32 --seeds 42
     comparer $PY $R/exp014-repro-$t/fp32_s42.npz $R/$ref/fp32_s42.npz "reproduction de $ref, graine 42"
+    # 3 bis. témoin : le 16 bits sur le Neural Engine refait (graine 42), comparé à EXP-012 ; non bloquant (amendement 1)
+    caffeinate -i $PY run_grid.py --out $R/exp014-ne16-$t $opts --n 500 --specs fp32 --seeds 42 --moteur coreml-ne
+    comparer $PY $R/exp014-ne16-$t/fp32_s42.npz $R/exp012-ne-$t/fp32_s42.npz "témoin 16 bits contre EXP-012, $t" || \
+      echo "[info] témoin 16 bits différent d'EXP-012 ($t) : rapporté, non bloquant"
     # 4. codages alternés graine par graine (une dérive touche les trois codages pareil)
     for g in 42 43 44 45 46; do
       verifier $PY
       for c in $CODAGES; do
         caffeinate -i $PY run_grid.py --out $R/exp014-$c-$t $opts --n 500 --specs fp32 --seeds $g --moteur coreml-ne --codage $c
+        place $PY $R/exp014-$c-$t/fp32_s$g.temps.json        # tout sur le Neural Engine, sinon arrêt tout de suite
       done
     done
     # 5. reproduction finale, graine 46 : rien n'a dérivé pendant le calcul
@@ -60,6 +69,26 @@ main() {
     comparer $PY $R/exp014-fin-$t/fp32_s46.npz $R/$ref/fp32_s46.npz "reproduction finale de $ref, graine 46"
   done
   echo "[info] EXP-014 finie à $(date '+%H:%M')"
+}
+
+batterie() {
+  pmset -g batt | grep -o '[0-9]*%' | head -1 | tr -d '%'
+}
+
+# au moins 60 % de batterie au départ (le seuil de reprise de la garde), 4 h d'attente au plus
+attendre_batterie() {
+  local t0=$(date +%s)
+  while [ "$(batterie)" -lt 60 ]; do
+    [ $(( $(date +%s) - t0 )) -lt 14400 ] || { echo "[arrêt] batterie sous 60 % après 4 h d'attente"; exit 1; }
+    sleep 60
+  done
+}
+
+place() {
+  $1 -c 'import json, sys
+p = json.load(open(sys.argv[1]))["coreml"].get("placement", {})
+print("[placement]", sys.argv[1].split("/")[-2], p, flush=True)
+sys.exit(0 if set(p) == {"NeuralEngine"} else 1)' "$2" || { echo "[arrêt] opérations hors du Neural Engine : $2"; exit 1; }
 }
 
 attendre_gpu() {
