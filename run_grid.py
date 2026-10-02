@@ -319,7 +319,7 @@ def main():
                     help="EXP-012 : prédicteur en PyTorch (défaut) ou en Core ML 16 bits sur le GPU ou le Neural Engine ; "
                          "EXP-013 : torch-fp16 (autocast)")
     ap.add_argument("--codage", choices=coreml_pred.CODAGES + coreml_pred.CODAGES_PORTEE, default="fp16",
-                    help="EXP-013 : codage des poids Core ML ; EXP-015 : portée -sp (sans pred_proj) ou -pp (pred_proj seule)")
+                    help="EXP-013 : codage des poids Core ML ; EXP-015 : portée -sp (sans pred_proj), -pp (pred_proj seule), -bl (blocs seuls)")
     ap.add_argument("--go", default=None, help="EXP-013 : après la mise en route, écrire GO.pret puis attendre le fichier GO "
                     "(la charge de vision démarre entre les deux, une fois le modèle chargé et converti)")
     ap.add_argument("--energie-puce", action="store_true", help="EXP-013 : énergie par composant (IOReport) par fichier")

@@ -13,6 +13,9 @@ couche de l'encodeur d'action, 10 entrées). Les versions sans ":gN" passent par
 EXP-009 ajoute GPTQ : "all:4:gptq" arrondit les mêmes couches, sur la même grille et avec les mêmes échelles que
 "all:4", mais choisit les arrondis avec gptq.py, à partir des statistiques de calibration désignées par la variable
 LEWM_GPTQ_CALIB (fichier écrit par run_grid.py --calibrer-gptq). Les autres versions ne changent pas.
+
+EXP-015 ajoute deux groupes : « predproj » (les 2 couches de pred_proj) et « predict » (prédicteur et pred_proj, tout ce
+que Core ML convertit) ; les groupes existants ne changent pas.
 """
 import os
 import torch
@@ -24,6 +27,7 @@ GROUPES = {
     "autres": ("action_encoder", "projector", "pred_proj"),
     "encpred": ("encoder", "predictor"),
     "predproj": ("pred_proj",),                       # EXP-015 : la projection de sortie du prédicteur seule
+    "predict": ("predictor", "pred_proj"),            # EXP-015 : tout ce que Core ML convertit (model.predict)
 }
 
 

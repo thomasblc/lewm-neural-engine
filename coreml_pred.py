@@ -35,7 +35,9 @@ APPELS = {"n": 0, "coreml_s": 0.0, "total_s": 0.0}   # EXP-013 : temps dans l'ap
 def remise_a_zero_appels():
     APPELS.update(n=0, coreml_s=0.0, total_s=0.0)
 CODAGES = ("fp16", "int8", "int4b32", "pal4", "int4c")   # EXP-013 : codage des poids dans Core ML (int4c : amendement 4)
-CODAGES_PORTEE = ("int4c-sp", "int4c-pp", "pal4-sp", "pal4-pp")   # EXP-015 : sans pred_proj, ou pred_proj seule
+# EXP-015 : sans pred_proj (-sp), pred_proj seule (-pp), les 30 poids des blocs seuls (-bl : ni pred_proj ni les 2 matrices
+# 0/1 de la réécriture)
+CODAGES_PORTEE = ("int4c-sp", "int4c-pp", "int4c-bl", "pal4-sp", "pal4-pp", "pal4-bl")
 
 
 def constantes_pred_proj(ml):
@@ -50,11 +52,24 @@ def constantes_pred_proj(ml):
     return noms
 
 
+def constantes_blocs(ml):
+    """EXP-015 : noms des 30 poids des blocs du prédicteur (5 par bloc : modulation, qkv, sortie de l'attention, fc1, fc2)
+    dans le programme MIL du graphe réécrit, hors des 2 matrices 0/1 de la réécriture (somme_tetes, etale_tetes, nommées
+    elles aussi blocs_0_*). Exactement 30, sinon arrêt."""
+    noms = [op.name for fn in ml._mil_program.functions.values() for op in fn.operations
+            if op.op_type == "const" and op.outputs[0].val is not None and getattr(op.outputs[0].val, "size", 0) > 2048
+            and op.name.startswith("blocs_") and "tetes" not in op.name]
+    if len(noms) != 30:
+        raise ValueError(f"blocs : {len(noms)} constantes trouvées au lieu de 30 ({noms})")
+    return noms
+
+
 def comprimer(ml, codage):
     """EXP-013 : codage des poids du programme Core ML (fonctions de coremltools, depuis les poids 16 bits) : int8 par
     canal, int4 par blocs de 32, int4 par canal, palettes de 16 valeurs (k-moyennes). EXP-015 : suffixe de portée,
-    « -sp » (sans pred_proj : ses deux couches restent en 16 bits) ou « -pp » (pred_proj seule codée, le reste en 16
-    bits). coremltools code toute constante de plus de 2 048 éléments."""
+    « -sp » (sans pred_proj : ses deux couches restent en 16 bits), « -pp » (pred_proj seule codée, le reste en 16 bits)
+    ou « -bl » (les 30 poids des blocs seuls). Sans suffixe, coremltools code toute constante de plus de 2 048
+    éléments."""
     import coremltools.optimize.coreml as cto
     if codage == "fp16":
         return ml
@@ -75,6 +90,8 @@ def comprimer(ml, codage):
         config = cto.OptimizationConfig(global_config=cfg, op_name_configs={n: None for n in constantes_pred_proj(ml)})
     elif portee == "pp":
         config = cto.OptimizationConfig(global_config=None, op_name_configs={n: cfg for n in constantes_pred_proj(ml)})
+    elif portee == "bl":
+        config = cto.OptimizationConfig(global_config=None, op_name_configs={n: cfg for n in constantes_blocs(ml)})
     else:
         raise ValueError(codage)
     return (cto.palettize_weights if base == "pal4" else cto.linear_quantize_weights)(ml, config)

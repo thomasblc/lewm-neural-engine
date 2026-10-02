@@ -1,8 +1,10 @@
-"""EXP-015 : tests des codages à portée (sans pred_proj « -sp », pred_proj seule « -pp ») et du groupe simulé predproj.
+"""EXP-015 : tests des codages à portée (sans pred_proj « -sp », pred_proj seule « -pp », blocs seuls « -bl ») et des
+groupes simulés predproj et predict.
 1. Les codages d'EXP-013 et d'EXP-014 (int8, int4c, pal4) donnent exactement les mêmes poids qu'avant (empreinte égale à
    celle d'EXP-013) : la réécriture de comprimer ne change rien. 2. -sp code les 32 constantes hors pred_proj, -pp ses
-   2 seules ; tout reste sur le Neural Engine. 3. predproj:4 (PyTorch, simulé) ne touche que les 2 couches de pred_proj,
-   au même arrondi que les autres groupes.
+   2 seules, -bl les 30 poids des blocs seuls ; tout reste sur le Neural Engine. 3. predproj:4 (PyTorch, simulé) ne
+   touche que les 2 couches de pred_proj, au même arrondi que les autres groupes ; predict:4 touche les 30 couches de
+   predictor:4 et les 2 de predproj:4, rien d'autre.
 
 Usage :
     python test_codages_portee.py
@@ -28,7 +30,7 @@ with tempfile.TemporaryDirectory() as d:
         ref = json.loads((RES / f"exp013-coreml-ne-{c}-r1" / "fp32_s42.temps.json").read_text())["coreml"]["sha256_poids"]
         assert info["sha256_poids"] == ref, (c, info["sha256_poids"][:12], ref[:12])
     print("ok codages d'EXP-013 inchangés (int8, int4c, pal4 : mêmes empreintes)")
-    attendu = {"sp": (32, 30, 0, 2, 0), "pp": (2, 0, 2, 0, 0)}
+    attendu = {"sp": (32, 30, 0, 2, 0), "pp": (2, 0, 2, 0, 0), "bl": (30, 30, 0, 0, 0)}
     for c in C.CODAGES_PORTEE:
         m, info = C.convertir(model, "coreml-ne", Path(d) / f"{c}.mlpackage", c)
         lst = A14.constantes_codees(Path(d) / f"{c}.mlpackage")
@@ -45,4 +47,12 @@ assert diff and all(n.startswith("pred_proj") for n in diff), diff
 w = dict(q.named_parameters())[diff[0]]
 assert w.ndim == 2 and len(torch.unique(torch.round(w / (w.abs().amax(1, keepdim=True) / 7)))) <= 15
 print(f"ok predproj:4 : couches touchées {touches}, aucun autre poids modifié, 15 niveaux par canal au plus")
+_, t_pred = quant.quantifier(swm.wm.utils.load_pretrained("pusht/lewm").eval(), "predictor:4")
+q, t_tout = quant.quantifier(swm.wm.utils.load_pretrained("pusht/lewm").eval(), "predict:4")
+assert len(t_pred) == 30 and sorted(t_tout) == sorted(t_pred + touches), (len(t_pred), len(t_tout))
+sd_q = q.state_dict()
+for n, v in ref.state_dict().items():
+    touche = any(n.startswith(c + ".") for c in t_tout) and n.endswith("weight")
+    assert torch.equal(v, sd_q[n]) != touche, n
+print(f"ok predict:4 : {len(t_tout)} couches, les 30 de predictor:4 et les 2 de predproj:4, aucun autre poids modifié")
 print("tous les tests passent")
