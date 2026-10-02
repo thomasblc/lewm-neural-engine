@@ -12,6 +12,31 @@ non paramétrique et estimée sur 10 graines (la queue d'une bêta n'est pas ide
 synthétiques sur la pleine précision réelle vérifient la calibration avant toute lecture ; un excès minimal est exigé ;
 la phrase de conclusion est réduite à ce que le test porte ; la remarque sur l'appariement est corrigée.
 
+Amendement 1 (2 octobre, à partir de 11 h 15, avant tout calcul réel ; relecture de la version 2 : aucun P0, 3 P1). Il
+l'emporte sur le texte qui suit.
+1. Lecture (P1) : une perte qui dépend seulement de la difficulté, plus forte sur les épisodes fragiles que l'amincissement
+   (décalage logistique), fait aussi rejeter le test (simulation de la relecture, ad hoc : 60 à 75 % de « soutenue » à
+   r = 0,83, 100 % à r = 0,45, 0 % à partir de r = 0,90). Un rejet dit donc seulement : « plus d'épisodes réussis 5 fois
+   sur 5 par la référence ne sont jamais réussis par la version qu'une perte proportionnelle de même moyenne ne le
+   prévoit ». Il ne sépare pas des épisodes précis d'une perte concentrée sur des épisodes fragiles que 5 essais de la
+   référence ne révèlent pas. Les verdicts ne se comparent pas entre versions de pertes différentes (« RTN casse, GPTQ
+   non » n'est pas une conclusion de cette analyse). E2 en k_R = 5 se nomme « k_R = 5 », pas « nouveaux ».
+2. Moteur (P1) : pour int4 et palettes sur le Neural Engine, l'analyse rapporte l'excès moins celui du 16 bits sur le
+   Neural Engine, avec un intervalle de fluctuation tiré de nuls indépendants ; « codage » seulement si cet écart vaut au
+   moins 5 épisodes et que sa borne basse dépasse 0, sinon « codage et moteur, ou non séparés ». RTN 8 bits en excès (p
+   sous 5 % et au moins 5 épisodes) : les versions PyTorch de la tâche se lisent « à confirmer ».
+3. E4 (P1) : le nul partage p entre les deux versions d'une paire (même épisode) et tire leurs binomiales
+   indépendamment.
+4. Libellés : l'intervalle de l'excès est un intervalle de fluctuation sous le nul, pas un intervalle de confiance du
+   nombre d'épisodes cassés ; l'excès est biaisé vers le bas (r est réglé sur une moyenne qui contient les épisodes
+   cassés ; relecture : 30 cassures plantées donnent environ +20). p de Holm sous 5 % avec un excès de moins de 5 :
+   « excès sous le minimum ».
+5. Puissance, corrigée avec une loi a priori ajustée à la strate de PushT (relecture, ad hoc) : 30 cassures à r = 0,43
+   détectées 89 % du temps, 2 cassures à r = 0,90 70 %. RTN 3 bits sur PushT (r environ 0,43) est sous le bas de la grille
+   de calibration (0,45).
+6. Calibration synthétique : elle vérifie le test sur la pleine précision réelle amincie, avec la loi a priori ajustée sur
+   ces mêmes données ; elle ne voit pas l'erreur d'estimation de la loi a priori. Prudente, elle peut refuser à tort.
+
 ## Ce qui a déjà été vu (divulgation)
 
 - Le 2 octobre au matin, l'audit (`code-exp015/verifications_audit.py`) a compté, avec la pleine précision des graines

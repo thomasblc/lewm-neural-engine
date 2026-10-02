@@ -133,11 +133,17 @@ def test_strate(kR, kV, w, b=B, graine=GRAINE, garder=False):
     sim = (k == 0).sum(axis=1)
     diff = obs - sim
     res = {"strate": ns, "T1": obs, "reussite_strate": float(kV[s].mean() / 5), "T1_attendu": float(sim.mean()),
-           "exces": float(obs - sim.mean()), "exces_ic": [float(np.percentile(diff, 2.5)), float(np.percentile(diff, 97.5))],
+           "exces": float(obs - sim.mean()),
+           # intervalle de fluctuation de T1 - T1 simulé sous le nul (pas un intervalle de confiance du nombre d'épisodes
+           # cassés ; l'excès est biaisé vers le bas : r est réglé sur une moyenne qui contient les épisodes cassés)
+           "exces_fluctuation_nul": [float(np.percentile(diff, 2.5)), float(np.percentile(diff, 97.5))], "_sim": sim,
            "p": float((1 + (sim >= obs).sum()) / (b + 1)),
            "comptes_strate": {"observe": [int((kV[s] == j).sum()) for j in range(6)],
                               "attendu": [float((k == j).sum(axis=1).mean()) for j in range(6)]}}
-    return (res, k) if garder else res
+    if not garder:
+        res.pop("_sim")
+        return res
+    return res, k
 
 
 def calibration_synthetique(kR, X42, rho, w, graine, n_syn=N_SYN, b=B_SYN):
@@ -216,19 +222,24 @@ def analyser(racine, verifier=True, n_syn=N_SYN):
     neg_ok = {t: bool(q >= ALPHA) for t, q in zip(REF, qn)}
     for t, q in zip(REF, qn):
         out["controles_negatifs"][t]["p_holm"] = float(q)
+    sims16 = {}
     for groupe, liste in (("controle_moteur", MOTEUR), ("huit_bits", HUIT)):
-        for t, nom, d, v in liste:
+        for j, (t, nom, d, v) in enumerate(liste):
             kV = resultats_par_graine(r, t, d, v, G_V).sum(axis=0)
-            out[groupe][f"{t} | {nom}"] = test_strate(kR[t], kV, w[t])
-    moteur_exces = {t: any(x["p"] < ALPHA and x["exces"] >= EXCES_MIN for k, x in out["controle_moteur"].items() if k.startswith(t))
-                    for t in REF}
+            res_c, _ = test_strate(kR[t], kV, w[t], graine=GRAINE + 50 + j + (10 if groupe == "huit_bits" else 0), garder=True)
+            if groupe == "controle_moteur":
+                sims16[t] = res_c["_sim"]
+            res_c.pop("_sim")
+            out[groupe][f"{t} | {nom}"] = res_c
+    huit_alerte = {t: any(x["p"] < ALPHA and x["exces"] >= EXCES_MIN for k, x in out["huit_bits"].items() if k.startswith(t)) for t in REF}
+
     # famille principale
     nulles, K = {}, {}
     for i, (t, nom, d, v) in enumerate(PRINCIPALES):
         XV = resultats_par_graine(r, t, d, v, G_V)
         kV = XV.sum(axis=0)
         K[(t, nom)] = kV
-        res, k = test_strate(kR[t], kV, w[t], garder=True)
+        res, k = test_strate(kR[t], kV, w[t], graine=GRAINE + i, garder=True)
         nulles[(t, nom)] = k
         rho = XV.mean() / X42[t].mean()
         res["calibration_synthetique"] = calibration_synthetique(kR[t], X42[t], rho, w[t], graine=GRAINE + 100 + i, n_syn=n_syn)
@@ -246,18 +257,34 @@ def analyser(racine, verifier=True, n_syn=N_SYN):
             x["verdict"] = "non concluant"
         elif q < ALPHA and x["exces"] >= EXCES_MIN:
             x["verdict"] = "soutenue"
+        elif q < ALPHA:
+            x["verdict"] = "excès sous le minimum"
         else:
             x["verdict"] = "non soutenue"
-        x["lecture_moteur"] = "codage et moteur" if "Neural Engine" in n and moteur_exces[t] else None
+        if "Neural Engine" in n:                       # écart à l'excès du 16 bits sur le Neural Engine (P1-3)
+            c16 = out["controle_moteur"][f"{t} | 16 bits, Neural Engine"]
+            d = (x["T1"] - x["_sim"]) - (c16["T1"] - sims16[t])
+            x["exces_moins_16_bits"] = float(x["exces"] - c16["exces"])
+            x["exces_moins_16_bits_fluctuation"] = [float(np.percentile(d, 2.5)), float(np.percentile(d, 97.5))]
+            x["lecture_moteur"] = ("codage" if x["exces_moins_16_bits"] >= EXCES_MIN and x["exces_moins_16_bits_fluctuation"][0] > 0
+                                   else "codage et moteur, ou non séparés")
+        else:
+            x["lecture_moteur"] = None
+        x.pop("_sim")
     out["controles_negatifs_acceptes"] = neg_ok
+    out["alerte_huit_bits"] = huit_alerte              # RTN 8 bits en excès : les versions PyTorch de la tâche « à confirmer »
     out["E2_repere_pleine_precision"] = {t: e2_global(kR[t], X42[t].sum(axis=0), w[t]) for t in REF}
-    # E4 : recouvrement des épisodes de la strate jamais réussis, contre les tirages nuls indépendants des deux versions
+    # E4 : recouvrement des épisodes de la strate jamais réussis, contre le nul : p partagé (même épisode, même
+    # difficulté), binomiales indépendantes des deux versions (relecture de la version 2, P1-1)
     e4 = {}
     s = kR["pusht"] == 5
-    for na, nb in PAIRES:
+    for i, (na, nb) in enumerate(PAIRES):
         a_, b_ = K[("pusht", na)][s] == 0, K[("pusht", nb)][s] == 0
         u = int((a_ | b_).sum())
-        ka, kb = nulles[("pusht", na)] == 0, nulles[("pusht", nb)] == 0
+        g0 = np.random.default_rng([GRAINE + 3, i])
+        pn = tirer(g0, posterieure(w["pusht"], 5), (B, int(s.sum())))
+        ka = np.random.default_rng([GRAINE + 4, i]).binomial(5, amincir(pn, K[("pusht", na)][s].mean() / 5)) == 0
+        kb = np.random.default_rng([GRAINE + 5, i]).binomial(5, amincir(pn, K[("pusht", nb)][s].mean() / 5)) == 0
         un = (ka | kb).sum(axis=1)
         jn = np.where(un > 0, (ka & kb).sum(axis=1) / np.maximum(un, 1), 0.0)
         e4[f"{na} et {nb}"] = {"jaccard": float((a_ & b_).sum() / u) if u else None, "jaccard_nul": float(jn.mean()),
@@ -279,15 +306,18 @@ def rapport(s):
     L = ["# EXP-016 : rapport de l'analyse pré-enregistrée (version 2 ; épisodes cassés par la compression)", "",
          f"Commit de l'analyse : `{s['commit_analyse'][:7]}`. Contrôles négatifs acceptés : "
          + ", ".join(f"{t} {'oui' if v else 'non'}" for t, v in s["controles_negatifs_acceptes"].items()) + ".", "",
-         "| Tâche, version | Strate (k_R = 5) | Réussite dans la strate | Jamais réussis (T1) | Attendu | Excès [IC 95 %] | p | p Holm | "
+         "Lecture : un rejet dit « plus d'épisodes de la strate jamais réussis qu'une perte proportionnelle ne le prévoit » ; il ne "
+         "sépare pas des épisodes précis d'une perte concentrée sur des épisodes fragiles ; les verdicts ne se comparent pas entre "
+         "versions de pertes différentes. Excès biaisé vers le bas ; crochets : fluctuation sous le nul.", "",
+         "| Tâche, version | Strate (k_R = 5) | Réussite dans la strate | Jamais réussis (T1) | Attendu | Excès [fluctuation] | p | p Holm | "
          "Calibration synthétique (rejets à 5 % ; 5 %/7) | Verdict |",
          "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for n, v in s["principales"].items():
         c = v["calibration_synthetique"]
         L.append(f"| {n} | {v['strate']} | {100 * v['reussite_strate']:.1f} % | {v['T1']} | {v['T1_attendu']:.2f} | "
-                 f"{v['exces']:+.1f} [{v['exces_ic'][0]:+.0f} ; {v['exces_ic'][1]:+.0f}] | {v['p']:.4f} | {v['p_holm']:.4f} | "
+                 f"{v['exces']:+.1f} [{v['exces_fluctuation_nul'][0]:+.0f} ; {v['exces_fluctuation_nul'][1]:+.0f}] | {v['p']:.4f} | {v['p_holm']:.4f} | "
                  f"{100 * c['taux_de_rejet']['0.05']:.1f} % ; {100 * c['taux_de_rejet']['0.05/7']:.1f} % "
-                 f"({'acceptée' if c['acceptee'] else 'refusée'}) | {v['verdict']}{' (codage et moteur)' if v['lecture_moteur'] else ''} |")
+                 f"({'acceptée' if c['acceptee'] else 'refusée'}) | {v['verdict']}{' ; ' + v['lecture_moteur'] + ' (excès moins 16 bits ' + format(v['exces_moins_16_bits'], '+.1f') + ')' if v['lecture_moteur'] else ''} |")
     L += ["", "Contrôles :", ""]
     for g in ("controles_negatifs", "controle_moteur", "huit_bits"):
         for n, v in s[g].items():
@@ -296,8 +326,8 @@ def rapport(s):
     L += ["", "E2 (jamais réussis par valeur de k_R, observé contre attendu sous une perte proportionnelle globale) et E3 :", ""]
     for n, v in s["principales"].items():
         e2, e3 = v["E2"], v["E3"]
-        L.append(f"- {n} : observé {e2['observe']}, attendu {[round(x, 1) for x in e2['attendu']]} ; excès nouveaux "
-                 f"{e2['exces_nouveaux']:+.1f}, amplifiés {e2['exces_amplifies']:+.1f} ; perte moyenne {100 * e3['perte_moyenne']:.1f} "
+        L.append(f"- {n} : observé {e2['observe']}, attendu {[round(x, 1) for x in e2['attendu']]} ; excès à k_R = 5 "
+                 f"{e2['exces_nouveaux']:+.1f}, à k_R de 1 à 4 {e2['exces_amplifies']:+.1f} ; perte moyenne {100 * e3['perte_moyenne']:.1f} "
                  f"points, au meilleur des 5 {100 * e3['perte_au_meilleur_des_5']:.1f}")
     for t, e2 in s["E2_repere_pleine_precision"].items():
         L.append(f"- repère {t}, pleine précision 42 à 46 : observé {e2['observe']}, attendu {[round(x, 1) for x in e2['attendu']]}")
