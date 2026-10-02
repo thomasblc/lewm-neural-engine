@@ -26,8 +26,10 @@ REF = "exp003"
 GPTQ = "predict:4:gptq"
 COUCHES = {"fp32": 0, "predict:4": 32, GPTQ: 32}
 TESTS = (("G1", "g", "ne16", "non_inferiorite"), ("G2", "g", "int4c", "superiorite"))
+# amendement 1 : fichiers de calcul identiques à ceux du commit des runs ; analyse au commit de l'analyse, qui en descend
+FICHIERS_CALCUL = ("metriques.py", "quant.py", "gptq.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "etape0_exp017.py",
+                   "etape0_exp015.py", "etape0b_exp015.py")
 FICHIERS_ANALYSE = ("analyse_exp017.py", "analyse_exp014.py", "analyse_exp012.py", "analyse_exp009.py", "analyse_exp003.py",
-                    "metriques.py", "quant.py", "gptq.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "etape0_exp017.py",
                     "PREREG-EXP017.md")
 ICI = Path(__file__).resolve().parent
 
@@ -37,8 +39,11 @@ def git(*args):
 
 
 def verifier_code(sha):
+    """Amendement 1 : calcul identique au commit des runs ; analyse propre et commitée, à un commit qui descend des runs."""
     A.exiger(git("cat-file", "-e", f"{sha}^{{commit}}").returncode == 0, f"commit {sha[:7]} inconnu du dépôt")
-    A.exiger(git("diff", "--quiet", sha, "--", *FICHIERS_ANALYSE).returncode == 0, f"code d'analyse ou de calcul différent du commit {sha[:7]}")
+    A.exiger(git("merge-base", "--is-ancestor", sha, "HEAD").returncode == 0, f"le commit de l'analyse ne descend pas du commit des runs {sha[:7]}")
+    A.exiger(git("diff", "--quiet", sha, "HEAD", "--", *FICHIERS_CALCUL).returncode == 0, f"code de calcul différent du commit des runs {sha[:7]}")
+    A.exiger(git("diff", "--quiet", "HEAD", "--", *FICHIERS_CALCUL, *FICHIERS_ANALYSE).returncode == 0, "fichiers modifiés depuis le commit de l'analyse")
 
 
 def nom(spec, g):
@@ -132,6 +137,7 @@ def charger(racine, verifier=True):
         meta(d_ses, codage)
         x = lire(d_ses, 42, moteur=MOTEUR)
         tf = lire_temps(r / d_ses / "fp32_s42.temps.json", str(x["git"]))
+        info[f"temps_ancre_{cle}_ms"] = 1000 * tf["par_plan_s"]
         A.exiger(set(tf["coreml"].get("placement", {})) == {"NeuralEngine"}, f"{d_ses} : opérations hors du Neural Engine")
         A.exiger((r / d_ref / "fp32_s42.npz").exists(), f"{d_ref}/fp32_s42.npz manquant")
         info[f"{cle}_identique"] = bool(identiques(r / d_ses / "fp32_s42.npz", r / d_ref / "fp32_s42.npz"))
@@ -159,13 +165,19 @@ def charger(racine, verifier=True):
     A.exiger((r / "exp017-etape0" / "resultats.json").exists(), "étape 0 : sortie manquante")
     e0 = json.loads((r / "exp017-etape0" / "resultats.json").read_text())
     A.exiger(e0["git"] == sha and not e0["git_sale"], f"étape 0 au commit {e0['git'][:7]}, runs au commit {sha[:7]}")
-    A.exiger(e0["codes_differents"] == 0 and set(e0["placement"]) == {"NeuralEngine"}, "étape 0 : codes ou placement non conformes")
+    A.exiger(e0["codes_differents"] == 0 and set(e0["placement"]) == {"NeuralEngine"} and e0.get("couches_gptq") == 32,
+             "étape 0 : codes, placement ou couches non conformes")
+    rapports = [a["relative"] / b["relative"] for a, b in zip(e0["ne_contre_gptq_simule"], e0["repere_ne16_contre_fp32"])]
+    A.exiger(len(rapports) == 3 and all(x <= 2 for x in rapports), f"étape 0 : sortie de la puce trop loin de la simulation {rapports}")
+    info["etape0_rapports_ne_sur_repere"] = rapports
+    A.exiger(info["octets_g"] == info["octets_int4c"], f"G : fichier des poids de {info['octets_g']} octets au lieu de {info['octets_int4c']} (int4c)")
     A.exiger(e0["sha256_poids"] == info["sha_g"], "étape 0 : modèle différent de celui des runs")
     if verifier:
         verifier_code(sha)
     info["constantes_g"] = {c: k[c] for c in ("blocs", "pred_proj", "reecriture")}
     info["macos"] = sorted(info["macos"])
     info["etape0"] = {x: e0[x] for x in ("codes_differents", "codes", "ecart_decode_max_part_ligne", "coremltools_part_codes_changes")}
+    info["etape0"]["rapports_ne_sur_repere"] = info["etape0_rapports_ne_sur_repere"]
     return K, info, sha
 
 
@@ -192,13 +204,32 @@ def analyser(racine, verifier=True):
     d = {"g - fp32": ic(ecart("g", "fp32")), "gs - fp32": ic(ecart("gs", "fp32")), "gs - s_pr": ic(ecart("gs", "s_pr")),
          "puce contre simulation": ic(ecart("g", "ne16") - ecart("gs", "fp32")), "g - sp": ic(ecart("g", "sp")),
          "g - ne16": ic(ecart("g", "ne16")), "g - int4c": ic(ecart("g", "int4c"))}
-    desc = {"ecarts": d, "perte_etablie_g_contre_ne16": d["g - ne16"]["haut"] < 0,
+    perte = ecart("ne16", "int4c").astype(np.float64)
+    part = {"rapportee": ic(ecart("int4c", "ne16"))["haut"] < 0}      # perte d'int4c contre ne16 établie
+    if part["rapportee"]:                              # part de la perte d'int4c rattrapée (amendement 1, point 3)
+        num = ecart("g", "int4c").astype(np.float64)
+        ratios = num[boot.idx].mean(axis=1) / perte[boot.idx].mean(axis=1)
+        part.update({"part": float(num.mean() / perte.mean()), "bas": float(np.percentile(ratios, 2.5)), "haut": float(np.percentile(ratios, 97.5))})
+    pc = d["puce contre simulation"]
+    desc = {"ecarts": d, "perte_etablie_g_contre_ne16": d["g - ne16"]["haut"] < 0, "part_rattrapee": part,
+            "puce_contre_simulation_lecture": "compatible" if pc["bas"] <= 0 <= pc["haut"] else "la simulation ne prédit pas la puce",
+            "g_moins_sp_lecture": "descriptif" if info["ne16_identique"] and info["int4c_identique"] else "non comparable",
+            "temps_ancres_session_ms": {"ne16": info["temps_ancre_ne16_ms"], "int4c": info["temps_ancre_int4c_ms"]},
             "reussite": {b: float(K[b].mean() / 5) for b in K},
             "octets_poids": {b: info[f"octets_{b}"] for b in ("ne16", "int4c", "sp", "g")}, "temps_par_plan_g_ms": info["temps_g_ms"]}
-    lecture = tests["G1"]["verdict"] == "soutenue" and tests["G2"]["verdict"] == "soutenue"
+    concord = all(tests[n]["borne_et_verdict_concordent"] for n in ("G1", "G2"))
+    lecture = tests["G1"]["verdict"] == "soutenue" and tests["G2"]["verdict"] == "soutenue" and concord
+    if lecture:
+        phrase = "phrase visée soutenue (G1 et G2, bornes concordantes)"
+    elif tests["G2"]["verdict"] == "soutenue" and tests["G1"]["verdict"] != "soutenue":
+        phrase = "fait mieux que l'arrondi au plus proche ; non-infériorité au 16 bits non établie"
+    elif not concord:
+        phrase = "non établie (borne et verdict discordants)"
+    else:
+        phrase = "non établie"
     controles = {"commit": sha, **{k: info[k] for k in ("ne16_identique", "int4c_identique", "source_ne16", "source_int4c",
                                                         "constantes_g", "macos", "etape0")}}
-    return {"controles": controles, "tests": tests, "phrase_visee_soutenue": lecture, "descriptifs": desc}
+    return {"controles": controles, "tests": tests, "phrase_visee_soutenue": lecture, "lecture": phrase, "descriptifs": desc}
 
 
 def rapport(r):
@@ -213,11 +244,16 @@ def rapport(r):
                  f"{t['p_holm']:.4f} | {t['verdict']} |")
         if not t["borne_et_verdict_concordent"]:
             L.append(f"- Attention, {n} : borne et verdict ne concordent pas.")
-    L += ["", f"Phrase visée (G1 et G2) : {'soutenue' if r['phrase_visee_soutenue'] else 'non établie'}.", "", "Descriptifs :", ""]
+    L += ["", f"Lecture (amendement 1) : {r['lecture']}.", "", "Descriptifs :", ""]
     L += [f"- {k} : {f(v)}" for k, v in r["descriptifs"]["ecarts"].items()]
     L += ["", "Réussite : " + ", ".join(f"{k} {100 * v:.1f} %" for k, v in r["descriptifs"]["reussite"].items()),
           "Fichier des poids (octets) : " + ", ".join(f"{k} {v}" for k, v in r["descriptifs"]["octets_poids"].items()),
-          f"Temps par plan de G (médiane, ms, descriptif) : {r['descriptifs']['temps_par_plan_g_ms']:.0f}"]
+          f"Temps par plan (ms, descriptif, sans comparaison affirmée) : G {r['descriptifs']['temps_par_plan_g_ms']:.0f} ; ancres de la session, "
+          f"graine 42 : ne16 {r['descriptifs']['temps_ancres_session_ms']['ne16']:.0f}, int4c {r['descriptifs']['temps_ancres_session_ms']['int4c']:.0f}",
+          f"Puce contre simulation : {r['descriptifs']['puce_contre_simulation_lecture']} ; G - int4c-sp : {r['descriptifs']['g_moins_sp_lecture']}",
+          "Part de la perte d'int4c rattrapée : " + (f"{r['descriptifs']['part_rattrapee']['part']:.2f} [{r['descriptifs']['part_rattrapee']['bas']:.2f} ; "
+          f"{r['descriptifs']['part_rattrapee']['haut']:.2f}]" if r["descriptifs"]["part_rattrapee"]["rapportee"] else "non rapportée"),
+          "Étape 0, sortie de la puce contre la simulation, rapport au repère 16 bits par lot : " + ", ".join(f"{x:.3f}" for x in r["controles"]["etape0"]["rapports_ne_sur_repere"])]
     return "\n".join(L) + "\n"
 
 

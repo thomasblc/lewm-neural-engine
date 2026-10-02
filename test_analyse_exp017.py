@@ -89,7 +89,9 @@ def fabriquer(racine):
     (r / "exp017-etape0").mkdir()
     (r / "exp017-etape0" / "resultats.json").write_text(json.dumps({"git": TETE, "git_sale": False, "codes_differents": 0, "codes": 11550720,
         "ecart_decode_max_part_ligne": 9e-4, "coremltools_part_codes_changes": 0.0043, "placement": {"NeuralEngine": 361},
-        "sha256_poids": "sha-int4c-gptq" * 4}))
+        "sha256_poids": "sha-int4c-gptq" * 4, "couches_gptq": 32,
+        "ne_contre_gptq_simule": [{"relative": 0.0035, "pire_echantillon": 0.005}] * 3,
+        "repere_ne16_contre_fp32": [{"relative": 0.0034, "pire_echantillon": 0.005}] * 3}))
     return r
 
 
@@ -134,6 +136,11 @@ def test_scenario(tmp):
         assert abs(E[k]["moyenne"] - 100 * v.mean() / 5) < 1e-9, k
     assert res["controles"]["ne16_identique"] and res["controles"]["int4c_identique"] and res["descriptifs"]["temps_par_plan_g_ms"] == 800.0
     assert "| G2 (superiorite) | g contre int4c |" in A17.rapport(res)
+    assert res["lecture"].startswith("phrase visée soutenue") and res["descriptifs"]["part_rattrapee"]["rapportee"]
+    part = (g - i4).sum() / (ne - i4).sum()
+    assert abs(res["descriptifs"]["part_rattrapee"]["part"] - part) < 1e-12
+    assert res["descriptifs"]["temps_ancres_session_ms"] == {"ne16": 800.0, "int4c": 800.0}
+    assert res["descriptifs"]["g_moins_sp_lecture"] == "descriptif"
     print(f"ok scénario : G1 et G2 soutenues, p recomptées ({ps[0]:.4f}, {ps[1]:.4f}), Holm, descriptifs")
     return r
 
@@ -189,7 +196,10 @@ def test_refus(tmp, r):
            ("étape 0 au commit", js("exp017-etape0/resultats.json", lambda j: j.update(git="4" * 40))),
            ("étape 0 : codes", js("exp017-etape0/resultats.json", lambda j: j.update(codes_differents=3))),
            ("étape 0 : modèle différent", js("exp017-etape0/resultats.json", lambda j: j.update(sha256_poids="x"))),
-           ("versions de macOS", js(f"{GQ}/meta.json", lambda j: j["protocole"]["moteur"].update(macos="27.0")))]
+           ("versions de macOS", js(f"{GQ}/meta.json", lambda j: j["protocole"]["moteur"].update(macos="27.0"))),
+           ("couches non conformes", js("exp017-etape0/resultats.json", lambda j: j.update(couches_gptq=30))),
+           ("trop loin de la simulation", js("exp017-etape0/resultats.json", lambda j: j["ne_contre_gptq_simule"].__setitem__(1, {"relative": 0.008}))),
+           ("octets au lieu de 5945536", lambda rr: [open(rr / GQ / f"predict-4-gptq_s{g}.mlpackage" / "Data" / "weights" / "weight.bin", "wb").truncate(5_000_000) for g in G])]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok refus ({len(cas)}, chacun avec son motif)")

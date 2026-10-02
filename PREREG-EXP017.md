@@ -4,6 +4,29 @@ Rédigé par Claude le 2 octobre 2026 à partir de 16 h 07 (heure du Mac, lue av
 Figé par le commit enregistré dans les fichiers. Tâche : PushT. Existant : K-030 (Apple propose GPTQ pour Core ML côté
 PyTorch ; rien de mesuré pour un planificateur sur le Neural Engine).
 
+Amendement 1 (2 octobre, à partir de 16 h 30, calcul en cours, avant toute lecture d'un résultat d'EXP-017 ; relecture
+du plan et du calcul : 1 P0 de procédure, 1 P1, 5 P2). Il l'emporte sur le texte qui suit. Écrit sur une branche à part
+(`exp017-amend`, issue de `8d24631`) pour ne pas arrêter le lanceur ; les fichiers de calcul restent ceux de `8d24631`.
+1. Contrôle du code (P0) : l'analyse exige que les fichiers de calcul (run_grid.py, quant.py, gptq.py, coreml_pred.py,
+   predicteur_ane.py, metriques.py, etape0_exp017.py, etape0_exp015.py, etape0b_exp015.py) soient ceux du commit des
+   runs, et que le commit de l'analyse en descende ; les fichiers d'analyse et ce texte sont ceux du commit de l'analyse.
+2. Phrase visée, réécrite (P1) : « Sur PushT, prédicteur sur le Neural Engine, les codes de GPTQ à 4 bits par canal
+   écrits dans Core ML gardent la réussite à 2 points près de celle du 16 bits sur la puce (G1) et font mieux que
+   l'arrondi au plus proche d'int4c de plus de 2 points (G2), pour un fichier des poids de la taille d'int4c ». Contre
+   PyTorch float32, seul l'écart G - fp32 et son intervalle se citent, sans enchaîner les marges. G2 seule soutenue :
+   « fait mieux que l'arrondi au plus proche ; non-infériorité au 16 bits non établie », rien sur un rattrapage. La
+   phrase n'est écrite que si la borne et le verdict concordent pour G1 et G2.
+3. Descriptif ajouté : part de la perte d'int4c rattrapée, (G - int4c) / (ne16 - int4c), intervalle bootstrap
+   percentile sur les épisodes, rapportée si la perte d'int4c contre ne16 est établie.
+4. Étape 0 bloquante (P2) : 32 couches GPTQ ; sur chacun des 3 lots, écart de la sortie de la puce à la sortie GPTQ
+   simulée au plus 2 fois le repère 16 bits contre float32 (règle R1 d'EXP-015) ; rapports rapportés. Fichier des poids de
+   G égal, à l'octet près, à celui d'int4c.
+5. Lecture des descriptifs (P2) : puce contre simulation « compatible » si l'intervalle contient 0, jamais une
+   équivalence ; « la simulation ne prédit pas la puce » seulement s'il l'exclut. G - int4c-sp : descriptif, méthodes et
+   tailles différentes, « non comparable » si une ancre de la session diffère de sa série.
+6. Temps par plan : ceux des ancres ne16 et int4c refaites dans la session (graine 42) sont rapportés à côté de celui de
+   G ; aucune comparaison de vitesse n'est affirmée.
+
 ## Ce qui est connu avant (divulgation)
 
 - EXP-014 et EXP-015 : int4 par canal (RTN) sur le Neural Engine perd 9,0 points face au 16 bits sur la puce, presque
