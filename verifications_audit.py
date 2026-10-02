@@ -122,6 +122,27 @@ gpu = moy("joules_par_plan_brut", lambda k: "exp012-gpu" in k)
 res["exp012_energie_resume"] = {"ne_tous": ne_tous, "ne_graines_44_a_46": ne_sans43, "gpu": gpu,
                                 "economie_ne_contre_gpu_tous": 1 - ne_tous / gpu, "economie_ne_contre_gpu_44_a_46": 1 - ne_sans43 / gpu,
                                 "torch": moy("joules_par_plan_brut", lambda k: "exp012-torch" in k)}
+# 5. EXP-013, rapports non pré-enregistrés (post hoc) depuis la sortie de l'analyse : par répétition
+r13 = json.loads((R / "analyse-exp013" / "resultats.json").read_text())
+lus.add("analyse-exp013/resultats.json")
+c13 = r13["configurations"]
+par_rep = lambda a, b, cle: [x / y for x, y in zip(c13[a][cle]["valeurs"], c13[b][cle]["valeurs"])]
+res["exp013_post_hoc"] = {
+    "ne_complet_contre_torch_fp16_temps": par_rep("ne-complet", "torch-fp16", "temps_par_plan_ms"),
+    "ne_complet_contre_torch_fp16_energie": par_rep("ne-complet", "torch-fp16", "energie_solve_puce_j"),
+    "ne_complet_contre_torch_temps": par_rep("ne-complet", "torch", "temps_par_plan_ms"),
+    "ne_complet_contre_torch_energie": par_rep("ne-complet", "torch", "energie_solve_puce_j"),
+    "torch_fp16_energie_j": c13["torch-fp16"]["energie_solve_puce_j"],
+    "codages_ne_temps_par_rep": {c: r13["comparaisons"][f"coreml-ne-{c} contre coreml-ne"]["temps"]["rapports"] for c in ("int8", "int4c", "pal4")},
+    "codages_ne_energie_par_rep": {c: r13["comparaisons"][f"coreml-ne-{c} contre coreml-ne"]["energie"]["rapports"] for c in ("int8", "int4c", "pal4")},
+    "codages_gpu_temps_par_rep": {c: r13["comparaisons"][f"coreml-gpu-{c} contre coreml-gpu"]["temps"]["rapports"] for c in ("int8", "int4b32", "int4c", "pal4")},
+    "codages_gpu_energie_par_rep": {c: r13["comparaisons"][f"coreml-gpu-{c} contre coreml-gpu"]["energie"]["rapports"] for c in ("int8", "int4b32", "int4c", "pal4")},
+    "vision_part_seule_par_rep": {e: c13[f"{e}-vision"]["vision_part_seule"]["valeurs"] for e in ("torch", "coreml-gpu", "coreml-ne", "ne-complet")},
+}
+b13 = r13["balayage_lot"]["cas"]
+res["exp013_post_hoc"]["predicteur_seul_lot_300_rapport_au_fp16"] = {
+    f"{u} {c}": b13[f"{u} {c} 300"]["mediane_ms"]["mediane"] / b13[f"{u} fp16 300"]["mediane_ms"]["mediane"]
+    for u in ("ne", "gpu") for c in ("int8", "int4b32", "int4c", "pal4")}
 res["fichiers_lus"] = sorted(lus)
 out = Path(sys.argv[1])
 out.mkdir(parents=True, exist_ok=True)
