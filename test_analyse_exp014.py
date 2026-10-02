@@ -72,6 +72,8 @@ def fabriquer(racine, scenario="A"):
         (r / f"exp014-ne16-{t}").mkdir()                          # témoin 16 bits refait dans EXP-014
         ecrire(r / f"exp014-ne16-{t}" / "fp32_s42.npz", np.load(r / ref_d / "fp32_s42.npz"), moteur=np.str_("coreml-ne"),
                coreml_sha256=np.str_(SHA16))
+        (r / f"exp014-ne16-{t}" / "meta.json").write_text(json.dumps({"protocole": p12, "git": TETE, "git_sale": False}))
+        ecrire_temps(r / f"exp014-ne16-{t}" / "fp32_s42.npz", "int8", 42, SHA16)
         if t == "pusht":                                         # les modèles dont EXP-013 a mesuré le temps
             for c in A14.CODAGES:
                 (r / f"exp013-coreml-ne-{c}-r1").mkdir()
@@ -239,7 +241,10 @@ def test_refus(tmp, r):
                json.dumps({"coreml": {"sha256_poids": "autre"}}))),
            ("témoin 16 bits manquant", lambda rr: shutil.rmtree(rr / "exp014-ne16-tworoom")),
            ("modèle 16 bits différent", champ("exp014-ne16-pusht", "fp32_s42.npz", "coreml_sha256", lambda x: np.str_("x"))),
-           ("plusieurs commits", champ("exp014-ne16-tworoom", "fp32_s42.npz", "git", lambda x: np.str_("a" * 40)))]
+           ("plusieurs commits", champ("exp014-ne16-tworoom", "fp32_s42.npz", "git", lambda x: np.str_("a" * 40))),
+           ("protocole, moteur ou versions", meta("exp014-ne16-pusht", lambda p: p["moteur"].update(macos="27.0"))),
+           ("exp014-ne16-tworoom : opérations hors du Neural Engine", temps("exp014-ne16-tworoom", "fp32_s42.temps.json",
+                                                                            lambda j: j["coreml"].update(placement={"GPU": 197})))]
     for motif, m in cas:
         essai(motif, m)
     print(f"ok contrôles bloquants ({len(cas)} refus, chacun avec son motif)")
@@ -250,6 +255,21 @@ def test_refus(tmp, r):
     res = A14.analyser(rr, verifier=False)
     assert not res["descriptifs"]["pusht"]["temoin_ne16_identique_exp012"] and "autre session" in A14.rapport(res)
     print("ok témoin 16 bits différent d'EXP-012 : rapporté, non bloquant")
+
+
+def test_constantes():
+    paquet = RES / "exp013-coreml-ne-int4c-r1" / "modeles.noindex" / "fp32_s42.mlpackage"
+    if not paquet.exists():
+        print("constantes codées : paquet d'EXP-013 absent, test sauté")
+        return
+    avant = (paquet / "Manifest.json").stat().st_mtime
+    lst = A14.constantes_codees(paquet)
+    assert not isinstance(lst, dict), lst
+    k = A14.categories(lst)
+    assert (len(lst), k["blocs"], k["pred_proj"], k["reecriture"], k["autres"]) == (34, 30, 2, 2, 0), k
+    assert (paquet / "Manifest.json").stat().st_mtime == avant, "le paquet a été réécrit"
+    assert isinstance(A14.constantes_codees(Path("/nexiste/pas.mlpackage")), dict)
+    print("ok constantes codées : 34 sur le vrai modèle int4c d'EXP-013 (30 blocs, 2 pred_proj, 2 de la réécriture), paquet intact")
 
 
 def test_code():
@@ -263,5 +283,6 @@ if __name__ == "__main__":
         r = test_scenario_a(tmp)
         test_scenario_c(tmp)
         test_refus(tmp, r)
+        test_constantes()
         test_code()
     print("tous les tests passent")

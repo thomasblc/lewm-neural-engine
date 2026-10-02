@@ -19,7 +19,6 @@ import numpy as np
 import analyse_exp003 as A
 import analyse_exp006 as A6
 import analyse_exp009 as A9
-import vitesse as V
 from analyse_exp012 import borne_bootstrap_t, niveaux_holm, p_bootstrap_t
 
 GRAINES = (42, 43, 44, 45, 46)
@@ -30,7 +29,7 @@ MARGE = 2                                           # points
 COREMLTOOLS = "9.0"
 TACHES = {"pusht": "exp003", "tworoom": "exp006"}  # référence fp32 PyTorch
 TESTS = tuple((f"N{i + 1}", t, c) for i, (t, c) in enumerate((t, c) for t in TACHES for c in CODAGES))
-FICHIERS_ANALYSE = ("analyse_exp014.py", "analyse_exp012.py", "vitesse.py", "analyse_exp009.py", "analyse_exp006.py", "analyse_exp003.py",
+FICHIERS_ANALYSE = ("analyse_exp014.py", "analyse_exp012.py", "analyse_exp009.py", "analyse_exp006.py", "analyse_exp003.py",
                     "metriques.py", "quant.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "PREREG-EXP014.md")
 ICI = Path(__file__).resolve().parent
 
@@ -59,30 +58,47 @@ def lire_temps(f, sha):
     return {"par_plan_s": float(d[garde].sum() / n[garde].sum()), "appels_ecartes": int((~garde).sum()), "coreml": j["coreml"]}
 
 
+def identiques(fa, fb):
+    a, b = np.load(fa), np.load(fb)
+    if set(a.files) != set(b.files):
+        return False
+    return all(np.array_equal(a[k], b[k], equal_nan=a[k].dtype.kind == "f") for k in a.files if k not in ("git", "git_sale"))
+
+
 def constantes_codees(paquet):
-    """Opérations de décompression des poids (constexpr) du modèle Core ML enregistré : type et nom de sortie. Liste
-    produite depuis le fichier, pour dire exactement ce que coremltools a codé (prédicteur, pred_proj, matrices de la
-    réécriture). None si le paquet manque."""
+    """Opérations de décompression des poids (constexpr) du modèle Core ML enregistré : type, nom de sortie, forme.
+    Liste produite depuis le fichier, pour dire exactement ce que coremltools a codé (prédicteur, pred_proj, matrices de
+    la réécriture). Le paquet est copié avant lecture (la lecture de coremltools réécrit son manifeste). Rend
+    {"erreur": ...} si la lecture échoue."""
+    import shutil
+    import tempfile
     try:
         import coremltools as ct
-        spec = ct.utils.load_spec(str(paquet))
+        with tempfile.TemporaryDirectory() as d:
+            copie = Path(d) / Path(paquet).name
+            shutil.copytree(paquet, copie)
+            spec = ct.utils.load_spec(str(copie))
         out = []
         for fn in spec.mlProgram.functions.values():
             for bloc in fn.block_specializations.values():
                 for op in bloc.operations:
                     if op.type.startswith("constexpr"):
-                        out.append([op.type, op.outputs[0].name])
+                        o = op.outputs[0]
+                        out.append([op.type, o.name, [int(x.constant.size) for x in o.type.tensorType.dimensions]])
         return out
-    except Exception:  # noqa: BLE001
-        return None
+    except Exception as e:  # noqa: BLE001
+        return {"erreur": f"{type(e).__name__}: {str(e)[:200]}"}
 
 
-def categories(noms):
-    """Classe les constantes codées par leur nom dans le graphe réécrit : blocs du prédicteur, pred_proj (proj_*),
-    matrices 0/1 de la réécriture (somme_tetes, etale_tetes), autres."""
+def categories(lst):
+    """Classe les constantes codées du graphe réécrit : blocs du prédicteur (blocs_*), matrices 0/1 de la réécriture
+    (somme_tetes, etale_tetes), pred_proj (proj_*, ou hors des blocs de forme 2 048 x 192 ou 192 x 2 048 : le convertisseur
+    nomme const_7 sa première couche), autres."""
+    noms = [x[1] for x in lst]
+    formes = {x[1]: tuple(x[2][:2]) for x in lst}
     reecr = [n for n in noms if "tetes" in n]
     blocs = [n for n in noms if n.startswith("blocs_") and n not in reecr]
-    proj = [n for n in noms if n.startswith("proj_")]
+    proj = [n for n in noms if n not in reecr + blocs and (n.startswith("proj_") or formes[n] in ((2048, 192), (192, 2048)))]
     autres = [n for n in noms if n not in reecr + blocs + proj]
     return {"blocs": len(blocs), "pred_proj": len(proj), "reecriture": len(reecr), "autres": len(autres), "noms_autres": autres}
 
@@ -165,7 +181,13 @@ def charger(racine, verifier=True):
         x16 = lire(f"exp014-ne16-{t}", 42, "fp16")
         shas.add(str(x16["git"]))
         A.exiger(str(x16["coreml_sha256"]) == sha16, f"exp014-ne16-{t} : modèle 16 bits différent de celui d'EXP-012")
-        temps[(t, "ne16_identique")] = bool(V.identiques(f16, r / d12 / "fp32_s42.npz"))
+        m16 = json.loads((r / f"exp014-ne16-{t}" / "meta.json").read_text())["protocole"]
+        A.exiger({k: v for k, v in m16.items() if k != "moteur"} == proto_ref and m16["moteur"].get("nom") == MOTEUR
+                 and "codage" not in m16["moteur"] and m16["moteur"].get("coremltools") == COREMLTOOLS
+                 and m16["moteur"].get("macos") == mo12.get("macos"), f"exp014-ne16-{t} : protocole, moteur ou versions {m16.get('moteur')}")
+        t16 = lire_temps(r / f"exp014-ne16-{t}" / "fp32_s42.temps.json", str(x16["git"]))
+        A.exiger(set(t16["coreml"].get("placement", {})) == {"NeuralEngine"}, f"exp014-ne16-{t} : opérations hors du Neural Engine")
+        temps[(t, "ne16_identique")] = bool(identiques(f16, r / d12 / "fp32_s42.npz"))
     A.exiger(len(shas) == 1, f"EXP-014 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
     for t in TACHES:
@@ -256,8 +278,10 @@ def rapport(r):
                  "seul » au sens strict." if d["temoin_ne16_identique_exp012"] else "différent d'EXP-012 : la colonne se lit « différence "
                  "avec le 16 bits d'une autre session »."))
         for c, lst in d["constantes_codees"].items():
-            if lst is not None:
-                k = categories([n for _, n in lst])
+            if isinstance(lst, dict):
+                L.append(f"  - {c} : constantes codées non listées ({lst['erreur']})")
+            else:
+                k = categories(lst)
                 L.append(f"  - {c} : {len(lst)} constantes codées : {k['blocs']} dans les blocs du prédicteur, {k['pred_proj']} de "
                          f"pred_proj, {k['reecriture']} matrices 0/1 de la réécriture « 1ctb », {k['autres']} autres ({', '.join(k['noms_autres'])})")
     L += ["", "Temps par plan sans mise en route et paquets Core ML dans le dossier des résultats : ne se compare pas aux temps "
