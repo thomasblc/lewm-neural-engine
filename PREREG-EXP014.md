@@ -10,7 +10,7 @@ Existant (K-027) : rien trouvé sur la réussite d'un planificateur avec des poi
 quantification elle-même (RTN par canal, palettes par k-moyennes) est faite par les fonctions de coremltools, pas par
 nous, et n'est pas nouvelle. Fu et al. (2602.02110) et Where Bits Matter (2602.11882) quantifient DINO-WM en simulé.
 
-Amendement 1 (2 octobre, 03 h 11, avant tout calcul d'EXP-014 ; code au commit `d70f67b`, tests passés : 32 refus). Une
+Amendement 1 (2 octobre, 3 h 11, avant tout calcul d'EXP-014 ; code au commit `d70f67b`, tests passés : 32 refus). Une
 relecture du plan et du code (1 P0, 6 P1) le corrige ainsi ; il l'emporte sur le texte qui suit.
 1. Ce qui est codé (P0) : coremltools code toute constante de plus de 2 048 éléments du graphe converti, qui est
    `model.predict` réécrit (prédicteur et projection de sortie `pred_proj`). Listé par script sur les modèles d'EXP-013
