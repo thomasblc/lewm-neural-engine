@@ -28,6 +28,8 @@ moyenne des deux segments de repos. Δ : segment moins repos.
 - V2 : pour (coreml-gpu, ne-complet), (torch, ne-complet) et (torch, coreml-gpu), le rapport des ΔP_p et celui des ΔP_b
   diffèrent d'au plus 10 % (indépendant de c ; les affirmations du papier sont des rapports au-dessus du repos).
 - Segments valides : chargeur débranché, au moins 95 % des échantillons.
+- Ajout du 2 octobre à 14 h 57, après l'essai en mode essai (chargeur branché, chiffres sans valeur) et avant la
+  mesure : tout écart au repos (batterie ou puce) nul ou négatif rend la validation non valide.
 - Validée si tout passe. Sinon, aucun chiffre d'énergie dans le papier (mention « non validée »).
 
 ## Ce que la validation ne couvre pas

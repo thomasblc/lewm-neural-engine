@@ -163,9 +163,11 @@ def resumer(f, duree, essai):
     v1 = {n: abs(c * D[n]["P_p"] - D[n]["P_b"]) / D[n]["P_b"] for n in ("coreml-gpu", "ne-complet", "ne-complet-vision30")}
     v2 = {f"{i} / {j}": abs((D[i]["P_p"] / D[j]["P_p"]) / (D[i]["P_b"] / D[j]["P_b"]) - 1)
           for i, j in (("coreml-gpu", "ne-complet"), ("torch", "ne-complet"), ("torch", "coreml-gpu"))}
-    valides = all(s["valide"] for s in seg.values())
+    # un écart au repos nul ou négatif (charge qui consommerait moins que le repos) est un échec, pas un écart relatif
+    positifs = all(D[n]["P_b"] > 0 and D[n]["P_p"] > 0 for n in CHARGES)
+    valides = all(s["valide"] for s in seg.values()) and positifs
     return {"segments": seg, "repos": repos, "derive_repos": {k: seg["repos-2"][k] - seg["repos-1"][k] for k in ("P_b", "P_p")},
-            "au_dessus_du_repos": D, "facteur_c": c, "V1_ecart_relatif": v1, "V2_ecart_relatif": v2, "segments_valides": valides,
+            "au_dessus_du_repos": D, "ecarts_positifs": positifs, "facteur_c": c, "V1_ecart_relatif": v1, "V2_ecart_relatif": v2, "segments_valides": valides,
             "seuil": SEUIL, "validee": bool(valides and all(e <= SEUIL for e in [*v1.values(), *v2.values()])) and not essai}
 
 
