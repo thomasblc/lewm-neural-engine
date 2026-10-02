@@ -241,7 +241,8 @@ def test_refus(tmp, r):
                json.dumps({"coreml": {"sha256_poids": "autre"}}))),
            ("témoin 16 bits manquant", lambda rr: shutil.rmtree(rr / "exp014-ne16-tworoom")),
            ("modèle 16 bits différent", champ("exp014-ne16-pusht", "fp32_s42.npz", "coreml_sha256", lambda x: np.str_("x"))),
-           ("plusieurs commits", champ("exp014-ne16-tworoom", "fp32_s42.npz", "git", lambda x: np.str_("a" * 40))),
+           ("plusieurs commits", lambda rr: (champ("exp014-ne16-tworoom", "fp32_s42.npz", "git", lambda x: np.str_("a" * 40))(rr),
+                                             temps("exp014-ne16-tworoom", "fp32_s42.temps.json", lambda j: j.update(git="a" * 40))(rr))),
            ("protocole, moteur ou versions", meta("exp014-ne16-pusht", lambda p: p["moteur"].update(macos="27.0"))),
            ("exp014-ne16-tworoom : opérations hors du Neural Engine", temps("exp014-ne16-tworoom", "fp32_s42.temps.json",
                                                                             lambda j: j["coreml"].update(placement={"GPU": 197})))]
