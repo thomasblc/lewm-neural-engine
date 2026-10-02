@@ -48,6 +48,11 @@ print(0 if e["sp_et_bl_identiques_sur_le_neural_engine"] else 1)' $R/exp015-etap
   $PY -c 'import platform, sys, coremltools
 sys.exit(0 if (platform.mac_ver()[0], coremltools.__version__) == ("26.6.2", "9.0") else 1)' || { echo "[arrêt] macOS ou coremltools différent de 26.6.2 et 9.0"; exit 1; }
   if [ "$sp" = 1 ]; then BRAS+=(int4c-sp); fi
+  # étape 0 au même commit, correspondance des couches établie
+  $PY -c 'import json, sys
+e = json.load(open(sys.argv[1]))
+c = e.get("correspondance", {})
+sys.exit(0 if e["git"] == sys.argv[2] and not e["git_sale"] and c.get("predictor4") is True and c.get("predproj4") is True else 1)' $R/exp015-etape0/resultats.json $HEAD0 || { echo "[arrêt] étape 0 absente, d'un autre commit ou sans correspondance"; exit 1; }
   echo "[info] étape 0 b : bras sur le Neural Engine ${BRAS[*]}"
 
   # 1. le GPU est partagé : attendre 3 contrôles vides de suite, 24 h au plus ; la batterie d'abord

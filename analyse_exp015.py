@@ -205,6 +205,11 @@ def charger(racine, verifier=True):
     A.exiger(len(shas) == 1, f"EXP-015 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
     A.exiger(e0b["git"] == sha, f"étape 0 b au commit {e0b['git'][:7]}, runs au commit {sha[:7]}")
+    A.exiger((r / "exp015-etape0" / "resultats.json").exists(), "étape 0 : sortie manquante")
+    e0 = json.loads((r / "exp015-etape0" / "resultats.json").read_text())
+    A.exiger(e0["git"] == sha and not e0["git_sale"], f"étape 0 au commit {e0['git'][:7]}, runs au commit {sha[:7]}")
+    A.exiger(e0.get("correspondance", {}).get("predictor4") is True and e0["correspondance"].get("predproj4") is True,
+             "étape 0 : correspondance des couches avec predictor:4 et predproj:4 non établie")
     for d, g in (("exp015-repro-pusht", 42), ("exp015-fin-pusht", 46)):
         x = np.load(r / d / f"fp32_s{g}.npz")
         A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"{d} : autre commit ou arbre modifié")
@@ -214,6 +219,8 @@ def charger(racine, verifier=True):
     info["avec_sp"] = avec_sp
     info["etape0b_resume"] = e0b.get("resume")
     info["R1"] = e0b.get("R1")
+    info["temps_ancres_session_ms"] = {b: 1000 * info[f"temps_{d}"][42] for b, d in (("ne16", "exp015-ne16-pusht"), ("int4c", "exp015-int4c-pusht"))}
+    info["source_temps"] = {"ne16": info["source_ne16"], "int4c": info["source_int4c"]}
     info["temps_ms"] = {b: 1000 * float(np.median(list(info[f"temps_{d}"].values()))) for b, d in
                         (("ne16", info["source_ne16"]), ("int4c", info["source_int4c"]), *((b, f"exp015-{BRAS_NE[b]}-pusht") for b in BRAS_NE if b in K))}
     info["macos"] = sorted(info["macos"])
@@ -269,7 +276,8 @@ def analyser(racine, verifier=True):
                    "haut": float(np.percentile(ratios, 97.5))})
     d5 = {"reussite": {b: float(K[b].mean() / 5) for b in K},
           "octets_poids": {b: info.get(f"octets_{b}") for b in ("ne16", "int4c", "bl", "pp", "sp") if f"octets_{b}" in info},
-          "temps_par_plan_ms": info["temps_ms"]}
+          "temps_par_plan_ms": info["temps_ms"], "source_des_temps_de_reference": info["source_temps"],
+          "temps_ancres_session_graine_42_ms": info["temps_ancres_session_ms"]}
     soutenue = lambda n: tests[n]["verdict"] == "soutenue"
     lecture = {"perte_vient_de_pred_proj": soutenue("L1") and soutenue("L2") and soutenue("L4"),
                "deploiement_sans_pred_proj_appuye_sur": ("L5" if info["avec_sp"] else "L2")
@@ -313,7 +321,9 @@ def rapport(r):
           (f"{d4['part']:.2f} [{d4['bas']:.2f} ; {d4['haut']:.2f}]" if d4["rapportee"] else "non rapportée (perte d'int4c non établie)")]
     L += ["", "D5, réussite : " + ", ".join(f"{k} {100 * v:.1f} %" for k, v in r["D5"]["reussite"].items()),
           "", "Fichier des poids (octets) : " + ", ".join(f"{k} {v}" for k, v in r["D5"]["octets_poids"].items()),
-          "", "Temps par plan médian (ms, descriptif) : " + ", ".join(f"{k} {v:.0f}" for k, v in r["D5"]["temps_par_plan_ms"].items())]
+          "", "Temps par plan médian (ms, descriptif ; ne16 et int4c lus dans " + ", ".join(r["D5"]["source_des_temps_de_reference"].values())
+          + ", autres sessions) : " + ", ".join(f"{k} {v:.0f}" for k, v in r["D5"]["temps_par_plan_ms"].items())
+          + " ; ancres refaites dans cette session, graine 42 : " + ", ".join(f"{k} {v:.0f}" for k, v in r["D5"]["temps_ancres_session_graine_42_ms"].items())]
     return "\n".join(L) + "\n"
 
 

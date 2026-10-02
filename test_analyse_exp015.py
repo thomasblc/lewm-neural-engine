@@ -30,8 +30,11 @@ GIT12, GIT14 = "e" * 40, "d" * 40
 OCTETS = {"fp16": 23_232_128, "int4c": 5_945_536, "int4c-bl": 7_100_000, "int4c-pp": 22_050_000, "int4c-sp": 7_120_000}
 SOURCES = {"A": {"ne16": "fp32", "int4c": "fp32", "int4c-bl": "fp32", "int4c-pp": "fp32", "int4c-sp": "fp32",
                  "predproj:4": "fp32", "predict:4": "fp32"},
-           "C": {"ne16": "fp32", "int4c": "all-4", "int4c-bl": "predictor-3", "int4c-pp": "all-4", "int4c-sp": "predictor-3",
-                 "predproj:4": "encoder-4", "predict:4": "all-5"}}
+           "C": {"ne16": "fp32", "int4c": "all-4", "int4c-bl": "predictor-3", "int4c-pp": "all-5", "int4c-sp": "predictor-3",
+                 "predproj:4": "encoder-4", "predict:4": "all-5"},
+           # L4 près de sa marge : pred_proj seule à environ 2,7 points au-dessus d'int4c (bornes non dégénérées)
+           "D": {"ne16": "fp32", "int4c": "predictor-3", "int4c-bl": "fp32", "int4c-pp": "predictor-4", "int4c-sp": "fp32",
+                 "predproj:4": "all-6", "predict:4": "predictor-3"}}
 NOMS_BLOCS = [f"blocs_{i}_{n}_weight_to_fp16" for i in range(6) for n in ("mod", "qkv", "sortie", "fc1", "fc2")]
 CONST = {"int4c-bl": [["c", n, [192, 192, 1, 1]] for n in NOMS_BLOCS],
          "int4c-pp": [["c", "const_7_to_fp16", [2048, 192, 1, 1]], ["c", "proj_3_weight_to_fp16", [192, 2048, 1, 1]]],
@@ -100,6 +103,9 @@ def fabriquer(racine, scenario="A", session=False, avec_sp=False):
             x = dict(np.load(r / dd / f))
             x["positions"] = x["positions"][::-1].copy()
             np.savez_compressed(r / dd / f, **x)
+    (r / "exp015-etape0").mkdir()
+    (r / "exp015-etape0" / "resultats.json").write_text(json.dumps({"git": TETE, "git_sale": False,
+                                                                    "correspondance": {"predictor4": True, "predproj4": True}}))
     (r / "exp015-etape0b").mkdir()
     codages = {c: {"sha256_poids": f"sha-{c}" * 4} for c in ("fp16", "int4c", "int4c-bl", "int4c-pp", "int4c-sp", "pal4")}
     (r / "exp015-etape0b" / "resultats.json").write_text(json.dumps({
@@ -219,6 +225,15 @@ def test_scenario_c(tmp):
           f"{[T[n]['verdict'] for n in T]}")
 
 
+def test_scenario_d(tmp):
+    r = fabriquer(Path(tmp) / "d", "D")
+    res = A.pur(A15.analyser(r, verifier=False))
+    ps = verifier(r, res)
+    T = res["tests"]["L4"]
+    assert 1 / 10_001 < T["p"] < 1 and T["borne_et_verdict_concordent"], T
+    print(f"ok scénario D : L4 près de sa marge, p {T['p']:.4f}, borne {T['borne_points']:+.2f} points, verdict {T['verdict']}")
+
+
 def test_scenario_s(tmp):
     r = fabriquer(Path(tmp) / "s", "C", session=True, avec_sp=True)
     res = A.pur(A15.analyser(r, verifier=False))
@@ -322,6 +337,9 @@ def test_refus(tmp, r):
            ("étape 0 b : modèle int4c-pp différent", json_("exp015-etape0b/resultats.json", lambda j: j["codages"]["int4c-pp"].update(sha256_poids="x"))),
            ("étape 0 b : modèle fp16 différent", json_("exp015-etape0b/resultats.json", lambda j: j["codages"]["fp16"].update(sha256_poids="x"))),
            ("étape 0 b : versions", json_("exp015-etape0b/resultats.json", lambda j: j.update(macos="27.0"))),
+           ("étape 0 au commit", json_("exp015-etape0/resultats.json", lambda j: j.update(git="5" * 40))),
+           ("correspondance des couches", json_("exp015-etape0/resultats.json", lambda j: j["correspondance"].update(predproj4=False))),
+           ("étape 0 : sortie manquante", lambda rr: shutil.rmtree(rr / "exp015-etape0")),
            ("même modèle", lambda rr: [champ(BL, f"fp32_s{g}.npz", "coreml_sha256", lambda x: np.str_("sha-int4c-pp" * 4))(rr) or
                                        json_(f"{BL}/fp32_s{g}.temps.json", lambda j: j["coreml"].update(sha256_poids="sha-int4c-pp" * 4))(rr)
                                        for g in G])]
@@ -340,6 +358,7 @@ if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp, np.errstate(all="ignore"):
         r = test_scenario_a(tmp)
         test_scenario_c(tmp)
+        test_scenario_d(tmp)
         test_scenario_s(tmp)
         test_refus(tmp, r)
         test_code()

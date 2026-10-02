@@ -17,7 +17,9 @@ l'encodeur d'action) :
 Mesures (erreur relative ||a - b|| / ||b|| sur tout le lot, et la pire par échantillon) :
 - e_exec = err(y_ne, y_dec) : erreur d'exécution du Neural Engine à poids égaux ; lue contre e_exec du 16 bits ;
 - e_code = err(y_dec, y_sim) : codage de coremltools contre celui de quant.py, calcul float32 des deux côtés ;
-- e_quant = err(y_sim, y32) : taille de l'effet de la quantification simulée.
+- e_quant = err(y_sim, y32) : taille de l'effet de la quantification simulée ;
+- e_cpu = err(y_cpu, y_dec) : le même paquet Core ML exécuté sur le CPU (CPU_ONLY), descriptif (repère de l'erreur
+  d'une autre exécution float16 de Core ML ; aucune règle ne s'en sert, amendement 1 point 11).
 Plus : les sorties sur le Neural Engine d'int4c-sp et d'int4c-bl sont-elles identiques bit pour bit (matrices 0/1
 inertes) ? Règles fixées dans PREREG-EXP015.md (amendement 1) avant ce calcul, et écrites ici :
 - validité : e_exec du 16 bits et l'écart du 16 bits sur la puce à float32 sous 1e-2 sur chaque lot, sinon invalide ;
@@ -137,10 +139,13 @@ def main(sortie):
             assert set(info["placement"]) == {"NeuralEngine"}, (c, info["placement"])
             coeur = poids_decodes(model, c, k16, ref)
             y_ne = [sortie_ne(m, e, a) for e, a in X]
+            m_cpu = ct.models.MLModel(str(Path(d) / f"{c}.mlpackage"), compute_units=ct.ComputeUnit.CPU_ONLY)
+            y_cpu = [sortie_ne(m_cpu, e, a) for e, a in X]
             y_dec = [sortie_coeur(coeur, e, a) for e, a in X]
             ne[c] = y_ne
             r = {"sha256_poids": info["sha256_poids"], "placement": info["placement"],
                  "e_exec": [err(a, b) for a, b in zip(y_ne, y_dec)], "err_ne_contre_fp32": [err(a, b) for a, b in zip(y_ne, y32)],
+                 "e_cpu": [err(a, b) for a, b in zip(y_cpu, y_dec)],
                  "err_dec_contre_fp32": [err(a, b) for a, b in zip(y_dec, y32)]}
             if c in SIMULE:
                 s = sims[SIMULE[c]]
@@ -150,7 +155,7 @@ def main(sortie):
     res["sp_et_bl_identiques_sur_le_neural_engine"] = bool(all(np.array_equal(a, b) for a, b in zip(ne["int4c-sp"], ne["int4c-bl"])))
     res["sp_contre_bl"] = [err(a, b) for a, b in zip(ne["int4c-sp"], ne["int4c-bl"])]
     resume = {c: {k: float(np.mean([x["relative"] for x in v[k]]))
-                  for k in ("e_exec", "e_code", "e_quant", "err_ne_contre_fp32") if k in v} for c, v in res["codages"].items()}
+                  for k in ("e_exec", "e_cpu", "e_code", "e_quant", "err_ne_contre_fp32") if k in v} for c, v in res["codages"].items()}
     C16 = res["codages"]["fp16"]
     res["valide"] = bool(all(C16["e_exec"][i]["relative"] < PLANCHER and C16["err_ne_contre_fp32"][i]["relative"] < PLANCHER
                              for i in range(len(LOTS))))

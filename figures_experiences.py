@@ -72,11 +72,13 @@ def exp015():
             "predictor4 - fp32": ("Simulé, blocs seuls (predictor:4)", G), "s_pp - fp32": ("Simulé, pred_proj seule (predproj:4)", G),
             "s_pr - fp32": ("Simulé, tout (predict:4)", G)}
     lignes = [(noms[k][0], D1[k], noms[k][1]) for k in noms if k in D1]
+    lignes.append(("pred_proj seule contre int4c (L4)", r["tests"]["L4"]["ecart_points"], B))
     v = [l[1][k] for l in lignes for k in ("bas", "haut")]
     xmin, xmax = min(-4, 2 * (min(v) // 2)), max(2, 2 * (max(v) // 2 + 1))
     f1 = foret("Int4 par canal, portée par portée : écart de réussite à la référence (PushT, 500 épisodes, 5 graines)",
                "Vert : Core ML sur le Neural Engine, contre le 16 bits sur le Neural Engine ; gris : quantification simulée dans "
-               "PyTorch, contre float32. Marge des tests L1 à L3 : 2 points.", lignes, xmin, xmax, list(range(int(xmin), int(xmax) + 1, 2)), marge=-2)
+               "PyTorch, contre float32. Bleu : pred_proj seule contre int4c (test L4 : pas mieux de plus de 2 points). Marge "
+               "des tests L1 à L5 : 2 points.", lignes, xmin, xmax, list(range(int(xmin), int(xmax) + 1, 2)), marge=-2)
     l3 = [("pred_proj", D3["pred_proj"], B), ("blocs", D3["blocs"], B), ("tout", D3["tout"], B)]
     v = [l[1][k] for l in l3 for k in ("bas", "haut")]
     f2 = foret("Puce contre simulation : différence entre la perte sur le Neural Engine et la perte simulée, par portée",

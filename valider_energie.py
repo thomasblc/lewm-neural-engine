@@ -84,7 +84,9 @@ class Echantillonneur(threading.Thread):
 def demarrer_charge(nom, dossier):
     cmd = ["caffeinate", "-d", "-i", PY, "run_grid.py", "--out", str(dossier), "--n", "500", "--chunk", "50", "--specs", "fp32",
            "--seeds", "42", *CHARGES[nom]] + ([] if nom == "torch" else ["--codage", "fp16"])
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+    # sortie non tamponnée : sinon les lignes « CEM solve time » n'arrivent qu'à la fin du run (essai du 2 octobre)
+    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
+                         env={**os.environ, "PYTHONUNBUFFERED": "1"})
     premier = threading.Event()
 
     def lire():

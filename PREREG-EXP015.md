@@ -42,6 +42,22 @@ code : 1 P0, 6 P1). Il l'emporte sur le texte qui suit.
    (les gardes ne suivent que leur propre préfixe) ; macOS 26.6.2 et coremltools 9.0 exigés avant le départ ; un fichier
    de référence manquant arrête le lanceur au lieu de compter comme « différent » ; la validation de l'énergie et les
    tests des portées comptent comme calculs en cours.
+11. Relecture des corrections (9 h 26, aucun P0), appliquée avant le commit final :
+   - Divulgation : un essai de l'étape 0 b a tourné à 9 h 15 au commit `70f6e1e` (sortie hors du dossier des résultats),
+     ses règles déjà fixées ; il a été vu : étape valide, H2 écartée par R1 pour tous les codages (erreur d'exécution du
+     Neural Engine égale à celle du 16 bits à 1 % près), sorties d'int4c-sp et d'int4c-bl non identiques bit pour bit
+     (donc bras SP par R2). Aucune règle n'a changé depuis ; la sortie qui compte est celle de l'étape 0 b refaite au
+     commit final. Le relecteur proposait de recaler le plancher de validité sur l'exécution de Core ML sur CPU : non
+     fait, l'essai ayant été vu ; cette exécution est seulement ajoutée comme repère descriptif (e_cpu).
+   - Puissance de L4 (estimation ad hoc de la relecture, pas un résultat) : environ 0,9 si l'erreur-type de PP - int4c
+     vaut 0,7 point, 0,45 si elle vaut 1,3 point, au niveau de 5 % (moins au niveau de Holm). Une L4 non soutenue se lit
+     « non établie », jamais comme une preuve contre.
+   - Une R1 « H2 retenue » ne se lirait qu'avec e_code : si e_code n'est pas petit devant e_quant, la référence est
+     suspecte avant la puce.
+   - L'étape 0 est refaite au commit final ; l'analyse et le lanceur exigent sa sortie à ce commit, correspondance des
+     couches comprise.
+   - D5 : les temps des références viennent de leurs sessions d'origine (signalé) ; les temps des ancres refaites dans
+     la session sont ajoutés.
 
 ## Origine de l'hypothèse (divulgation)
 
