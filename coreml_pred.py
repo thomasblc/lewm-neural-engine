@@ -35,27 +35,51 @@ APPELS = {"n": 0, "coreml_s": 0.0, "total_s": 0.0}   # EXP-013 : temps dans l'ap
 def remise_a_zero_appels():
     APPELS.update(n=0, coreml_s=0.0, total_s=0.0)
 CODAGES = ("fp16", "int8", "int4b32", "pal4", "int4c")   # EXP-013 : codage des poids dans Core ML (int4c : amendement 4)
+CODAGES_PORTEE = ("int4c-sp", "int4c-pp", "pal4-sp", "pal4-pp")   # EXP-015 : sans pred_proj, ou pred_proj seule
+
+
+def constantes_pred_proj(ml):
+    """EXP-015 : noms des deux constantes de pred_proj (192 vers 2 048 puis 2 048 vers 192) dans le programme MIL du
+    graphe réécrit « 1ctb » : hors des blocs du prédicteur (blocs_*), de forme 2 048 x 192 ou 192 x 2 048. Exactement deux,
+    sinon arrêt (le graphe n'est pas celui attendu)."""
+    noms = [op.name for fn in ml._mil_program.functions.values() for op in fn.operations
+            if op.op_type == "const" and op.outputs[0].val is not None and getattr(op.outputs[0].val, "size", 0) > 2048
+            and not op.name.startswith("blocs_") and tuple(op.outputs[0].shape) in ((2048, 192, 1, 1), (192, 2048, 1, 1))]
+    if len(noms) != 2:
+        raise ValueError(f"pred_proj : {len(noms)} constantes trouvées au lieu de 2 ({noms})")
+    return noms
 
 
 def comprimer(ml, codage):
     """EXP-013 : codage des poids du programme Core ML (fonctions de coremltools, depuis les poids 16 bits) : int8 par
-    canal, int4 par blocs de 32, int4 par canal, palettes de 16 valeurs (k-moyennes). Vitesse et mémoire seulement : la réussite de
-    ces codages est l'objet d'une autre expérience."""
+    canal, int4 par blocs de 32, int4 par canal, palettes de 16 valeurs (k-moyennes). EXP-015 : suffixe de portée,
+    « -sp » (sans pred_proj : ses deux couches restent en 16 bits) ou « -pp » (pred_proj seule codée, le reste en 16
+    bits). coremltools code toute constante de plus de 2 048 éléments."""
     import coremltools.optimize.coreml as cto
     if codage == "fp16":
         return ml
-    if codage == "int8":
+    base, _, portee = codage.partition("-")
+    if base == "int8":
         cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int8", granularity="per_channel")
-        return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
-    if codage == "int4b32":
+    elif base == "int4b32":
         cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_block", block_size=32)
-        return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
-    if codage == "int4c":                              # amendement 4 : int4 par canal, seul int4 entièrement sur le Neural Engine
+    elif base == "int4c":                              # amendement 4 : int4 par canal, seul int4 entièrement sur le Neural Engine
         cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_channel")
-        return cto.linear_quantize_weights(ml, cto.OptimizationConfig(global_config=cfg))
-    if codage == "pal4":
-        return cto.palettize_weights(ml, cto.OptimizationConfig(global_config=cto.OpPalettizerConfig(mode="kmeans", nbits=4)))
-    raise ValueError(codage)
+    elif base == "pal4":
+        cfg = cto.OpPalettizerConfig(mode="kmeans", nbits=4)
+    else:
+        raise ValueError(codage)
+    if portee == "":
+        config = cto.OptimizationConfig(global_config=cfg)
+    elif portee == "sp":
+        config = cto.OptimizationConfig(global_config=cfg, op_name_configs={n: None for n in constantes_pred_proj(ml)})
+    elif portee == "pp":
+        config = cto.OptimizationConfig(global_config=None, op_name_configs={n: cfg for n in constantes_pred_proj(ml)})
+    else:
+        raise ValueError(codage)
+    return (cto.palettize_weights if base == "pal4" else cto.linear_quantize_weights)(ml, config)
+
+
 LOT, T_FIXE = 300, 3
 
 

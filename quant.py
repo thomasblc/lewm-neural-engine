@@ -23,6 +23,7 @@ GROUPES = {
     "predictor": ("predictor",),
     "autres": ("action_encoder", "projector", "pred_proj"),
     "encpred": ("encoder", "predictor"),
+    "predproj": ("pred_proj",),                       # EXP-015 : la projection de sortie du prédicteur seule
 }
 
 
