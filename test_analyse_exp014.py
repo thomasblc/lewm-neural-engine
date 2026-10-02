@@ -207,7 +207,7 @@ def test_refus(tmp, r):
         return m
     cas = [("reproduction pusht graine 42", lambda rr: shutil.copy(rr / "exp003" / "all-4_s42.npz", rr / "exp014-repro-pusht" / "fp32_s42.npz")),
            ("reproduction tworoom graine 46", champ("exp014-fin-tworoom", "fp32_s46.npz", "success", lambda x: ~x["success"])),
-           ("reproduction pusht graine 46 : autre commit", champ("exp014-fin-pusht", "fp32_s46.npz", "git", lambda x: np.str_("c" * 40))),
+           ("exp014-fin-pusht graine 46 : autre commit", champ("exp014-fin-pusht", "fp32_s46.npz", "git", lambda x: np.str_("c" * 40))),
            ("manquant", lambda rr: (rr / "exp014-int8-pusht" / "fp32_s44.npz").unlink()),
            ("manquant", lambda rr: (rr / "exp012-ne-tworoom" / "fp32_s45.npz").unlink()),
            ("version ou graine", champ("exp014-pal4-tworoom", "fp32_s43.npz", "seed", lambda x: np.int64(42))),
