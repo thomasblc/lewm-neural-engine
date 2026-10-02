@@ -10,6 +10,39 @@ Existant (K-027) : rien trouvé sur la réussite d'un planificateur avec des poi
 quantification elle-même (RTN par canal, palettes par k-moyennes) est faite par les fonctions de coremltools, pas par
 nous, et n'est pas nouvelle. Fu et al. (2602.02110) et Where Bits Matter (2602.11882) quantifient DINO-WM en simulé.
 
+Amendement 1 (2 octobre, 03 h 11, avant tout calcul d'EXP-014 ; code au commit `d70f67b`, tests passés : 32 refus). Une
+relecture du plan et du code (1 P0, 6 P1) le corrige ainsi ; il l'emporte sur le texte qui suit.
+1. Ce qui est codé (P0) : coremltools code toute constante de plus de 2 048 éléments du graphe converti, qui est
+   `model.predict` réécrit (prédicteur et projection de sortie `pred_proj`). Listé par script sur les modèles d'EXP-013
+   (`analyse_exp014.constantes_codees`) : 34 constantes, 30 dans les 6 blocs du prédicteur (modulation, qkv, sortie,
+   fc1, fc2), les 2 couches de `pred_proj` (l'une nommée `const_7` par le convertisseur, de forme 2 048 x 192), et 2
+   matrices 0/1 de la réécriture « 1ctb » (somme et étalement des têtes). « Le codage porte sur le seul prédicteur » est
+   donc faux : il porte sur le prédicteur et `pred_proj`. Contexte : à 4 bits en simulé, le prédicteur seul ne perdait
+   rien de mesurable (+0,6 [-0,7 ; +1,9], EXP-003, `predictor:4`), et les 6 couches hors encodeur et prédicteur, dont
+   `pred_proj`, coûtaient 9,4 points (EXP-004, `autres:4`). Un échec d'int4c ne se lit donc pas comme « le prédicteur
+   est sensible dans Core ML ». L'analyse liste les constantes codées de chaque modèle d'EXP-014.
+2. int4c, formulation corrigée : l'int4 linéaire symétrique par canal de coremltools est la même grille que notre RTN
+   par canal (arrondi de w / (max|w| / 7), borné à [-7, 7], par canal de sortie) ; les différences sont les poids et les
+   échelles en 16 bits, le calcul en 16 bits sur le Neural Engine et la portée du point 1. pal4 palettise les tenseurs du
+   graphe réécrit (dont qkv, où les lignes q portent le facteur 1/8 replié) : son résultat vaut pour ce graphe.
+3. Témoin 16 bits : pour chaque tâche, un run 16 bits sur le Neural Engine, graine 42, refait dans EXP-014
+   (`exp014-ne16-*`), comparé à celui d'EXP-012. S'il est identique octet pour octet, la colonne « effet du codage seul »
+   garde ce nom ; sinon elle se lit « différence avec le 16 bits d'une autre session ». Non bloquant.
+4. Contrôles bloquants ajoutés : fichiers 16 bits d'EXP-012 du même moteur, du commit d'EXP-012, d'un seul modèle, au
+   même protocole ; versions coremltools 9.0 et macOS d'EXP-012 pour tous les runs d'EXP-014 ; le codage a vraiment été
+   appliqué (empreinte différente du 16 bits, fichier des poids plus petit, trois codages différents) ; sur PushT, le
+   modèle est celui dont EXP-013 a mesuré le temps (même empreinte) ; le témoin 16 bits a le modèle d'EXP-012. Le
+   lanceur s'arrête dès qu'un run codé a une opération hors du Neural Engine.
+5. Lecture : « non soutenue » veut dire que la non-infériorité n'est pas établie, pas une perte ; une perte n'est
+   affirmée que si l'intervalle à 95 % est entièrement sous 0. Le contrôle de la marge (fp32 contre fp32) est rapporté au
+   niveau de Holm de chaque test (dans EXP-012, il passait à 5 % mais pas toujours aux niveaux de Holm sur TwoRoom).
+6. Formulations : EXP-013 n'a mesuré le temps que sur PushT, sur une machine et une session, et sa règle disait « non
+   constant » (aucune différence constante au-delà de 5 % pour le temps et 10 % pour l'énergie), pas « aucun
+   changement ». « Toutes les opérations de calcul » sur le Neural Engine : les opérations de décompression n'ont pas de
+   processeur dans le plan de calcul. Le temps par plan d'EXP-014 (sans mise en route, paquets dans le dossier des
+   résultats) ne se compare pas à celui d'EXP-013. La taille du 16 bits est calculée depuis le fichier d'EXP-012.
+7. Lanceur : départ à au moins 60 % de batterie ; un seul lanceur à la fois. Durée : environ 6 h (2 témoins en plus).
+
 ## Question et hypothèses
 
 Les trois codages gratuits en temps sur le Neural Engine (EXP-013) font-ils perdre plus de 2 points de réussite au
