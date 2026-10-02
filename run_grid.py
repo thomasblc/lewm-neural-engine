@@ -318,7 +318,7 @@ def main():
     ap.add_argument("--moteur", choices=coreml_pred.MOTEURS, default="torch",
                     help="EXP-012 : prédicteur en PyTorch (défaut) ou en Core ML 16 bits sur le GPU ou le Neural Engine ; "
                          "EXP-013 : torch-fp16 (autocast)")
-    ap.add_argument("--codage", choices=coreml_pred.CODAGES + coreml_pred.CODAGES_PORTEE, default="fp16",
+    ap.add_argument("--codage", choices=coreml_pred.CODAGES + coreml_pred.CODAGES_PORTEE + coreml_pred.CODAGES_GPTQ, default="fp16",
                     help="EXP-013 : codage des poids Core ML ; EXP-015 : portée -sp (sans pred_proj), -pp (pred_proj seule), -bl (blocs seuls)")
     ap.add_argument("--go", default=None, help="EXP-013 : après la mise en route, écrire GO.pret puis attendre le fichier GO "
                     "(la charge de vision démarre entre les deux, une fois le modèle chargé et converti)")
@@ -360,6 +360,8 @@ def main():
         import coremltools
         protocole["moteur"] = {"nom": args.moteur, "coremltools": coremltools.__version__,
                                "macos": platform.mac_ver()[0], "precision": "float16"}
+        if args.codage in coreml_pred.CODAGES_GPTQ and not all(s.endswith(":gptq") and s.startswith("predict:") for s in args.specs):
+            sys.exit(f"--codage {args.codage} : versions « predict:B:gptq » attendues (codes de GPTQ écrits dans Core ML)")
         if args.codage != "fp16":                             # EXP-013
             protocole["moteur"]["codage"] = args.codage
     compteur = None

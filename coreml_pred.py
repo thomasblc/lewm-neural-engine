@@ -38,6 +38,9 @@ CODAGES = ("fp16", "int8", "int4b32", "pal4", "int4c")   # EXP-013 : codage des 
 # EXP-015 : sans pred_proj (-sp), pred_proj seule (-pp), les 30 poids des blocs seuls (-bl : ni pred_proj ni les 2 matrices
 # 0/1 de la réécriture)
 CODAGES_PORTEE = ("int4c-sp", "int4c-pp", "int4c-bl", "pal4-sp", "pal4-pp", "pal4-bl")
+# EXP-017 : les codes et les échelles de GPTQ (quant.py, « :gptq ») écrits tels quels dans Core ML (int4 par canal) pour
+# les 32 poids du prédicteur et de pred_proj ; les 2 matrices 0/1 de la réécriture codées en int4c comme ailleurs
+CODAGES_GPTQ = ("int4c-gptq",)
 
 
 def constantes_pred_proj(ml):
@@ -62,6 +65,80 @@ def constantes_blocs(ml):
     if len(noms) != 30:
         raise ValueError(f"blocs : {len(noms)} constantes trouvées au lieu de 30 ({noms})")
     return noms
+
+
+def correspondance_constantes(model):
+    """EXP-017 : {nom de la constante du graphe réécrit « 1ctb » : (couche PyTorch, facteur par ligne ou None)} pour les
+    30 poids des blocs et les 2 de pred_proj. Facteurs : 1/8 sur les lignes q de qkv (repliées par predicteur_ane) ;
+    BatchNorm de pred_proj fusionnée par le convertisseur dans const_7 (gamma / racine(var + eps))."""
+    ref = {}
+    for i, b in enumerate(model.predictor.transformer.layers):
+        a = b.attn
+        inner = a.to_qkv.out_features // 3
+        f = torch.ones(3 * inner)
+        f[:inner] = a.scale
+        ref[f"blocs_{i}_mod_weight_to_fp16"] = (b.adaLN_modulation[1], None)
+        ref[f"blocs_{i}_qkv_weight_to_fp16"] = (a.to_qkv, f)
+        ref[f"blocs_{i}_sortie_weight_to_fp16"] = (a.to_out[0], None)
+        ref[f"blocs_{i}_fc1_weight_to_fp16"] = (b.mlp.net[1], None)
+        ref[f"blocs_{i}_fc2_weight_to_fp16"] = (b.mlp.net[4], None)
+    net = model.pred_proj.net
+    bn = net[1]
+    ref["const_7_to_fp16"] = (net[0], (bn.weight / torch.sqrt(bn.running_var + bn.eps)).detach().float().cpu())
+    ref["proj_3_weight_to_fp16"] = (net[3], None)
+    return ref
+
+
+def comprimer_gptq(ml, model):
+    """EXP-017 : remplace les 32 constantes 16 bits par des décompressions int4 par canal (constexpr_blockwise_shift_scale)
+    dont les codes sont ceux de GPTQ (k = poids / échelle de la grille, entiers de -7 à 7) et l'échelle celle de la
+    grille (max|w| / 7 du poids d'origine) multipliée par le facteur de la ligne ; signe du facteur porté par les codes.
+    coremltools recalculerait l'échelle depuis le poids arrondi et changerait 0,43 % des codes (essai du 2 octobre)."""
+    import coremltools.optimize.coreml as cto
+    from coremltools.converters.mil import Builder as mb
+    from coremltools.converters.mil.mil import types
+    from coremltools.converters.mil.mil.passes.graph_pass import AbstractGraphPass
+    from coremltools.models.utils import _apply_graph_pass
+    cibles = {}
+    for n, (mod, f) in correspondance_constantes(model).items():
+        s = getattr(mod, "echelle_gptq", None)
+        if s is None:
+            raise ValueError(f"{n} : pas d'échelle GPTQ (version « predict:4:gptq » attendue)")
+        w = mod.weight.detach().float().cpu()
+        s = s.float().cpu().reshape(-1, 1)
+        k = torch.round(w / s)
+        if float((w / s - k).abs().max()) > 1e-3 or float(k.abs().max()) > 7:
+            raise ValueError(f"{n} : poids hors de la grille de GPTQ")
+        fac = torch.ones(w.shape[0]) if f is None else f.float()
+        signe = torch.where(fac < 0, -1.0, 1.0)
+        data = (k * signe[:, None]).numpy().astype(np.int8).reshape(w.shape[0], w.shape[1], 1, 1)
+        echelle = (s[:, 0] * fac.abs()).numpy().astype(np.float16).reshape(-1, 1, 1, 1)
+        cibles[n] = (data, echelle)
+    vus = []
+
+    class Passe(AbstractGraphPass):
+        def apply(self, prog):
+            for fn in prog.functions.values():
+                for op in list(fn.operations):
+                    if op.op_type == "const" and op.name in cibles:
+                        data, echelle = cibles[op.name]
+                        if tuple(op.outputs[0].shape) != data.shape:
+                            raise ValueError(f"{op.name} : forme {op.outputs[0].shape} au lieu de {data.shape}")
+                        with fn:
+                            v = mb.constexpr_blockwise_shift_scale(data=data.astype(types.np_int4_dtype), scale=echelle, offset=None,
+                                                                   before_op=op, name=op.name + "_gptq")
+                        op.enclosing_block.replace_uses_of_var_after_op(anchor_op=op, old_var=op.outputs[0], new_var=v)
+                        op.enclosing_block.remove_ops([op])
+                        vus.append(op.name)
+    tetes = [op.name for fn in ml._mil_program.functions.values() for op in fn.operations
+             if op.op_type == "const" and "tetes" in op.name and getattr(op.outputs[0].val, "size", 0) > 2048]
+    if len(tetes) != 2:
+        raise ValueError(f"matrices 0/1 de la réécriture : {tetes}")
+    ml2 = _apply_graph_pass(ml, Passe(), spec_version=ml.get_spec().specificationVersion, skip_model_load=True)
+    if sorted(vus) != sorted(cibles):
+        raise ValueError(f"constantes remplacées {len(vus)} au lieu de {len(cibles)}")
+    cfg = cto.OpLinearQuantizerConfig(mode="linear_symmetric", dtype="int4", granularity="per_channel")
+    return cto.linear_quantize_weights(ml2, cto.OptimizationConfig(global_config=None, op_name_configs={n: cfg for n in tetes}))
 
 
 def comprimer(ml, codage):
@@ -153,7 +230,7 @@ def convertir(model, moteur, chemin, codage="fp16"):
                                        ct.TensorType(name="act", shape=tuple(ex[1].shape))],
                         convert_to="mlprogram", compute_precision=ct.precision.FLOAT16,
                         minimum_deployment_target=ct.target.macOS15, skip_model_load=True)
-        ml = comprimer(ml, codage)
+        ml = comprimer_gptq(ml, model) if codage in CODAGES_GPTQ else comprimer(ml, codage)
     finally:
         model.to(dev)
     assert all(torch.equal(v.detach().cpu(), cpu[k]) for k, v in model.state_dict().items()), "poids modifiés"

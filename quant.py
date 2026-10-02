@@ -89,6 +89,7 @@ def quantifier(model, spec=None):
                 s32 = w32.abs().amax(dim=1, keepdim=True).clamp_min(1e-12) / (2 ** (bits - 1) - 1)
                 k = (q / s32.double()).round().clamp(-(2 ** (bits - 1) - 1), 2 ** (bits - 1) - 1).to(w32.dtype)
                 mod.weight.copy_((k * s32).reshape(mod.weight.shape))
+                mod.echelle_gptq = s32.detach().clone()   # EXP-017 : l'échelle de la grille, pour écrire les codes dans Core ML
             elif taille is None:
                 mod.weight.copy_(rtn_par_canal(mod.weight, bits))
             else:
