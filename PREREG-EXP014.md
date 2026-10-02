@@ -42,6 +42,11 @@ relecture du plan et du code (1 P0, 6 P1) le corrige ainsi ; il l'emporte sur le
    processeur dans le plan de calcul. Le temps par plan d'EXP-014 (sans mise en route, paquets dans le dossier des
    résultats) ne se compare pas à celui d'EXP-013. La taille du 16 bits est calculée depuis le fichier d'EXP-012.
 7. Lanceur : départ à au moins 60 % de batterie ; un seul lanceur à la fois. Durée : environ 6 h (2 témoins en plus).
+8. Relecture des corrections (3 h 21, aucun P0 ; code au commit `275c6bc`, tests passés : 34 refus) : batterie attendue avant
+   la vérification du GPU libre ; constantes codées listées avec leur forme, sur une copie du paquet (la lecture de
+   coremltools réécrit le manifeste), et rangées comme au point 1 (test sur le vrai modèle int4c d'EXP-013 : 34
+   constantes, 30 des blocs, 2 de `pred_proj`, 2 de la réécriture) ; une lecture impossible est rapportée, pas tue ; le
+   témoin 16 bits contrôlé comme les autres runs (protocole, versions, placement).
 
 ## Question et hypothèses
 
