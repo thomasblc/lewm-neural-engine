@@ -58,7 +58,7 @@ def bras500(r, d, source, codage, spec="fp32"):
                coreml_sha256=np.str_(SHA[codage]))
 
 
-def fabriquer(racine, int4c=("exp010", "all-3-gptq")):
+def fabriquer(racine, int4c=("exp010", "all-3-gptq"), gptq=("exp005", "all-8")):
     r = Path(racine)
     shutil.copytree(RES / "exp005", r / "exp005", ignore=shutil.ignore_patterns("*.log"))
     shutil.copytree(RES / "exp003", r / "exp003", ignore=shutil.ignore_patterns("*.log"))
@@ -69,7 +69,7 @@ def fabriquer(racine, int4c=("exp010", "all-3-gptq")):
         ecrire(r / d / f"fp32_s{g}.npz", np.load(r / sd / f"fp32_s{g}.npz"))
     bras(r, "exp018-int4c-pusht", int4c, "int4c")
     bras(r, "exp018-int4c-sp-pusht", ("exp005", "fp32"), "int4c-sp")
-    bras(r, "exp018-gptq-pusht", ("exp005", "all-8"), "int4c-gptq", A18.GPTQ, 32)
+    bras(r, "exp018-gptq-pusht", gptq, "int4c-gptq", A18.GPTQ, 32)
     bras500(r, "exp014-int4c-pusht", "all-4", "int4c")
     bras500(r, "exp015-int4c-sp-pusht", "predictor-4", "int4c-sp")
     bras500(r, "exp017-gptq-pusht", "fp32", "int4c-gptq", A18.GPTQ)
@@ -97,9 +97,8 @@ def p_boot_t(y):
     return (1 + compte) / 10_001
 
 
-def test_scenario(tmp):
-    r = fabriquer(Path(tmp) / "a")
-    res = A.pur(A18.analyser(r, verifier=False))
+def verifier_p(r, res):
+    """p par inversion de signe et bootstrap-t, écarts et Holm recomptés indépendamment."""
     fp, i4, sp, g = K(r, "exp005"), K(r, "exp018-int4c-pusht"), K(r, "exp018-int4c-sp-pusht"), K(r, "exp018-gptq-pusht", A18.GPTQ)
     attendu = {"T1": (i4 - fp, -20 * (i4 - fp) - 2), "T2": (sp - fp, 20 * (sp - fp) + 2), "T3": (g - fp, 20 * (g - fp) + 2),
                "T4": (g - i4, 20 * (g - i4) - 2)}
@@ -109,11 +108,18 @@ def test_scenario(tmp):
         s, b = p_signe(y), p_boot_t(y)
         assert T["p_signe"] == s and abs(T["p_bootstrap_t"] - b) < 1e-12, (n, T["p_signe"], s, T["p_bootstrap_t"], b)
         assert abs(T["ecart_points"]["moyenne"] - 100 * x.mean() / 5) < 1e-9 and T["borne_et_verdict_concordent"], (n, T)
-        assert T["verdict"] == "soutenue", (n, T)
         ps[n] = max(s, b)
     ordre = sorted(ps, key=ps.get)
     q = np.minimum(1, np.maximum.accumulate(np.array([ps[n] for n in ordre]) * np.array([4, 3, 2, 1])))
     assert all(abs(res["tests"][n]["p_holm"] - qq) < 1e-12 for n, qq in zip(ordre, q))
+    return ps, fp, i4, sp, g
+
+
+def test_scenario(tmp):
+    r = fabriquer(Path(tmp) / "a")
+    res = A.pur(A18.analyser(r, verifier=False))
+    ps, fp, i4, sp, g = verifier_p(r, res)
+    assert all(res["tests"][n]["verdict"] == "soutenue" for n in ps), res["tests"]
     assert res["tests"]["T1"]["borne_points"] < -2 and res["tests"]["T4"]["borne_points"] > 2 and res["tests"]["T3"]["borne_points"] > -2
     E = res["descriptifs"]["ecarts"]
     assert abs(E["g - sp"]["moyenne"] - 100 * (g - sp).mean() / 5) < 1e-9
@@ -127,11 +133,14 @@ def test_scenario(tmp):
     assert res["descriptifs"]["temps_par_plan_ms"] == {"int4c": 800.0, "sp": 800.0, "g": 800.0}
     assert "| T1 (perte) | int4c contre fp32 |" in A18.rapport(res)
     print("ok scénario A : T1 à T4 soutenues, p recomptées (" + ", ".join(f"{n} {ps[n]:.4f}" for n in ps) + "), Holm, descriptifs")
-    rb = fabriquer(Path(tmp) / "b", int4c=("exp005", "all-8"))
+    rb = fabriquer(Path(tmp) / "b", int4c=("exp005", "all-8"), gptq=("exp005", "all-6"))
     resb = A.pur(A18.analyser(rb, verifier=False))
+    psb = verifier_p(rb, resb)[0]
+    assert any(0.001 < v < 0.5 for v in psb.values()), psb             # au moins une p intermédiaire recomptée
     assert resb["tests"]["T1"]["verdict"] == "non soutenue" and resb["lecture"]["localisation"].startswith("la perte d'int4c ne dépasse pas")
     assert not resb["descriptifs"]["parts_rattrapees"]["rapportee"]
-    print("ok scénario B : sans perte d'int4c, T1 non soutenue et lecture correspondante")
+    print("ok scénario B : sans perte d'int4c, T1 non soutenue et lecture correspondante ; p recomptées (" +
+          ", ".join(f"{n} {psb[n]:.4f}" for n in psb) + ")")
     return r
 
 
