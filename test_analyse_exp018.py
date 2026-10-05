@@ -166,7 +166,7 @@ def test_lecture():
 def test_rapport_tableau(res):
     """La ligne de sensibilité ne coupe pas le tableau : les lignes de tableau se suivent."""
     L = A18.rapport(res).split("\n")
-    i = [k for k, x in enumerate(L) if x.startswith("| T")]
+    i = [k for k, x in enumerate(L) if x[:5] in ("| T1 ", "| T2 ", "| T3 ", "| T4 ")]
     assert len(i) == 4 and i == list(range(i[0], i[0] + 4)), i
     print("ok rapport : tableau d'un seul tenant, sensibilité après le tableau")
 
