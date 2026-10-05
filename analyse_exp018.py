@@ -73,6 +73,8 @@ def lecture(v):
         loc = "T1 indéterminé (borne et verdict discordants) ; rien sur la localisation"
     elif v["T1"] and v["T2"]:
         loc = "la perte d'int4 et sa réparation par pred_proj en 16 bits se retrouvent sur des épisodes neufs"
+    elif v["T1"] and v["T2"] is None:
+        loc = "int4c perd encore ; T2 indéterminé (borne et verdict discordants)"
     elif v["T1"]:
         loc = "int4c perd encore ; la recette n'est pas établie à 2 points sur ces épisodes"
     else:
@@ -213,7 +215,7 @@ def analyser(racine, verifier=True):
             seuil = -MARGE if s == "non_inferiorite" else MARGE
             t["borne_et_verdict_concordent"] = (t["borne_points"] > seuil) == (t["verdict"] == "soutenue")
         t["verdict_ecrit"] = t["verdict"] if t["borne_et_verdict_concordent"] else "indéterminé (borne et verdict discordants)"
-        mc = max(t["erreur_mc_p_signe"], t["erreur_mc_p_bootstrap_t"])
+        mc = t["erreur_mc_p_signe"] if t["p"] == t["p_signe"] else t["erreur_mc_p_bootstrap_t"]   # erreur de la p retenue
         if abs(t["p"] - niv) < 3 * mc:                 # près du seuil : sensibilité aux tirages (descriptif)
             t["sensibilite_tirages"] = sensibilite(y_de[s](ecart(b, ref)), t["p"], niv)
     ic = lambda x: {k: 100 * v for k, v in boot.ic(x / 5).items()}
@@ -243,9 +245,11 @@ def rapport(r):
     for n, t in r["tests"].items():
         L.append(f"| {n} ({t['sorte']}) | {t['bras']} contre {t['reference']} | {f(t['ecart_points'])} | {t['borne_points']:+.2f} | "
                  f"{t['p_holm']:.4f} | {t['verdict_ecrit']} |")
-        if "sensibilite_tirages" in t:
-            L.append(f"- {n}, sensibilité aux tirages (p près du niveau) : p {', '.join(f'{x:.4f}' for x in t['sensibilite_tirages']['p'])} ; "
-                     f"part qui change de côté {t['sensibilite_tirages']['part_qui_change']:.1f}")
+    sens = [(n, t["sensibilite_tirages"]) for n, t in r["tests"].items() if "sensibilite_tirages" in t]
+    if sens:                                           # après le tableau, pour ne pas le couper
+        L.append("")
+        L += [f"- {n}, sensibilité aux tirages (p près du niveau de Holm) : p {', '.join(f'{x:.4f}' for x in s['p'])} ; "
+              f"part qui change de côté {s['part_qui_change']:.1f}" for n, s in sens]
     L += ["", f"Lecture : {r['lecture']['localisation']} ; GPTQ : {r['lecture']['gptq']}.", "", "Descriptifs (2 000 épisodes) :", ""]
     L += [f"- {k} : {f(e)}" for k, e in r["descriptifs"]["ecarts"].items()]
     p = r["descriptifs"]["parts_rattrapees"]

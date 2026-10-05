@@ -6,8 +6,9 @@
 set -e
 ICI="${0:A:h}"
 VERROU="$ICI/../resultats/.lanceur-exp018"
-A_MOI=""
-trap '[ -n "$A_MOI" ] && rm -rf "$VERROU"; :' EXIT    # hors de main : le trap voit encore VERROU et A_MOI
+# main tourne dans un sous-shell : ce trap du shell parent s'exécute à toute sortie (fin, exit, échec sous set -e) ; il ne
+# libère le verrou que s'il est à ce lanceur ($$ vaut le pid du parent, aussi dans le sous-shell)
+trap '[ "$(cat "$VERROU/pid" 2>/dev/null)" = "$$" ] && rm -rf "$VERROU"; :' EXIT
 main() {
   cd "$ICI" || exit 1
   caffeinate -i -w $$ &!         # pas de veille pendant l'attente ni entre les étapes, jusqu'à la sortie du lanceur
@@ -36,7 +37,6 @@ main() {
     rm -rf $VERROU; mkdir $VERROU
   fi
   echo $$ > $VERROU/pid
-  A_MOI=1
   $PY -c 'import platform, sys, coremltools
 sys.exit(0 if (platform.mac_ver()[0], coremltools.__version__) == ("26.6.2", "9.0") else 1)' || { echo "[arrêt] macOS ou coremltools différent de 26.6.2 et 9.0"; exit 1; }
 
@@ -79,7 +79,7 @@ lancer() {
   local py=$1 out=$2 spec=$3 g=$4
   shift 4
   local f=$out/${spec//:/-}_s$g
-  pgrep -f 'zsh .*garde_batterie\.sh' > /dev/null || { echo "[info] garde de batterie absente, relancée"; garde exp018-fin-pusht 1; }
+  pgrep -f "zsh $GARDE" > /dev/null || { echo "[info] garde de batterie absente, relancée"; garde exp018-fin-pusht 1; }
   if [ -f $f.npz ] && [ -f $f.temps.json ]; then
     echo "[info] ${out:t} graine $g déjà faite, gardée"
   else
@@ -155,5 +155,5 @@ sys.exit(1 if ko else 0)
 EOF
 }
 
-main "$@"
+( main "$@" )
 exit $?

@@ -146,6 +146,7 @@ def test_scenario(tmp):
     assert not resb["descriptifs"]["parts_rattrapees"]["rapportee"]
     print("ok scénario B : sans perte d'int4c, T1 non soutenue et lecture correspondante ; p recomptées (" +
           ", ".join(f"{n} {psb[n]:.4f}" for n in psb) + ")")
+    test_rapport_tableau(resb)
     return r
 
 
@@ -153,13 +154,21 @@ def test_lecture():
     L = A18.lecture
     assert L({"T1": True, "T2": True, "T3": True, "T4": True})["localisation"].startswith("la perte d'int4 et sa réparation")
     assert L({"T1": True, "T2": False, "T3": True, "T4": True})["localisation"].startswith("int4c perd encore")
-    assert L({"T1": True, "T2": None, "T3": True, "T4": True})["localisation"].startswith("int4c perd encore")
+    assert L({"T1": True, "T2": None, "T3": True, "T4": True})["localisation"] == "int4c perd encore ; T2 indéterminé (borne et verdict discordants)"
     assert L({"T1": False, "T2": True, "T3": True, "T4": True})["localisation"].startswith("perte de plus de 2 points d'int4c non établie")
     assert L({"T1": None, "T2": True, "T3": True, "T4": True})["localisation"].startswith("T1 indéterminé")
     g = L({"T1": True, "T2": True, "T3": None, "T4": False})["gptq"]
     assert g.startswith("mieux de plus de 2 points non établi") and g.endswith("indéterminé (borne et verdict discordants)"), g
     assert A18.niveaux_holm([1e-4, 1e-4, 0.02, 0.9]) == [0.0125, 0.05 / 3, 0.025, 0.05]
     print("ok lectures écrites d'avance (6 cas) et niveaux de Holm à ex aequo stables")
+
+
+def test_rapport_tableau(res):
+    """La ligne de sensibilité ne coupe pas le tableau : les lignes de tableau se suivent."""
+    L = A18.rapport(res).split("\n")
+    i = [k for k, x in enumerate(L) if x.startswith("| T")]
+    assert len(i) == 4 and i == list(range(i[0], i[0] + 4)), i
+    print("ok rapport : tableau d'un seul tenant, sensibilité après le tableau")
 
 
 def test_refus(tmp, r):

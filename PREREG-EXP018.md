@@ -18,15 +18,17 @@ texte qui suit.
    d'`analyse_exp012.p_bootstrap_t` (`default_rng(4)`) ; niveaux de Holm à ex aequo rangés dans l'ordre T1 à T4 (tri
    stable). Sensibilité, descriptive : quand la p retenue d'un test est à moins de 3 erreurs de Monte-Carlo de son niveau de
    Holm, elle est refaite avec 5 autres paires de graines ((1, 5) à (5, 9)) et la part des paires qui changent de côté est
-   rapportée ; le verdict reste celui des tirages fixés.
+   rapportée ; le verdict reste celui des tirages fixés. L'erreur de Monte-Carlo est celle de la p retenue ; pour un test
+   rangé après l'arrêt de Holm, changer de côté du niveau ne change pas son verdict.
 5. Puissance corrigée : écart-type par épisode de 29 à 31 points pour int4c contre float32 et G contre int4c (sans effet
-   sur T1 et T4), 19 pour G contre float32 : T3 a une puissance de 0,93, 0,55 et 0,37 pour un écart vrai de -0,4, -1,0
+   sur T1 et T4), 19 pour G contre float32 : T3 a une puissance de 0,94, 0,55 et 0,36 pour un écart vrai de -0,4, -1,0
    et -1,2 point au niveau 0,0125, plus si T3 est testé à un niveau de Holm plus haut.
 6. Divulgation : un essai de 50 épisodes de chaque bras a tourné à 9 h 26 au commit `89cf020`, sur un autre tirage
    (50 épisodes, aucun couple épisode et départ commun avec les 2 000, 7 trajectoires communes) : réussites vues, int4c
    90 %, tout sauf `pred_proj` 90 %, G 96 %.
 7. Le rappel sur les 500 épisodes comprend aussi G contre SP ; la garde de batterie est relancée par le lanceur si elle
-   s'est arrêtée ; le verrou du lanceur est libéré à sa sortie et un verrou orphelin est repris.
+   s'est arrêtée ; le verrou du lanceur est libéré à toute sortie du lanceur (fin, arrêt, échec d'un run) et un verrou
+   orphelin (lanceur tué) est repris au lancement suivant. Une lecture où T2, T3 ou T4 discorde l'écrit « indéterminé ».
 
 ## Pourquoi
 
