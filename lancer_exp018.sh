@@ -5,6 +5,9 @@
 # Relancer après une interruption avec >> pour garder le journal : ./lancer_exp018.sh >> ../resultats/exp018.log 2>&1
 set -e
 ICI="${0:A:h}"
+VERROU="$ICI/../resultats/.lanceur-exp018"
+A_MOI=""
+trap '[ -n "$A_MOI" ] && rm -rf "$VERROU"; :' EXIT    # hors de main : le trap voit encore VERROU et A_MOI
 main() {
   cd "$ICI" || exit 1
   caffeinate -i -w $$ &!         # pas de veille pendant l'attente ni entre les étapes, jusqu'à la sortie du lanceur
@@ -27,8 +30,13 @@ main() {
     commit_grille=$($PY -c 'import json, sys; print(json.load(open(sys.argv[1]))["git"])' $d/meta.json)
     [ "$commit_grille" = "$HEAD0" ] || { echo "[arrêt] ${d:t} commencée au commit ${commit_grille:0:7}, HEAD est ${HEAD0:0:7}"; exit 1; }
   done
-  mkdir $R/.lanceur-exp018 2>/dev/null || { echo "[arrêt] un autre lanceur d'EXP-018 tourne (verrou $R/.lanceur-exp018)"; exit 1; }
-  trap 'rmdir $R/.lanceur-exp018 2>/dev/null' EXIT
+  if ! mkdir $VERROU 2>/dev/null; then          # verrou orphelin (lanceur tué) repris ; un lanceur vivant arrête celui-ci
+    local p=$(cat $VERROU/pid 2>/dev/null)
+    [ -n "$p" ] && ps -o command= -p $p 2>/dev/null | grep -q 'lancer_exp018\.sh' && { echo "[arrêt] un autre lanceur d'EXP-018 tourne (pid $p)"; exit 1; }
+    rm -rf $VERROU; mkdir $VERROU
+  fi
+  echo $$ > $VERROU/pid
+  A_MOI=1
   $PY -c 'import platform, sys, coremltools
 sys.exit(0 if (platform.mac_ver()[0], coremltools.__version__) == ("26.6.2", "9.0") else 1)' || { echo "[arrêt] macOS ou coremltools différent de 26.6.2 et 9.0"; exit 1; }
 
@@ -65,17 +73,20 @@ sys.exit(0 if (platform.mac_ver()[0], coremltools.__version__) == ("26.6.2", "9.
   echo "[info] EXP-018 finie à $(date '+%H:%M')"
 }
 
-# un bras sur le Neural Engine, une graine ; placement contrôlé après le run
+# un bras sur le Neural Engine, une graine ; placement, modèle et protocole contrôlés après le run (au lieu d'attendre
+# l'analyse, 11 h plus tard)
 lancer() {
   local py=$1 out=$2 spec=$3 g=$4
   shift 4
   local f=$out/${spec//:/-}_s$g
+  pgrep -f 'zsh .*garde_batterie\.sh' > /dev/null || { echo "[info] garde de batterie absente, relancée"; garde exp018-fin-pusht 1; }
   if [ -f $f.npz ] && [ -f $f.temps.json ]; then
     echo "[info] ${out:t} graine $g déjà faite, gardée"
   else
     caffeinate -i $py run_grid.py --out $out $TIRAGE --specs $spec --seeds $g $NE "$@"
   fi
   place $py $f.temps.json
+  $py -B $ICI/controle_exp018.py $out $spec $R || { echo "[arrêt] modèle ou protocole non conforme : $f"; exit 1; }
 }
 
 batterie() {

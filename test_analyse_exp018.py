@@ -25,6 +25,7 @@ PROPRE = subprocess.run(["git", "-C", str(A18.ICI), "status", "--porcelain", "--
 G, G500 = A18.GRAINES, (42, 43, 44, 45, 46)
 CALIB = json.loads((RES / "exp010" / "meta.json").read_text())["protocole"]["gptq_calib"]
 SHA = {"int4c": "a" * 64, "int4c-sp": "b" * 64, "int4c-gptq": "c" * 64}
+PROG = {"int4c": "1a" * 32, "int4c-sp": "1b" * 32, "int4c-gptq": "1c" * 32}
 
 
 def ecrire(f, x, git=TETE, **champs):
@@ -46,7 +47,7 @@ def bras(r, d, source, codage, spec="fp32", couches=0):
         sd, sp = source
         ecrire(d / f"{base}_s{g}.npz", np.load(RES / sd / f"{sp}_s{g}.npz"), spec=np.str_(spec), n_couches=np.int64(couches),
                moteur=np.str_("coreml-ne"), coreml_sha256=np.str_(SHA[codage]))
-        coreml = {"placement": {"NeuralEngine": 361}, "sha256_poids": SHA[codage], "codage": codage}
+        coreml = {"placement": {"NeuralEngine": 361}, "sha256_poids": SHA[codage], "sha256_modele": PROG[codage], "codage": codage}
         (d / f"{base}_s{g}.temps.json").write_text(json.dumps({"moteur": "coreml-ne", "appels_solve": [[40.0, 50]] * 10, "coreml": coreml, "git": TETE}))
 
 
@@ -54,8 +55,10 @@ def bras500(r, d, source, codage, spec="fp32"):
     """La même version sur les 500 épisodes : succès copiés d'une version d'EXP-003, empreinte du modèle."""
     (r / d).mkdir(exist_ok=True)
     for g in G500:
-        ecrire(r / d / f"{spec.replace(':', '-')}_s{g}.npz", np.load(RES / "exp003" / f"{source}_s{g}.npz"), "9" * 40,
+        base = spec.replace(":", "-")
+        ecrire(r / d / f"{base}_s{g}.npz", np.load(RES / "exp003" / f"{source}_s{g}.npz"), "9" * 40,
                coreml_sha256=np.str_(SHA[codage]))
+        (r / d / f"{base}_s{g}.temps.json").write_text(json.dumps({"coreml": {"sha256_poids": SHA[codage], "sha256_modele": PROG[codage]}}))
 
 
 def fabriquer(racine, int4c=("exp010", "all-3-gptq"), gptq=("exp005", "all-8")):
@@ -137,11 +140,26 @@ def test_scenario(tmp):
     resb = A.pur(A18.analyser(rb, verifier=False))
     psb = verifier_p(rb, resb)[0]
     assert any(0.001 < v < 0.5 for v in psb.values()), psb             # au moins une p intermédiaire recomptée
-    assert resb["tests"]["T1"]["verdict"] == "non soutenue" and resb["lecture"]["localisation"].startswith("la perte d'int4c ne dépasse pas")
+    assert resb["tests"]["T1"]["verdict"] == "non soutenue" and resb["lecture"]["localisation"].startswith("perte de plus de 2 points d'int4c non établie")
+    assert "sensibilite_tirages" in resb["tests"]["T3"] and len(resb["tests"]["T3"]["sensibilite_tirages"]["p"]) == 5, resb["tests"]["T3"]
+    assert all(resb["tests"][n]["verdict_ecrit"] == resb["tests"][n]["verdict"] for n in resb["tests"])
     assert not resb["descriptifs"]["parts_rattrapees"]["rapportee"]
     print("ok scénario B : sans perte d'int4c, T1 non soutenue et lecture correspondante ; p recomptées (" +
           ", ".join(f"{n} {psb[n]:.4f}" for n in psb) + ")")
     return r
+
+
+def test_lecture():
+    L = A18.lecture
+    assert L({"T1": True, "T2": True, "T3": True, "T4": True})["localisation"].startswith("la perte d'int4 et sa réparation")
+    assert L({"T1": True, "T2": False, "T3": True, "T4": True})["localisation"].startswith("int4c perd encore")
+    assert L({"T1": True, "T2": None, "T3": True, "T4": True})["localisation"].startswith("int4c perd encore")
+    assert L({"T1": False, "T2": True, "T3": True, "T4": True})["localisation"].startswith("perte de plus de 2 points d'int4c non établie")
+    assert L({"T1": None, "T2": True, "T3": True, "T4": True})["localisation"].startswith("T1 indéterminé")
+    g = L({"T1": True, "T2": True, "T3": None, "T4": False})["gptq"]
+    assert g.startswith("mieux de plus de 2 points non établi") and g.endswith("indéterminé (borne et verdict discordants)"), g
+    assert A18.niveaux_holm([1e-4, 1e-4, 0.02, 0.9]) == [0.0125, 0.05 / 3, 0.025, 0.05]
+    print("ok lectures écrites d'avance (6 cas) et niveaux de Holm à ex aequo stables")
 
 
 def test_refus(tmp, r):
@@ -194,6 +212,10 @@ def test_refus(tmp, r):
            ("modèle Core ML différent selon les graines", lambda rr: [champ(I4, "fp32_s55.npz", "coreml_sha256", lambda x: np.str_("e" * 64))(rr),
                                                                       js(f"{I4}/fp32_s55.temps.json", lambda j: j["coreml"].update(sha256_poids="e" * 64))(rr)]),
            ("modèle différent de celui de exp015-int4c-sp-pusht", lambda rr: [champ("exp015-int4c-sp-pusht", f"fp32_s{g}.npz", "coreml_sha256", lambda x: np.str_("f" * 64))(rr) for g in G500]),
+           ("modèle différent de celui de exp014-int4c-pusht", lambda rr: [champ("exp014-int4c-pusht", f"fp32_s{g}.npz", "coreml_sha256", lambda x: np.str_("f" * 64))(rr) for g in G500]),
+           ("modèle différent de celui de exp017-gptq-pusht", lambda rr: [js(f"exp017-gptq-pusht/predict-4-gptq_s{g}.temps.json", lambda j: j["coreml"].update(sha256_modele="0" * 64))(rr) for g in G500]),
+           ("modèle Core ML différent selon les graines", js(f"{GQ}/predict-4-gptq_s53.temps.json", lambda j: j["coreml"].update(sha256_modele="0" * 64))),
+           ("empreinte du modèle introuvable", js("exp014-int4c-pusht/fp32_s44.temps.json", lambda j: j["coreml"].pop("sha256_modele"))),
            ("plusieurs commits", lambda rr: [champ(SP, "fp32_s54.npz", "git", lambda x: np.str_("2" * 40))(rr),
                                               js(f"{SP}/fp32_s54.temps.json", lambda j: j.update(git="2" * 40))(rr)]),
            ("versions de macOS", js(f"{GQ}/meta.json", lambda j: j["protocole"]["moteur"].update(macos="27.0"))),
@@ -212,6 +234,7 @@ def test_code():
 if __name__ == "__main__":
     with tempfile.TemporaryDirectory() as tmp, np.errstate(all="ignore"):
         r = test_scenario(tmp)
+        test_lecture()
         test_refus(tmp, r)
         test_code()
     print("tous les tests passent")

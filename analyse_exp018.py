@@ -14,7 +14,7 @@ import numpy as np
 
 import analyse_exp003 as A
 import analyse_exp009 as A9
-from analyse_exp012 import borne_bootstrap_t, niveaux_holm, p_bootstrap_t
+from analyse_exp012 import borne_bootstrap_t, p_bootstrap_t
 from analyse_exp014 import lire_temps
 
 GRAINES = (52, 53, 54, 55, 56)
@@ -31,7 +31,8 @@ BRAS = (("int4c", "exp018-int4c-pusht", "fp32", "int4c", 0, "exp014-int4c-pusht"
         ("g", "exp018-gptq-pusht", GPTQ, "int4c-gptq", 32, "exp017-gptq-pusht", GPTQ))
 TESTS = (("T1", "int4c", "fp32", "perte"), ("T2", "sp", "fp32", "non_inferiorite"), ("T3", "g", "fp32", "non_inferiorite"),
          ("T4", "g", "int4c", "superiorite"))
-FICHIERS_CALCUL = ("metriques.py", "quant.py", "gptq.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py")
+FICHIERS_CALCUL = ("metriques.py", "quant.py", "gptq.py", "run_grid.py", "coreml_pred.py", "predicteur_ane.py", "encodeur_ane.py")
+SENSIBILITE = ((1, 5), (2, 6), (3, 7), (4, 8), (5, 9))     # graines (inversion de signe, bootstrap-t) de la sensibilité
 FICHIERS_ANALYSE = ("analyse_exp018.py", "analyse_exp014.py", "analyse_exp012.py", "analyse_exp009.py", "analyse_exp003.py",
                     "PREREG-EXP018.md")
 ICI = Path(__file__).resolve().parent
@@ -48,6 +49,48 @@ def verifier_code(sha):
              f"code d'analyse ou de calcul différent de celui du commit {sha[:7]}")
     A.exiger(git("diff", "--quiet", COMMIT_EXP017, sha, "--", *FICHIERS_CALCUL).returncode == 0,
              "code de calcul différent de celui d'EXP-017")
+
+
+def niveaux_holm(ps, alpha=A.ALPHA):
+    """Niveaux de Holm, comme analyse_exp012.niveaux_holm, mais ex aequo rangés dans l'ordre des tests (tri stable,
+    comme A.holm) : avec des p au plancher, le niveau de la borne d'un test ne dépend plus d'un tri non stable."""
+    m = len(ps)
+    niv = [None] * m
+    k, arrete = 0, False
+    for rang, i in enumerate(np.argsort(ps, kind="stable")):
+        if not arrete and ps[i] <= alpha / (m - rang):
+            niv[i] = alpha / (m - rang)
+            k += 1
+        else:
+            arrete = True
+            niv[i] = alpha / (m - k)
+    return niv
+
+
+def lecture(v):
+    """Lecture écrite d'avance (PREREG-EXP018.md) ; v[n] : verdict soutenu, None si borne et verdict discordent."""
+    if v["T1"] is None:
+        loc = "T1 indéterminé (borne et verdict discordants) ; rien sur la localisation"
+    elif v["T1"] and v["T2"]:
+        loc = "la perte d'int4 et sa réparation par pred_proj en 16 bits se retrouvent sur des épisodes neufs"
+    elif v["T1"]:
+        loc = "int4c perd encore ; la recette n'est pas établie à 2 points sur ces épisodes"
+    else:
+        loc = "perte de plus de 2 points d'int4c non établie sur ces épisodes ; rien sur sa localisation ici"
+    mot = lambda x, oui, non: "indéterminé (borne et verdict discordants)" if x is None else (oui if x else non)
+    gptq = mot(v["T4"], "fait mieux que l'arrondi simple de plus de 2 points", "mieux de plus de 2 points non établi") + " ; " + \
+        mot(v["T3"], "ne perd pas plus de 2 points face à PyTorch float32", "non-infériorité face à PyTorch float32 non établie")
+    return {"localisation": loc, "gptq": gptq}
+
+
+def sensibilite(y, p0, niveau):
+    """Règle reprise dans le pré-enregistrement : quand la p retenue est à moins de 3 erreurs de Monte-Carlo du niveau de
+    Holm du test, elle est refaite avec 5 autres paires de graines de tirage ; on rapporte la part des paires dont la p
+    passe de l'autre côté du niveau (descriptif : le verdict pré-enregistré reste celui des tirages fixés)."""
+    ps = []
+    for gs, gb in SENSIBILITE:
+        ps.append(max(A.Inversion(n=len(y), graine=gs).p(y, "plus"), p_bootstrap_t(y, graine=gb)))
+    return {"p": ps, "part_qui_change": float(np.mean([(p <= niveau) != (p0 <= niveau) for p in ps]))}
 
 
 def nom(spec, g):
@@ -90,16 +133,18 @@ def charger(racine, verifier=True):
         info["macos"].add(mo.get("macos"))
 
     def empreinte_500(d, spec):
-        """Empreinte du modèle de la même version sur les 500 épisodes (une seule sur ses graines)."""
-        emp = {str(np.load(f)["coreml_sha256"]) for f in sorted((r / d).glob(f"{spec.replace(':', '-')}_s4[2-6].npz"))}
-        A.exiger(len(emp) == 1, f"{d} : empreinte du modèle introuvable ou multiple")
-        return emp.pop()
+        """Empreintes des poids et du programme Core ML de la même version sur les 500 épisodes (une seule de chaque)."""
+        base = spec.replace(":", "-")
+        emp = {str(np.load(f)["coreml_sha256"]) for f in sorted((r / d).glob(f"{base}_s4[2-6].npz"))}
+        prog = {json.loads(f.read_text())["coreml"].get("sha256_modele") for f in sorted((r / d).glob(f"{base}_s4[2-6].temps.json"))}
+        A.exiger(len(emp) == 1 and len(prog) == 1 and None not in prog, f"{d} : empreinte du modèle introuvable ou multiple")
+        return emp.pop(), prog.pop()
 
     K = {"fp32": sum(lire(REF, g, "fp32", 0, du_commit=json.loads((r / REF / "meta.json").read_text())["git"])["success"]
                      .astype(np.int64) for g in GRAINES)}
     for cle, d, spec, codage, couches, d500, spec500 in BRAS:
         meta(d, codage, spec.endswith(":gptq"))
-        S, emp, temps = 0, set(), []
+        S, emp, prog, temps = 0, set(), set(), []
         for g in GRAINES:
             x = lire(d, g, spec, couches, MOTEUR)
             tf = lire_temps(r / d / f"{nom(spec, g)[:-4]}.temps.json", str(x["git"]))
@@ -107,11 +152,12 @@ def charger(racine, verifier=True):
             A.exiger(tf["coreml"].get("codage", "fp16") == codage, f"{d} graine {g} : codage {tf['coreml'].get('codage')}")
             A.exiger(tf["coreml"].get("sha256_poids") == str(x["coreml_sha256"]), f"{d} graine {g} : empreintes")
             emp.add(str(x["coreml_sha256"]))
+            prog.add(tf["coreml"].get("sha256_modele"))
             temps.append(tf["par_plan_s"])
             S = S + x["success"].astype(np.int64)
-        A.exiger(len(emp) == 1, f"{d} : modèle Core ML différent selon les graines")
-        info[f"sha_{cle}"] = emp.pop()
-        A.exiger(info[f"sha_{cle}"] == empreinte_500(d500, spec500), f"{d} : modèle différent de celui de {d500}")
+        A.exiger(len(emp) == 1 and len(prog) == 1, f"{d} : modèle Core ML différent selon les graines")
+        info[f"sha_{cle}"], info[f"programme_{cle}"] = emp.pop(), prog.pop()
+        A.exiger((info[f"sha_{cle}"], info[f"programme_{cle}"]) == empreinte_500(d500, spec500), f"{d} : modèle différent de celui de {d500}")
         info[f"temps_{cle}_ms"] = 1000 * float(np.median(temps))
         K[cle] = S
     A.exiger(len(info["macos"]) == 1, f"versions de macOS différentes {info['macos']}")
@@ -137,7 +183,7 @@ def ecarts_500(racine):
         K[cle] = sum(np.load(r / d500 / nom(spec500, g))["success"].astype(np.int64) for g in (42, 43, 44, 45, 46))
     boot = A.Bootstrap(n=500)
     ic = lambda x: {k: 100 * v for k, v in boot.ic(x / 5).items()}
-    return {f"{b} - {ref}": ic(K[b] - K[ref]) for b, ref in (("int4c", "fp32"), ("sp", "fp32"), ("g", "fp32"), ("g", "int4c"))}
+    return {f"{b} - {ref}": ic(K[b] - K[ref]) for b, ref in (("int4c", "fp32"), ("sp", "fp32"), ("g", "fp32"), ("g", "int4c"), ("g", "sp"))}
 
 
 def analyser(racine, verifier=True):
@@ -166,42 +212,40 @@ def analyser(racine, verifier=True):
             t["borne_points"] = 100 * borne_bootstrap_t(x, niv)
             seuil = -MARGE if s == "non_inferiorite" else MARGE
             t["borne_et_verdict_concordent"] = (t["borne_points"] > seuil) == (t["verdict"] == "soutenue")
+        t["verdict_ecrit"] = t["verdict"] if t["borne_et_verdict_concordent"] else "indéterminé (borne et verdict discordants)"
+        mc = max(t["erreur_mc_p_signe"], t["erreur_mc_p_bootstrap_t"])
+        if abs(t["p"] - niv) < 3 * mc:                 # près du seuil : sensibilité aux tirages (descriptif)
+            t["sensibilite_tirages"] = sensibilite(y_de[s](ecart(b, ref)), t["p"], niv)
     ic = lambda x: {k: 100 * v for k, v in boot.ic(x / 5).items()}
     d = {f"{b} - {ref}": ic(ecart(b, ref)) for b, ref in (("int4c", "fp32"), ("sp", "fp32"), ("g", "fp32"), ("g", "int4c"), ("g", "sp"))}
+    v = {n: (tests[n]["verdict"] == "soutenue") if tests[n]["borne_et_verdict_concordent"] else None for n, *_ in TESTS}
     perte = ecart("fp32", "int4c").astype(np.float64)
-    parts = {"rapportee": d["int4c - fp32"]["haut"] < 0}
+    parts = {"rapportee": v["T1"] is True}             # rapportée si la perte d'int4c est établie (T1 soutenue)
     if parts["rapportee"]:
         for b in ("g", "sp"):
             num = ecart(b, "int4c").astype(np.float64)
             ratios = num[boot.idx].mean(axis=1) / perte[boot.idx].mean(axis=1)
             parts[b] = {"part": float(num.mean() / perte.mean()), "bas": float(np.percentile(ratios, 2.5)),
                         "haut": float(np.percentile(ratios, 97.5))}
-    v = {n: tests[n]["verdict"] == "soutenue" and tests[n]["borne_et_verdict_concordent"] for n, *_ in TESTS}
-    if v["T1"] and v["T2"]:
-        loc = "la perte d'int4 et sa réparation par pred_proj en 16 bits se retrouvent sur des épisodes neufs"
-    elif v["T1"]:
-        loc = "int4c perd encore ; la recette n'est pas établie à 2 points sur ces épisodes"
-    else:
-        loc = "la perte d'int4c ne dépasse pas 2 points sur ces épisodes ; rien sur sa localisation ici"
-    gptq = ("fait mieux que l'arrondi simple de plus de 2 points" if v["T4"] else "pas mieux de plus de 2 points établi") + " ; " + \
-           ("ne perd pas plus de 2 points face à PyTorch float32" if v["T3"] else "non-infériorité face à PyTorch float32 non établie")
     desc = {"ecarts": d, "parts_rattrapees": parts, "reussite": {b: float(K[b].mean() / 5) for b in K},
             "temps_par_plan_ms": {b: info[f"temps_{b}_ms"] for b in ("int4c", "sp", "g")}, "ecarts_500_episodes": ecarts_500(racine)}
-    return {"controles": {"commit": sha, "macos": info["macos"], **{f"sha_{b}": info[f"sha_{b}"] for b in ("int4c", "sp", "g")}},
-            "tests": tests, "lecture": {"localisation": loc, "gptq": gptq}, "descriptifs": desc}
+    return {"controles": {"commit": sha, "macos": info["macos"], **{f"{k}_{b}": info[f"{k}_{b}"] for b in ("int4c", "sp", "g")
+                                                                    for k in ("sha", "programme")}},
+            "tests": tests, "lecture": lecture(v), "descriptifs": desc}
 
 
 def rapport(r):
     f = lambda e: f"{e['moyenne']:+.1f} [{e['bas']:+.1f} ; {e['haut']:+.1f}]"
     L = ["# EXP-018 : rapport de l'analyse pré-enregistrée (2 000 épisodes neufs pour la puce, PushT)", "",
          f"Commit des runs : `{r['controles']['commit'][:7]}` ; modèles identiques à ceux d'EXP-014, EXP-015 et EXP-017.", "",
-         "| Test | Bras contre référence | Écart (points) [IC 95 %] | Borne au niveau de Holm | p Holm | Verdict |",
+         "| Test | Bras contre référence | Écart (points) [IC 95 %] | Borne au niveau de Holm (supérieure pour T1) | p Holm | Verdict |",
          "| --- | --- | --- | --- | --- | --- |"]
     for n, t in r["tests"].items():
         L.append(f"| {n} ({t['sorte']}) | {t['bras']} contre {t['reference']} | {f(t['ecart_points'])} | {t['borne_points']:+.2f} | "
-                 f"{t['p_holm']:.4f} | {t['verdict']} |")
-        if not t["borne_et_verdict_concordent"]:
-            L.append(f"- Attention, {n} : borne et verdict ne concordent pas.")
+                 f"{t['p_holm']:.4f} | {t['verdict_ecrit']} |")
+        if "sensibilite_tirages" in t:
+            L.append(f"- {n}, sensibilité aux tirages (p près du niveau) : p {', '.join(f'{x:.4f}' for x in t['sensibilite_tirages']['p'])} ; "
+                     f"part qui change de côté {t['sensibilite_tirages']['part_qui_change']:.1f}")
     L += ["", f"Lecture : {r['lecture']['localisation']} ; GPTQ : {r['lecture']['gptq']}.", "", "Descriptifs (2 000 épisodes) :", ""]
     L += [f"- {k} : {f(e)}" for k, e in r["descriptifs"]["ecarts"].items()]
     p = r["descriptifs"]["parts_rattrapees"]

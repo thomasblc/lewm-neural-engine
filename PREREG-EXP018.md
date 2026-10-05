@@ -5,6 +5,29 @@ demande de Thomas (expérience de confirmation accordée le 5 octobre, 5 graines
 fichiers. Tâche : PushT. Existant : K-028 et K-030 ; recherche refaite le 5 octobre (aucun planificateur à world model
 mesuré sur un NPU) ; EXP-018 est une réplication de nos propres résultats.
 
+Amendement 1 (5 octobre, 9 h 57, avant tout run ; relecture du plan et du code : 0 P0, 2 P1, 5 P2). Il l'emporte sur le
+texte qui suit.
+1. Lecture de T1 non soutenue (P1) : « perte de plus de 2 points d'int4c non établie sur ces épisodes ; rien sur sa
+   localisation », jamais « la perte ne dépasse pas 2 points ». Un test dont borne et verdict discordent est écrit
+   « indéterminé » (dans le tableau et dans la lecture), pour T1 comme pour les autres.
+2. Part rattrapée : rapportée seulement si T1 est soutenue, borne concordante.
+3. Même modèle : l'empreinte des poids et celle du programme Core ML (`sha256_modele`) de chaque bras égalent celles de la
+   même version sur les 500 épisodes. Contrôlé par le lanceur après chaque run (`controle_exp018.py`, avec le protocole
+   d'EXP-005), pas seulement à l'analyse.
+4. Tirages : ceux d'`analyse_exp003.Inversion` (`default_rng(0)`, matrice de 10 000 × 2 000) et
+   d'`analyse_exp012.p_bootstrap_t` (`default_rng(4)`) ; niveaux de Holm à ex aequo rangés dans l'ordre T1 à T4 (tri
+   stable). Sensibilité, descriptive : quand la p retenue d'un test est à moins de 3 erreurs de Monte-Carlo de son niveau de
+   Holm, elle est refaite avec 5 autres paires de graines ((1, 5) à (5, 9)) et la part des paires qui changent de côté est
+   rapportée ; le verdict reste celui des tirages fixés.
+5. Puissance corrigée : écart-type par épisode de 29 à 31 points pour int4c contre float32 et G contre int4c (sans effet
+   sur T1 et T4), 19 pour G contre float32 : T3 a une puissance de 0,93, 0,55 et 0,37 pour un écart vrai de -0,4, -1,0
+   et -1,2 point au niveau 0,0125, plus si T3 est testé à un niveau de Holm plus haut.
+6. Divulgation : un essai de 50 épisodes de chaque bras a tourné à 9 h 26 au commit `89cf020`, sur un autre tirage
+   (50 épisodes, aucun couple épisode et départ commun avec les 2 000, 7 trajectoires communes) : réussites vues, int4c
+   90 %, tout sauf `pred_proj` 90 %, G 96 %.
+7. Le rappel sur les 500 épisodes comprend aussi G contre SP ; la garde de batterie est relancée par le lanceur si elle
+   s'est arrêtée ; le verrou du lanceur est libéré à sa sortie et un verrou orphelin est repris.
+
 ## Pourquoi
 
 Les résultats sur la puce d'EXP-014, EXP-015 et EXP-017 portent sur les 500 épisodes d'EXP-003, et l'hypothèse
@@ -63,8 +86,8 @@ bras (descriptif, sans comparaison affirmée).
 ## Lecture écrite d'avance
 
 - T1 et T2 soutenues : la perte d'int4 et sa réparation par `pred_proj` en 16 bits se retrouvent sur des épisodes neufs.
-  T1 seule : int4c perd encore, la recette n'est pas établie à 2 points sur ces épisodes. T1 non soutenue : la perte
-  d'int4c ne dépasse pas 2 points sur ces épisodes, et rien ne se lit sur sa localisation ici.
+  T1 seule : int4c perd encore, la recette n'est pas établie à 2 points sur ces épisodes. T1 non soutenue : voir
+  l'amendement 1, point 1.
 - T4 soutenue : les codes de GPTQ font mieux que l'arrondi simple de plus de 2 points sur des épisodes neufs. T3
   soutenue : ils ne perdent pas plus de 2 points face à PyTorch float32 ; non soutenue : non établi, jamais « perte »
   sans intervalle entièrement sous 0. Le résultat de G1 d'EXP-017 (contre le 16 bits sur la puce, 500 épisodes) reste
