@@ -73,7 +73,7 @@ def test_valider():
     c["couches"][1]["garde_val"] = torch.cat([c["couches"][1]["garde_val"], c["couches"][1]["garde_val"][:1]])
     mauvais.append(c)
     c = copy.deepcopy(ck)
-    extra = torch.arange(0, 256 * 256, 7)
+    extra = torch.arange(0, c["couches"][2]["codes"].numel(), 7)       # dans les limites, budget dépassé
     c["couches"][2]["garde_idx"] = extra
     c["couches"][2]["garde_val"] = torch.zeros(extra.numel(), dtype=torch.float16)
     mauvais.append(c)
