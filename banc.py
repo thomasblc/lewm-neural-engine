@@ -269,11 +269,11 @@ def bits_par_poids(compact):
 
 
 @torch.no_grad()
-def quantifier(modele, bits, methode="gptq", fraction=0.0, critere="obs", n=20_000):
+def quantifier(modele, bits, methode="gptq", fraction=0.0, critere="obs", n=20_000, donnees=None):
     """Couche par couche, dans l'ordre : échelle réduite d'EXP-011 (facteur choisi sur la calibration), poids gardés
     par garder.masque, arrondis par RTN ou GPTQ. Les entrées de chaque couche passent par les couches déjà
-    quantifiées (GPTQ séquentiel)."""
-    s, a, _ = transitions(n, GRAINE_CALIB_Q)
+    quantifiées (GPTQ séquentiel). `donnees` : (s, a) de calibration ; par défaut n transitions tirées au hasard."""
+    s, a = donnees if donnees is not None else transitions(n, GRAINE_CALIB_Q)[:2]
     x = Modele.entrees(s, a).double()
     sortie = {"bits": bits, "couches": []}
     for k, lin in enumerate(modele.couches):
@@ -307,15 +307,17 @@ def depuis_couche(c, forme):
     return w.reshape(forme)
 
 
-def affiner(compact, pas_=3000, lot=2048, lr=3e-4, n=200_000):
+def affiner(compact, pas_=3000, lot=2048, lr=3e-4, n=200_000, donnees=None, graine=GRAINE_DONNEES + 2):
     """Référence par gradient : à codes et positions gardées fixes, ajuste les valeurs gardées, les échelles et les
-    biais (Adam, erreur à un pas sur des transitions d'entraînement), puis repasse en float16."""
-    s, a, s2 = transitions(n, GRAINE_DONNEES)
+    biais (Adam, erreur à un pas sur des transitions d'entraînement), puis repasse en float16. `donnees` : (s, a, s2) ;
+    par défaut n transitions tirées au hasard."""
+    s, a, s2 = donnees if donnees is not None else transitions(n, GRAINE_DONNEES)
+    n = s.shape[0]
     libres = []
     for c in compact["couches"]:
         libres.append({k: c[k].float().clone().requires_grad_(True) for k in ("echelle", "garde_val", "biais")})
     opt = torch.optim.Adam([t for d in libres for t in d.values()], lr=lr)
-    g = torch.Generator().manual_seed(GRAINE_DONNEES + 2)
+    g = torch.Generator().manual_seed(graine)
 
     def avant(ss, aa):
         x = Modele.entrees(ss, aa)
