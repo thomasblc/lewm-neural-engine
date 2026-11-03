@@ -312,6 +312,8 @@ def main():
     ap.add_argument("--cem-iter", type=int, default=None, help="itérations de la CEM par plan (défaut 30)")
     ap.add_argument("--calibrer-gptq", action="store_true", help="EXP-009 : calibre GPTQ au lieu d'évaluer")
     ap.add_argument("--gptq-calib", default=None, help="EXP-009 : statistiques de calibration pour les versions :gptq")
+    ap.add_argument("--premiers", type=int, default=None,
+                    help="EXP-019 : n'évalue que les K premières positions du tirage de --n épisodes (même hasard par épisode)")
     args = ap.parse_args()
     assert args.n % args.chunk == 0
 
@@ -341,6 +343,9 @@ def main():
                                    "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
     if args.calibrer_gptq:
         protocole["calibration_gptq"] = True
+    if args.premiers is not None:                             # absent des protocoles précédents
+        assert 0 < args.premiers <= args.n and args.premiers % args.chunk == 0, "--premiers : multiple de --chunk, au plus --n"
+        protocole["premiers"] = args.premiers
     if args.replan is not None or args.cem_iter is not None:  # absent des protocoles précédents
         protocole["planification"] = {"receding_horizon": int(cfg.plan_config.receding_horizon),
                                       "cem_n_steps": int(cfg.solver.n_steps)}
@@ -375,7 +380,8 @@ def main():
             model.requires_grad_(False)
             model.interpolate_pos_encoding = True
             recs = []
-            for c in range(args.n // args.chunk):
+            K = args.premiers or args.n
+            for c in range(K // args.chunk):
                 sl = slice(c * args.chunk, (c + 1) * args.chunk)
                 solver = CEMParEpisode(model=model, graine=seed, **solver_kw)
                 policy = swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
@@ -390,7 +396,7 @@ def main():
                     data[k] = np.concatenate([r[k] for r in recs], axis=1)
             tmp = f.with_suffix(".tmp.npz")
             np.savez_compressed(tmp, spec=spec, seed=seed, n_couches=len(touches), git=sha, git_sale=sale,
-                                positions=np.arange(args.n), episodes_idx=np.array(ep_all), start_steps=np.array(st_all),
+                                positions=np.arange(K), episodes_idx=np.array(ep_all[:K]), start_steps=np.array(st_all[:K]),
                                 chunk=args.chunk, **data)
             os.replace(tmp, f)
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "

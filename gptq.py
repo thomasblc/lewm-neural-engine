@@ -6,6 +6,11 @@ change le choix des arrondis : colonne par colonne, l'erreur d'un poids est comp
 à l'aide de l'inverse de H = X^T X (X : entrées de la couche vues pendant la calibration). Calcul en float64 sur
 CPU, déterministe. Amortissement 1 % de la moyenne de la diagonale, blocs de 128 colonnes, ordre naturel des
 colonnes, comme l'implémentation de référence sans « act-order ».
+
+EXP-019 (pilote) : `garder` (masque booléen sorties x entrées) laisse certains poids hors de la grille, en haute
+précision, comme les poids aberrants de SpQR (arXiv:2306.03078) : à leur colonne, GPTQ garde leur valeur courante
+(compensations des colonnes précédentes comprises), leur erreur est nulle et ne se propage pas. Sans masque, le calcul
+est celui d'EXP-009 et EXP-011, opération pour opération.
 """
 import torch
 
@@ -35,7 +40,7 @@ def facteur_reduit(w, h, bits):
 
 
 @torch.no_grad()
-def gptq_couche(w, h, bits, amortissement=AMORTISSEMENT, bloc=BLOC, s=None):
+def gptq_couche(w, h, bits, amortissement=AMORTISSEMENT, bloc=BLOC, s=None, garder=None):
     """w : (sorties, entrées) ; h : (entrées, entrées), moyenne de x x^T. Renvoie les poids quantifiés (float64).
     s : échelles par ligne (sorties, 1) imposées (EXP-011, échelle réduite) ; par défaut celles de RTN."""
     W = w.detach().to(torch.float64).clone()
@@ -53,9 +58,12 @@ def gptq_couche(w, h, bits, amortissement=AMORTISSEMENT, bloc=BLOC, s=None):
         i2 = min(i1 + bloc, n)
         W1, Hinv1 = W[:, i1:i2].clone(), Hinv[i1:i2, i1:i2]
         Q1, Err1 = torch.zeros_like(W1), torch.zeros_like(W1)
+        G1 = None if garder is None else garder[:, i1:i2]
         for i in range(i2 - i1):
             col = W1[:, i]
             q = (col.unsqueeze(1) / s).round().clamp(-qmax, qmax).mul(s).squeeze(1)
+            if G1 is not None:
+                q = torch.where(G1[:, i], col, q)          # poids gardé : valeur courante, erreur nulle
             Q1[:, i] = q
             err = (col - q) / Hinv1[i, i]
             W1[:, i:] -= err.unsqueeze(1) @ Hinv1[i, i:].unsqueeze(0)
