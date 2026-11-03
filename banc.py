@@ -6,7 +6,7 @@ l'agent avance de VMAX x a (a dans [-1, 1]^2) ; s'il chevauche le bloc, le bloc 
 jusqu'au contact ; un mur arrête le bloc, et l'agent recule alors jusqu'au contact. État : positions de l'agent et du
 bloc (4 nombres). Réussite : le bloc passe à moins de TOL du but en au plus T pas.
 
-World model : MLP 6 -> 256 -> 256 -> 256 -> 4 (134 k poids), entraîné sur des transitions tirées au hasard, qui prédit
+World model : MLP 6 -> 96 -> 96 -> 96 -> 4 (19 392 poids), entraîné sur des transitions tirées au hasard, qui prédit
 le déplacement de l'état. Planification : CEM en horizon glissant (comme LeWM, en plus petit), coût sur tous les pas
 de l'horizon : distance bloc-but, plus la distance de l'agent au point de poussée derrière le bloc.
 
@@ -29,11 +29,11 @@ import garder
 import gptq
 
 ICI = Path(__file__).resolve().parent
-SORTIE = ICI.parent / "resultats" / "exp020-banc"
+RESULTATS = ICI.parent / "resultats" / "exp020-banc"
 
-RA, RB, VMAX, TOL, T = 0.04, 0.08, 0.04, 0.05, 80
-CACHE = 256
-H_PLAN, N_PLAN, ITERS, ELITES, K_EXEC, SIGMA0 = 8, 128, 3, 16, 4, 0.7
+RA, RB, VMAX, TOL, T = 0.04, 0.08, 0.04, 0.03, 80
+CACHE = 96          # 256 et 128 : l'affinage par gradient atteint le float32, rien à battre
+H_PLAN, N_PLAN, ITERS, ELITES, K_EXEC, SIGMA0 = 8, 128, 3, 16, 8, 0.7
 GRAINE_DONNEES, GRAINE_INIT, GRAINE_CALIB_Q, GRAINE_ERREUR = 0, 0, 123, 7
 GRAINE_EPISODES_CALIB, GRAINE_PLAN = 1, 11
 N_CALIB = 100
@@ -95,9 +95,15 @@ def episodes(n, graine):
 
 # --- world model -----------------------------------------------------------------------------------------------------
 
+def sortie():
+    """Dossier des résultats pour la taille de couche cachée en vigueur."""
+    return RESULTATS / f"c{CACHE}"
+
+
 class Modele(torch.nn.Module):
-    def __init__(self, cache=CACHE):
+    def __init__(self, cache=None):
         super().__init__()
+        cache = cache or CACHE
         self.couches = torch.nn.ModuleList([torch.nn.Linear(6, cache), torch.nn.Linear(cache, cache),
                                             torch.nn.Linear(cache, cache), torch.nn.Linear(cache, 4)])
 
@@ -359,8 +365,9 @@ def mesurer(modele, graine_episodes=GRAINE_EPISODES_CALIB, n=N_CALIB):
 
 
 def cmd_preparer(_):
-    SORTIE.mkdir(parents=True, exist_ok=True)
-    f32 = SORTIE / "fp32.pt"
+    S = sortie()
+    S.mkdir(parents=True, exist_ok=True)
+    f32 = S / "fp32.pt"
     if not f32.exists():
         print("entraînement du world model float32", flush=True)
         torch.save(entrainer().state_dict(), f32)
@@ -372,11 +379,11 @@ def cmd_preparer(_):
         "gptq3": lambda: quantifier(m, 3, "gptq"),
     }
     for nom, faire in versions.items():
-        torch.save(faire(), SORTIE / f"{nom}.pt")
-    torch.save(affiner(torch.load(SORTIE / "gptq2_k1.pt", weights_only=True)), SORTIE / "gptq2_k1_affine.pt")
+        torch.save(faire(), S / f"{nom}.pt")
+    torch.save(affiner(torch.load(S / "gptq2_k1.pt", weights_only=True)), S / "gptq2_k1_affine.pt")
     refs = {}
     for nom in ["fp32", *versions, "gptq2_k1_affine"]:
-        chemin = SORTIE / f"{nom}.pt"
+        chemin = S / f"{nom}.pt"
         mod, comp = charger(chemin)
         r = mesurer(mod)
         r["bits_par_poids"] = 32.0 if comp is None else round(bits_par_poids(comp), 3)
@@ -385,7 +392,7 @@ def cmd_preparer(_):
         refs[nom] = r
         print(f"{nom:16s} réussite {r['reussite']:.2f}  erreur 1 pas {r['un_pas']:.3f}  8 pas {r['8_pas']:.3f}  "
               f"{r['bits_par_poids']:.2f} bits/poids  ({r['secondes']} s)", flush=True)
-    (SORTIE / "references.json").write_text(json.dumps(refs, indent=1, ensure_ascii=False))
+    (S / "references.json").write_text(json.dumps(refs, indent=1, ensure_ascii=False))
 
 
 def cmd_essai(args):
