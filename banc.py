@@ -355,10 +355,10 @@ def empreinte(chemin):
     return hashlib.sha256(Path(chemin).read_bytes()).hexdigest()[:16]
 
 
-def mesurer(modele, graine_episodes=GRAINE_EPISODES_CALIB, n=N_CALIB):
+def mesurer(modele, graine_episodes=GRAINE_EPISODES_CALIB, n=N_CALIB, graine_plan=GRAINE_PLAN):
     s0, but = episodes(n, graine_episodes)
     t0 = time.time()
-    reussi, dist = evaluer(modele, s0, but)
+    reussi, dist = evaluer(modele, s0, but, graine_plan)
     return {"reussite": reussi.float().mean().item(), "reussis": int(reussi.sum()), "episodes": n,
             "distance_finale_moyenne": dist.mean().item(), "secondes": round(time.time() - t0, 1),
             "reussite_par_episode": "".join("1" if r else "0" for r in reussi.tolist()), **erreurs(modele)}
@@ -427,14 +427,14 @@ def cmd_test(args):
         mod, comp = charger(chemin)
         if comp is not None:
             valider(comp, budget=budget_gardes() if comp["bits"] == 2 else None)
-        r = mesurer(mod, args.graine, args.n)
+        r = mesurer(mod, args.graine, args.n, args.graine_plan)
         r["bits_par_poids"] = 32.0 if comp is None else round(bits_par_poids(comp), 3)
         r["empreinte"] = empreinte(chemin)
         res[str(chemin)] = r
         print(f"{Path(chemin).name:28s} réussite {r['reussite']:.3f} ({r['reussis']}/{r['episodes']})  "
               f"{r['bits_par_poids']:.2f} bits/poids", flush=True)
     if args.sortie:
-        Path(args.sortie).write_text(json.dumps({"graine": args.graine, "n": args.n, "resultats": res}, indent=1,
+        Path(args.sortie).write_text(json.dumps({"graine": args.graine, "graine_plan": args.graine_plan, "n": args.n, "resultats": res}, indent=1,
                                                 ensure_ascii=False))
 
 
@@ -453,6 +453,7 @@ if __name__ == "__main__":
     t.add_argument("fichiers", nargs="+")
     t.add_argument("--graine", type=int, required=True)
     t.add_argument("--n", type=int, default=300)
+    t.add_argument("--graine-plan", type=int, default=GRAINE_PLAN)
     t.add_argument("--sortie")
     t.set_defaults(f=cmd_test)
     a = p.parse_args()
