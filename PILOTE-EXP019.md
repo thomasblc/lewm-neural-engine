@@ -24,3 +24,14 @@ mieux que le critère de taille au même pourcentage. Sinon, on s'arrête ou on 
 
 Mêmes échelles qu'EXP-011 (calculées avec les poids gardés) ; même fraction gardée dans chaque couche ; critère « obs »
 calculé sur les poids d'origine, pas sur les poids mis à jour par GPTQ comme dans SpQR ; 400 épisodes par version.
+
+## Changements après la recherche de l'existant (K-037, 3 novembre 2026), avant tout calcul
+
+1. Ajouter un point à 3,1 % de poids gardés (égalité de mémoire avec le 3 bits, convention SpQR de 32 bits par poids
+   gardé) et donner aussi les bits avec un ternaire rangé à 1,6 bit.
+2. Ajouter deux références au même budget : GPTQ ternaire à groupes plus fins, GPTQ 2 bits à quatre niveaux.
+3. Ajouter le critère « spqr » : poids gardés choisis pendant GPTQ, sur les poids mis à jour.
+4. Deuxième temps seulement : critère de tâche à la TaCQ (perte de rollout, gradient absolu, épisodes de calibration
+   distincts de l'évaluation) et réglage fin des seuls poids gardés.
+Rien n'est lancé : l'environnement de LeWM ne tourne plus depuis macOS 27 (voir le journal du 3 novembre).
+
