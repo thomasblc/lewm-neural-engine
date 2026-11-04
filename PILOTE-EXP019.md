@@ -35,3 +35,24 @@ calculé sur les poids d'origine, pas sur les poids mis à jour par GPTQ comme d
    distincts de l'évaluation) et réglage fin des seuls poids gardés.
 Rien n'est lancé : l'environnement de LeWM ne tourne plus depuis macOS 27 (voir le journal du 3 novembre).
 
+
+## Amendement du 4 novembre 2026 : petit format, avec réglage fin (leçons d'EXP-020), avant tout calcul
+
+Décision de Thomas : lancer EXP-019 sans être gourmand en taille. macOS 27.2 a réparé scipy. Plan réduit :
+
+- PushT, 100 premières positions du tirage d'EXP-003, graine 42 seulement.
+- 5 versions : pleine précision ; prédicteur 3 bits (RTN, la barre à mémoire plus haute, 3,06 bits) ; ternaire GPTQ
+  d'EXP-011 (2,06 bits) ; ternaire GPTQ avec 1 % de poids gardés, critère SpQR (2,38 bits) ; la même avec réglage fin
+  (2,38 bits, même mémoire).
+- Réglage fin (leçon d'EXP-020) : entiers et masque figés ; on règle un facteur par ligne sur l'échelle, les valeurs
+  gardées et les biais, pour que la sortie du prédicteur (puis pred_proj, dernière position) reproduise celle du float32.
+  Données : entrées du prédicteur enregistrées pendant une planification en pleine précision sur les 32 premiers
+  épisodes de calibration d'EXP-009 (tirage 9009, trajectoires d'évaluation exclues), 8 lignes par appel. Réglage fixé
+  sans essai : 5 000 pas, lots de 256, Adam 1e-3 avec décroissance cosinus, graine 0 ; 5 % des lignes tenues à l'écart
+  pour une perte de contrôle. Le format est vérifié au chargement (mêmes entiers, une échelle float16 par ligne, valeurs
+  gardées en float16, même masque).
+- Contrôles de dérive : la pleine précision et le ternaire GPTQ sont comparés épisode par épisode aux fichiers d'avant
+  macOS 27 (EXP-003, EXP-011) ; arrêt si la pleine précision s'écarte de plus de 10 points.
+- Lecture : prometteur si la version réglée perd au plus 7,6 points contre la pleine précision (critère d'origine) et
+  fait mieux que le 1 % gardé sans réglage. 100 épisodes : un écart de moins de 10 points n'est pas établi.
+- Lanceur : `lancer_pilote_exp019.sh` ; analyse : `analyse_pilote_exp019.py`.

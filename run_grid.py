@@ -45,6 +45,7 @@ from stable_worldmodel.solver.cem import CEMSolver  # noqa: E402
 from stable_worldmodel.world.world import _apply_callables, _extract_init_goal  # noqa: E402
 from torchvision.transforms import v2 as transforms  # noqa: E402
 
+import quant  # noqa: E402
 from quant import GROUPES, quantifier  # noqa: E402
 
 # ce que chaque tâche enregistre : dimension de l'état, clés de départ et de but (configs de le-wm/config/eval)
@@ -289,6 +290,42 @@ def calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform,
     print(f"[calibration] {len(H)} couches, de {min(n.values())} à {max(n.values())} lignes", flush=True)
 
 
+def collecter_affinage(args, cfg, dataset, process, ep_all, st_all, world, transform, solver_kw, out, sha, par_appel=8):
+    """EXP-019 (pilote, réglage fin) : planifie en pleine précision sur des épisodes de calibration et garde, à chaque
+    appel du prédicteur, `par_appel` lignes tirées au hasard (graine fixe) de ses entrées (emb, act_emb), en float16,
+    rangées par longueur d'historique T. Écrit out/affinage-donnees.pt."""
+    assert args.specs == ["fp32"] and len(args.seeds) == 1, "collecte : --specs fp32 et une seule graine"
+    model = swm.wm.utils.load_pretrained(cfg.policy)
+    model = model.to(args.device).eval()
+    model.requires_grad_(False)
+    model.interpolate_pos_encoding = True
+    g = torch.Generator().manual_seed(1234)
+    X, C = {}, {}
+
+    def crochet(mod, entree):
+        x, c = entree[0].detach(), entree[1].detach()
+        j = torch.randperm(x.shape[0], generator=g)[:par_appel].to(x.device)
+        X.setdefault(x.shape[1], []).append(x[j].half().cpu())
+        C.setdefault(x.shape[1], []).append(c[j].half().cpu())
+
+    poignee = model.predictor.register_forward_pre_hook(crochet)
+    K = args.premiers or args.n
+    for c in range(K // args.chunk):
+        sl = slice(c * args.chunk, (c + 1) * args.chunk)
+        solver = CEMParEpisode(model=model, graine=args.seeds[0], **solver_kw)
+        world.set_policy(swm.policy.WorldModelPolicy(solver=solver, config=swm.PlanConfig(**cfg.plan_config),
+                                                     process=process, transform=transform))
+        evaluer_paquet(world, dataset, ep_all[sl], st_all[sl], list(range(args.n))[sl], cfg, args.tache)
+        print(f"[collecte] paquet {c + 1} sur {K // args.chunk}", flush=True)
+    poignee.remove()
+    tmp = out / "affinage-donnees.tmp.pt"
+    torch.save({"X": {T: torch.cat(v) for T, v in X.items()}, "C": {T: torch.cat(v) for T, v in C.items()},
+                "episodes_idx": list(ep_all[:K]), "start_steps": list(st_all[:K]), "graine": args.seeds[0],
+                "par_appel": par_appel, "git": sha, "tache": args.tache}, tmp)
+    os.replace(tmp, out / "affinage-donnees.pt")
+    print("[collecte] " + ", ".join(f"T={T} : {sum(x.shape[0] for x in v)} lignes" for T, v in sorted(X.items())), flush=True)
+
+
 def git_info():
     ici = Path(__file__).resolve().parent
     sha = subprocess.run(["git", "-C", str(ici), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
@@ -312,6 +349,8 @@ def main():
     ap.add_argument("--cem-iter", type=int, default=None, help="itérations de la CEM par plan (défaut 30)")
     ap.add_argument("--calibrer-gptq", action="store_true", help="EXP-009 : calibre GPTQ au lieu d'évaluer")
     ap.add_argument("--gptq-calib", default=None, help="EXP-009 : statistiques de calibration pour les versions :gptq")
+    ap.add_argument("--collecter-affinage", action="store_true", help="EXP-019 : enregistre les entrées du prédicteur")
+    ap.add_argument("--affinage", default=None, help="EXP-019 : poids réglés (affinage.py) pour les versions :aff")
     ap.add_argument("--premiers", type=int, default=None,
                     help="EXP-019 : n'évalue que les K premières positions du tirage de --n épisodes (même hasard par épisode)")
     args = ap.parse_args()
@@ -343,6 +382,11 @@ def main():
                                    "sha256": hashlib.sha256(Path(args.gptq_calib).read_bytes()).hexdigest()}
     if args.calibrer_gptq:
         protocole["calibration_gptq"] = True
+    if args.collecter_affinage:                               # absent des protocoles précédents
+        protocole["collecte_affinage"] = True
+    if args.affinage:                                         # absent des protocoles précédents
+        protocole["affinage"] = {"fichier": Path(args.affinage).name,
+                                 "sha256": hashlib.sha256(Path(args.affinage).read_bytes()).hexdigest()}
     if args.premiers is not None:                             # absent des protocoles précédents
         assert 0 < args.premiers <= args.n and args.premiers % args.chunk == 0, "--premiers : multiple de --chunk, au plus --n"
         protocole["premiers"] = args.premiers
@@ -367,6 +411,9 @@ def main():
     if args.calibrer_gptq:
         calibrer_gptq(args, cfg, dataset, process, ep_all, st_all, world, transform, solver_kw, out, sha)
         return
+    if args.collecter_affinage:
+        collecter_affinage(args, cfg, dataset, process, ep_all, st_all, world, transform, solver_kw, out, sha)
+        return
     for seed in args.seeds:
         for spec in args.specs:
             f = out / f"{spec.replace(':', '-')}_s{seed}.npz"
@@ -375,7 +422,16 @@ def main():
                 continue
             t0 = time.time()
             model = swm.wm.utils.load_pretrained(cfg.policy)
-            model, touches = quantifier(model, "" if spec == "fp32" else spec)
+            base = spec[:-len(":aff")] if spec.endswith(":aff") else spec
+            model, touches = quantifier(model, "" if base == "fp32" else base)
+            if base != spec:                                  # EXP-019 : poids réglés par affinage.py
+                import affinage
+                A = torch.load(args.affinage, map_location="cpu")
+                assert A["spec"] == base, f"{args.affinage} règle {A['spec']}, pas {base}"
+                affinage.verifier_format(A["etat"], quant.DETAILS)
+                with torch.no_grad():
+                    for k, v in A["etat"].items():
+                        model.get_parameter(k).copy_(v)
             model = model.to(args.device).eval()
             model.requires_grad_(False)
             model.interpolate_pos_encoding = True

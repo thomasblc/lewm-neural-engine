@@ -22,6 +22,9 @@ EXP-019 (pilote) ajoute les poids gardés : "predictor:2:clip:gptq:k1:obs" garde
 grille, en 16 bits, choisis par le critère « obs » ou « mag » de garder.py ; avec GPTQ, leur valeur est celle que GPTQ
 leur donne à leur colonne (compensations comprises), arrondie en float16 ; sans GPTQ (":clip:k1:obs"), le poids
 d'origine arrondi en float16. Mêmes échelles qu'EXP-011. Sans suffixe ":k", rien ne change.
+
+EXP-019 (pilote, réglage fin) : chaque appel range dans DETAILS, pour chaque couche à échelle réduite, ses échelles
+(s), ses entiers (k) et son masque de poids gardés (G, ou None) ; affinage.py s'en sert. Les poids ne changent pas.
 """
 import os
 import re
@@ -34,6 +37,7 @@ GROUPES = {
     "autres": ("action_encoder", "projector", "pred_proj"),
     "encpred": ("encoder", "predictor"),
 }
+DETAILS = {}
 
 
 @torch.no_grad()
@@ -74,6 +78,7 @@ def lire_spec(spec):
 @torch.no_grad()
 def quantifier(model, spec=None):
     spec = spec if spec is not None else os.environ.get("LEWM_QUANT", "")
+    DETAILS.clear()
     if not spec:
         return model, []
     garde = re.search(r":k([0-9.]+):([a-z]+)$", spec)
@@ -116,6 +121,7 @@ def quantifier(model, spec=None):
                 n_poids += w32.numel()
                 mod.weight.copy_(val.reshape(mod.weight.shape))
                 facteurs.append(f)
+                DETAILS[nom] = {"s": s32.detach().clone(), "k": k.detach().clone(), "G": None if G is None else G.clone()}
             elif avec_gptq:
                 h = calib["H"][nom] / calib["n"][nom]
                 w32 = mod.weight.reshape(mod.weight.shape[0], -1)
