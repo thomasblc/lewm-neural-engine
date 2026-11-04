@@ -5,6 +5,8 @@
 # épisodes de calibration ; 3. 16 réglages (4 versions x 4 graines) ; 4. grille, graine par graine, bras A, B, B0, C, D,
 # E ; 5. reproduction bloquante finale (graine 55) ; 6. analyse. Une garde de batterie par étape de run_grid (pause à
 # 15 %, reprise à 60 %) et sentinelle ; caffeinate empêche la veille.
+# BLOC="52" (ou plusieurs graines) : ne fait que les réglages et la grille de ces graines, puis s'arrête ; la reproduction
+# finale et l'analyse se font quand les 24 fichiers sont là (amendement 3). Sans BLOC, toutes les graines.
 # ESSAI=1 : essai court de bout en bout sur la vraie machine (50 épisodes, 50 pas de réglage, dossiers essai-exp021-*,
 # tests unitaires d'abord), pour exercer tous les contrôles bloquants avant le vrai lancement.
 # Lancer détaché (outils/CALCULS-DE-NUIT.md) :
@@ -24,6 +26,11 @@ main() {
     PRE=essai-exp021 PAS=50 KREPRO=50 NPOS=50
   fi
   local GRAINES=(52 53 54 55)
+  local BLOC_G=(${=BLOC:-$GRAINES})
+  local g
+  for g in $BLOC_G; do
+    (( ${GRAINES[(Ie)$g]} )) || { echo "[arrêt] graine $g hors de $GRAINES"; exit 1; }
+  done
   local TIRAGE=(--n 2000 --chunk 50 --graine-episodes 2026 --exclure $R/exp003/meta.json $R/sanite-n50/meta.json)
   local VERSIONS=(predictor:2:clip:gptq:k1:obs:aff predictor:3:clip:gptq:aff predictor:3:clip:gptq predictor:2:clip:gptq:k1:obs
                   predictor:2:clip:gptq:aff predictor:2:clip:gptq:k3.1:obs:aff)
@@ -34,7 +41,7 @@ main() {
   # 0. code figé, arbre propre ; revérifié avant chaque étape, HEAD compris
   verifier
   HEAD0=$(git rev-parse HEAD)
-  echo "[info] ${PRE} : code $(git rev-parse --short HEAD), début $(date '+%H:%M')"
+  echo "[info] ${PRE} : code $(git rev-parse --short HEAD), début $(date '+%H:%M'), graines de ce bloc : $BLOC_G"
   local d c
   for d in $PRE-repro-debut $PRE-collecte $PRE-pusht $PRE-repro-fin; do
     [ -f $R/$d/meta.json ] || continue
@@ -70,9 +77,9 @@ main() {
     --collecter-affinage --n 256 --chunk 32 --premiers 32 --specs fp32 --seeds 0 --graine-episodes 9009 \
     --exclure $R/exp003/meta.json $R/sanite-n50/meta.json $R/exp005/meta.json
 
-  # 3. réglages : un par version et par graine
-  local g v f
-  for g in $GRAINES; do
+  # 3. réglages : un par version et par graine (graines de ce bloc)
+  local v f
+  for g in $BLOC_G; do
     for v in $REGLER; do
       f=$R/$PRE-collecte/${v//:/-}_g$g.pt
       [ -f $f ] && continue
@@ -83,13 +90,40 @@ main() {
     done
   done
 
-  # 4. grille : graine par graine, bras A, B, B0, C, D, E
-  garde $PRE-pusht $(( ${#VERSIONS} * ${#GRAINES} ))
+  # 4. grille : graine par graine (graines de ce bloc), bras A, B, B0, C, D, E ; la garde attend les fichiers déjà là
+  #    plus ceux de ce bloc
+  local deja=0 manque=0
   for g in $GRAINES; do
-    verifier
-    caffeinate -i $PY run_grid.py --out $R/$PRE-pusht $TIRAGE --premiers $NPOS --specs $VERSIONS --seeds $g \
-      --gptq-calib $CALIB --affinage-dossier $R/$PRE-collecte
+    for v in $VERSIONS; do
+      [ -f $R/$PRE-pusht/${v//:/-}_s$g.npz ] && deja=$((deja + 1))
+    done
   done
+  for g in $BLOC_G; do
+    for v in $VERSIONS; do
+      [ -f $R/$PRE-pusht/${v//:/-}_s$g.npz ] || manque=$((manque + 1))
+    done
+  done
+  if [ $manque -gt 0 ]; then
+    garde $PRE-pusht $((deja + manque))
+    for g in $BLOC_G; do
+      verifier
+      caffeinate -i $PY run_grid.py --out $R/$PRE-pusht $TIRAGE --premiers $NPOS --specs $VERSIONS --seeds $g \
+        --gptq-calib $CALIB --affinage-dossier $R/$PRE-collecte
+    done
+  fi
+  local restantes=()
+  for g in $GRAINES; do
+    for v in $VERSIONS; do
+      if [ ! -f $R/$PRE-pusht/${v//:/-}_s$g.npz ]; then
+        restantes+=($g)
+        break
+      fi
+    done
+  done
+  if [ ${#restantes} -gt 0 ]; then
+    echo "[pause] bloc fini à $(date '+%H:%M') ; graines restantes : $restantes"
+    return 0
+  fi
 
   # 5. reproduction finale (bloquante)
   verifier

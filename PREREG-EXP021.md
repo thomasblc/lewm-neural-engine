@@ -32,6 +32,11 @@ Amendement 2 (4 novembre, 11 h 37, avant tout run de l'expérience). Relecture d
 2. La phrase sur B0 contre B est descriptive, avec son intervalle, et ne dit plus que le réglage « a dégradé » la barre.
 Le lanceur écrit aussi ce qui occupe le GPU quand il attend.
 
+Amendement 3 (4 novembre, 12 h 37, avant tout run de l'expérience ; demande de Thomas) : exécution en blocs d'environ
+2 h 30, une graine par bloc (`BLOC=52`, puis 53, 54, 55). Sans effet sur les résultats : même commit pour tous les
+fichiers (contrôlé), hasard fixé par épisode, réglages et grille déjà découpés par graine. Le premier bloc fait aussi la
+reproduction du début et la collecte ; la reproduction finale et l'analyse se font quand les 24 fichiers sont là.
+
 ## Pourquoi
 
 Le pilote d'EXP-019 (100 épisodes d'EXP-003, graine 42) donne : pleine précision 82 %, 3 bits RTN non réglé 82 %,
@@ -148,5 +153,5 @@ pour A, non mesuré ; pas de TwoRoom (expérience séparée si H3 passe).
 ## Analyse et budget
 
 `analyse_exp021.py`, testé par `test_analyse_exp021.py` sur des fichiers fabriqués à effet connu (dont des p
-intermédiaires) avant tout run. Lanceur `lancer_exp021.sh` (garde de batterie, sentinelle, lancement détaché). Environ
+intermédiaires) avant tout run. Lanceur `lancer_exp021.sh` (garde de batterie, sentinelle, lancement détaché, blocs par graine). Environ
 11 h 30 de GPU, aucun crédit Claude pendant le calcul.
