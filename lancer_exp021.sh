@@ -65,6 +65,7 @@ main() {
 
   # 2. collecte des entrées du prédicteur (épisodes de calibration d'EXP-009, trajectoires d'EXP-005 exclues)
   verifier
+  attendre_batterie
   [ -f $R/$PRE-collecte/affinage-donnees.pt ] || caffeinate -i $PY run_grid.py --out $R/$PRE-collecte \
     --collecter-affinage --n 256 --chunk 32 --premiers 32 --specs fp32 --seeds 0 --graine-episodes 9009 \
     --exclure $R/exp003/meta.json $R/sanite-n50/meta.json $R/exp005/meta.json
@@ -76,6 +77,7 @@ main() {
       f=$R/$PRE-collecte/${v//:/-}_g$g.pt
       [ -f $f ] && continue
       verifier
+      attendre_batterie
       caffeinate -i $PY affinage.py --spec $v --calib $CALIB --donnees $R/$PRE-collecte/affinage-donnees.pt --out $f \
         --pas $PAS --lot 256 --lr 1e-3 --graine $g --device mps
     done
@@ -125,10 +127,12 @@ EOF
 }
 
 attendre_gpu() {
-  local vides=0
+  local vides=0 tours=0
   while [ $vides -lt 3 ]; do
     if autre_calcul; then
       vides=0
+      tours=$((tours + 1))
+      [ $((tours % 10)) -ne 1 ] || { echo "[info] GPU occupé ($(date '+%H:%M')) :"; pgrep -fl '(run_grid|affinage)\.py|lancer_' | grep -v "^$$ " | cut -c1-120; }
     else
       vides=$((vides + 1))
     fi
@@ -141,6 +145,17 @@ attendre_gpu() {
 autre_calcul() {
   pgrep -f '^[^ ]*[Pp]ython[^ ]* ([^ ]+ )*(run_grid|affinage)\.py( |$)' > /dev/null ||
     pgrep -f '^(/bin/)?zsh (\./|[^ ]*/)?lancer_(exp0[0-9][0-9]|pilote_exp019|grille)\.sh( |$)' | grep -v "^$$\$" > /dev/null
+}
+
+# la garde de batterie ne gèle que run_grid.py : avant la collecte et chaque réglage, batterie à 60 % au moins
+attendre_batterie() {
+  local pct
+  while true; do
+    pct=$(pmset -g batt | grep -Eo '[0-9]+%' | head -1 | tr -d %)
+    [ -n "$pct" ] && [ "$pct" -ge 60 ] && return 0
+    echo "[info] batterie à ${pct:-?} %, réglage en attente ($(date '+%H:%M'))"
+    sleep 300
+  done
 }
 
 garde() {

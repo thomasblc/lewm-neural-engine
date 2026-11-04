@@ -15,7 +15,7 @@ protocole (1 P0, 2 P1). Il l'emporte sur le texte qui suit, mis à jour en cons�
    réglages (graines 52 à 55) sur les 1 000 premières positions des épisodes d'EXP-005, même nombre de couples épisode et
    graine ; chaque lecture dit « pour ces quatre réglages » et indique si l'écart estimé passe le seuil dans chacun.
 3. Barre 3 bits (P1) : ajout de B0, le même 3 bits non réglé (`predictor:3:clip:gptq`). Si B0 dépasse B de plus de 2
-   points en moyenne, la lecture de H3 le dit (barre dégradée par le réglage).
+   points en moyenne, la lecture de H3 le dit, comme un constat descriptif non testé (amendement 2).
 4. Mémoire (P1) : format écrit et compté. Bits par poids des couches linéaires du prédicteur (biais en float32, normes et
    plongements exclus, identiques dans tous les bras) ; poids gardé = 16 bits de valeur et 16 bits d'indice de colonne,
    plus un compte de 16 bits par ligne. A et C 2,44 bits, B et B0 3,06, D 2,06, E 3,11 : E a une mémoire voisine de B,
@@ -25,6 +25,12 @@ protocole (1 P0, 2 P1). Il l'emporte sur le texte qui suit, mis à jour en cons�
    `affinage.py` et par l'analyse ; fichier de réglage écrit d'un coup (fichier temporaire puis renommage).
 6. Lectures (P1) : E contre B n'est ni testé ni classé ; l'intervalle d'un test est sa borne au niveau de Holm,
    l'intervalle percentile est étiqueté descriptif.
+
+Amendement 2 (4 novembre, 11 h 37, avant tout run de l'expérience). Relecture des corrections : 0 P0, 2 P1.
+1. Batterie : la garde ne gèle que `run_grid.py` ; la collecte et les 16 réglages (environ 1 h de GPU) attendent
+   désormais une batterie à 60 % au moins avant de démarrer.
+2. La phrase sur B0 contre B est descriptive, avec son intervalle, et ne dit plus que le réglage « a dégradé » la barre.
+Le lanceur écrit aussi ce qui occupe le GPU quand il attend.
 
 ## Pourquoi
 
@@ -108,8 +114,8 @@ Aucun écart descriptif n'est lu comme un test.
 - H3 soutenue : « pour ces quatre réglages, à 2,44 bits par poids des couches linéaires du prédicteur, la version
   ternaire avec 1 % gardé et réglée ne perd pas plus de 2 points face au 3 bits réglé de la même façon (3,06 bits), sur
   des épisodes neufs » ; suivi de « l'écart estimé dépasse -2 points dans chacun des 4 réglages » ou de « l'écart estimé
-  varie selon le réglage (de x à y points) » ; et, si B0 dépasse B de plus de 2 points, « la barre est B réglé, que le
-  réglage a dégradé ». Non soutenue : « non-infériorité face
+  varie selon le réglage (de x à y points) » ; et, si B0 dépasse B de plus de 2 points en moyenne, « B0 non réglé dépasse
+  B de x [IC] points (descriptif, non testé) : la barre B réglé est peut-être dégradée par le réglage ». Non soutenue : « non-infériorité face
   au 3 bits réglé non établie », avec l'écart et son intervalle ; jamais « perte » sans intervalle entièrement sous 0.
 - Face à la pleine précision : écart et intervalle seulement ; jamais « sans perte » ni « gratuit » (aucun test).
 - E contre B, mémoire voisine : écart et intervalle, non testé ; aucun classement.

@@ -230,7 +230,8 @@ def lecture(v, ecarts, par_graine, b0_moins_b):
         "épisodes neufs" + ens("H3", -MARGE) if v["H3"] else
         f"non-infériorité face au 3 bits réglé non établie (écart {f(ecarts['A - B'])} points, descriptif)")
     if b0_moins_b > MARGE:
-        L["H3"] += " ; la barre est B réglé, que le réglage a dégradé (B0 non réglé dépasse B de plus de 2 points)"
+        L["H3"] += (f" ; B0 non réglé dépasse B de {f(ecarts['B0 - B'])} points (descriptif, non testé) : la barre B réglé "
+                    "est peut-être dégradée par le réglage")
     L["pleine_precision"] = f"écart de A à la pleine précision {f(ecarts['A - fp32'])} points (descriptif, aucun test)"
     L["memoire_voisine"] = f"E moins B, mémoire voisine (3,11 contre 3,06 bits) : {f(ecarts['E - B'])} points, non testé"
     return L

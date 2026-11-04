@@ -178,7 +178,7 @@ def main():
         print(f"ok scénario B : H2 seule soutenue, p {', '.join(f'{p:.4f}' for p in ps)} (H3 intermédiaire), lecture")
     with tempfile.TemporaryDirectory() as t:
         res, ps = verifier_scenario(fabriquer(t, SCENARIO_C), SCENARIO_C, {"H1": "soutenue", "H2": "soutenue", "H3": "soutenue"})
-        assert "que le réglage a dégradé" in res["lecture"]["H3"], res["lecture"]["H3"]
+        assert "peut-être dégradée par le réglage" in res["lecture"]["H3"] and "non testé" in res["lecture"]["H3"], res["lecture"]["H3"]
         assert "chacun des 4 réglages" in res["lecture"]["H1"]
         print("ok scénario C : B réglé dégradé signalé dans la lecture de H3")
     with tempfile.TemporaryDirectory() as t:
