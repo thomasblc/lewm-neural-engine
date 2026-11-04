@@ -98,7 +98,7 @@ def tranche(x, k, chunk):
     init_state et goal_state, axe 1 pour les tableaux (pas, épisodes, ...), un élément par paquet pour n_steps."""
     out = {}
     for c, v in x.items():
-        if c in ("git", "git_sale", "spec", "seed", "n_couches", "chunk", "affinage_sha256", "n_gardes"):
+        if v.ndim == 0:                                  # champs d'un seul nombre ou d'un seul texte (version, commit...)
             continue
         if c == "n_steps":
             out[c] = v[:k // chunk]

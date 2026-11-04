@@ -91,7 +91,8 @@ def fabriquer(racine, sources, essai=False, traj_donnees=tuple(range(-32, 0)), p
     for dd, g in ((f"{pre}-repro-debut", G[0]), (f"{pre}-repro-fin", G[-1])):
         (r / dd).mkdir()
         ecrire(r / dd / f"fp32_s{g}.npz", premiers(dict(np.load(RES / "exp005" / f"fp32_s{g}.npz")), k),
-               affinage_sha256=np.str_(""), n_gardes=np.int64(0))
+               affinage_sha256=np.str_(""), n_gardes=np.int64(0), n_poids_quantifies=np.int64(0),
+               n_lignes_quantifiees=np.int64(0))                # tous les champs scalaires qu'écrit run_grid.py
     return r
 
 
