@@ -187,11 +187,15 @@ def main():
     print(f"[affinage] perte de contrôle (lignes tenues à l'écart) : {controle_avant:.4e} -> {controle_apres:.4e}", flush=True)
     etat = exporter(eleve, details, libres)
     verifier_format(etat, details)
+    if not (torch.isfinite(torch.tensor([controle_avant, controle_apres])).all() and controle_apres < controle_avant):
+        raise SystemExit(f"[affinage] arrêt : perte de contrôle {controle_avant:.4e} -> {controle_apres:.4e}, pas de baisse")
     sha = hashlib.sha256(Path(a.donnees).read_bytes()).hexdigest()
+    tmp = Path(str(a.out) + ".tmp")
     torch.save({"etat": etat, "spec": a.spec, "pas": a.pas, "lot": a.lot, "lr": a.lr, "graine": a.graine,
                 "donnees_sha256": sha, "perte_debut": sum(pertes[:50]) / max(1, len(pertes[:50])),
                 "perte_fin": sum(pertes[-50:]) / max(1, len(pertes[-50:])), "validation": a.validation,
-                "controle_avant": controle_avant, "controle_apres": controle_apres}, a.out)
+                "controle_avant": controle_avant, "controle_apres": controle_apres}, tmp)
+    os.replace(tmp, a.out)                            # un fichier coupé en cours d'écriture ne passe jamais pour fini
     print(f"[affinage] écrit {a.out} ({time.time() - t0:.0f} s)", flush=True)
     print(json.dumps({"perte_debut": pertes[0] if pertes else None, "perte_fin": pertes[-1] if pertes else None}))
 

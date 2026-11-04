@@ -1,8 +1,10 @@
-"""Tests de analyse_exp021.py sur de vrais fichiers d'EXP-005 et EXP-010 copiés, en bras fabriqués à effet connu.
-Scénario A : A = pleine précision, B = RTN 8 bits, C et D = GPTQ 3 bits d'EXP-010 (environ 11 points de moins) : H1 à H3
-soutenues. Scénario B, p intermédiaires : A = RTN 6 bits, B = pleine précision (A - B environ -1,6), C = GPTQ 4 bits (A - C
-environ +0,8), D = GPTQ 3 bits : H2 seule soutenue. p par inversion de signe, bootstrap-t et Holm recomptés en numpy.
-Essai court (50 épisodes). Refus des fichiers non conformes, chacun avec son motif.
+"""Tests de analyse_exp021.py (amendement 1 : graines 52 à 55, 1 000 premières positions, bras B0) sur de vrais fichiers
+d'EXP-005 et EXP-010 copiés, en bras fabriqués à effet connu.
+Scénario A : A = pleine précision, B et B0 = RTN 8 bits, C et D = GPTQ 3 bits d'EXP-010 (environ 11 points de moins) : H1 à
+H3 soutenues. Scénario B, p intermédiaires : A = RTN 6 bits, B = pleine précision (A - B environ -1,5), C = GPTQ 4 bits
+(A - C environ +0,8), D = GPTQ 3 bits : H2 seule soutenue. Scénario C : B réglé dégradé (GPTQ 3 bits d'EXP-010) et B0 =
+pleine précision : la lecture de H3 le signale. p par inversion de signe, bootstrap-t et Holm recomptés en numpy ; écarts
+par réglage recomptés. Essai court (50 épisodes). Refus des fichiers non conformes, chacun avec son motif.
 
 Usage :
     python test_analyse_exp021.py
@@ -23,11 +25,12 @@ import analyse_exp021 as A21
 RES = A21.ICI.parent / "resultats"
 TETE = subprocess.run(["git", "-C", str(A21.ICI), "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
 G = A21.GRAINES
-SIGNES = np.random.default_rng(0).choice(np.array([-1.0, 1.0]), size=(10_000, 2000))
-SCENARIO_A = {"A": ("exp005", "fp32"), "B": ("exp005", "all-8"), "C": ("exp010", "all-3-gptq"), "D": ("exp010", "all-3-gptq"),
-              "E": ("exp005", "all-6")}
-SCENARIO_B = {"A": ("exp005", "all-6"), "B": ("exp005", "fp32"), "C": ("exp010", "all-4-gptq"), "D": ("exp010", "all-3-gptq"),
-              "E": ("exp005", "all-8")}
+SIGNES = np.random.default_rng(0).choice(np.array([-1.0, 1.0]), size=(10_000, A21.N))
+SCENARIO_A = {"A": ("exp005", "fp32"), "B": ("exp005", "all-8"), "B0": ("exp005", "all-8"), "C": ("exp010", "all-3-gptq"),
+              "D": ("exp010", "all-3-gptq"), "E": ("exp005", "all-6")}
+SCENARIO_B = {"A": ("exp005", "all-6"), "B": ("exp005", "fp32"), "B0": ("exp010", "all-4-gptq"), "C": ("exp010", "all-4-gptq"),
+              "D": ("exp010", "all-3-gptq"), "E": ("exp005", "all-8")}
+SCENARIO_C = dict(SCENARIO_A, B=("exp010", "all-3-gptq"), B0=("exp005", "fp32"))
 
 
 def sha(f):
@@ -49,7 +52,7 @@ def premiers(x, k):
     return out
 
 
-def fabriquer(racine, sources, essai=False, traj_donnees=(1, 2, 3), pas=None):
+def fabriquer(racine, sources, essai=False, traj_donnees=tuple(range(-32, 0)), pas=None, par_appel=8, apres=2e-4):
     r = Path(racine)
     n = A21.N_ESSAI if essai else A21.N
     pre = "essai-exp021" if essai else "exp021"
@@ -60,13 +63,15 @@ def fabriquer(racine, sources, essai=False, traj_donnees=(1, 2, 3), pas=None):
         shutil.copy(RES / "exp005" / f"fp32_s{g}.npz", r / "exp005" / f"fp32_s{g}.npz")
     p = json.loads((RES / "exp005" / "meta.json").read_text())["protocole"]
     p = dict(p, gptq_calib=json.loads((RES / "exp010" / "meta.json").read_text())["protocole"]["gptq_calib"],
-             affinage_dossier=f"{pre}-collecte", **({"premiers": n} if essai else {}))
+             affinage_dossier=f"{pre}-collecte", premiers=n)
     d, c = r / f"{pre}-pusht", r / f"{pre}-collecte"
     d.mkdir()
     c.mkdir()
     (d / "meta.json").write_text(json.dumps({"protocole": p, "git": TETE, "git_sale": False}))
-    torch.save({"X": {1: torch.zeros(5, 1, 4), 3: torch.zeros(7, 3, 4)}, "C": {1: torch.zeros(5, 1, 4), 3: torch.zeros(7, 3, 4)},
-                "episodes_idx": list(traj_donnees), "git": TETE}, c / "affinage-donnees.pt")
+    lignes = A21.DONNEES["lignes"]
+    torch.save({"X": {T: torch.zeros(m, T, 2) for T, m in lignes.items()}, "C": {T: torch.zeros(m, T, 2) for T, m in lignes.items()},
+                "episodes_idx": list(traj_donnees), "graine": 0, "par_appel": par_appel, "tache": "pusht", "git": TETE},
+               c / "affinage-donnees.pt")
     sd = sha(c / "affinage-donnees.pt")
     for cle, (spec, gardes) in A21.BRAS.items():
         for g in G:
@@ -75,14 +80,13 @@ def fabriquer(racine, sources, essai=False, traj_donnees=(1, 2, 3), pas=None):
                 f_aff = c / f"{A21.base(spec).replace(':', '-')}_g{g}.pt"
                 torch.save({"spec": A21.base(spec), "graine": g, "donnees_sha256": sd,
                             "pas": pas or (A21.PAS_ESSAI if essai else A21.PAS), "lot": 256, "lr": 1e-3,
-                            "controle_avant": 6e-3, "controle_apres": 2e-4, "etat": {}}, f_aff)
+                            "controle_avant": 6e-3, "controle_apres": apres, "etat": {}}, f_aff)
                 sha_aff = sha(f_aff)
             src_d, src_v = sources[cle]
-            x = dict(np.load(RES / src_d / f"{src_v}_s{g}.npz"))
-            if essai:
-                x = premiers(x, n)
+            x = premiers(dict(np.load(RES / src_d / f"{src_v}_s{g}.npz")), n)
             ecrire(d / A21.nom(spec, g), x, spec=np.str_(spec), seed=np.int64(g), n_couches=np.int64(30),
-                   n_gardes=np.int64(gardes), affinage_sha256=np.str_(sha_aff))
+                   n_gardes=np.int64(gardes), affinage_sha256=np.str_(sha_aff), n_poids_quantifies=np.int64(A21.N_POIDS),
+                   n_lignes_quantifiees=np.int64(A21.LIGNES))
     k = A21.K_REPRO_ESSAI if essai else A21.K_REPRO
     for dd, g in ((f"{pre}-repro-debut", G[0]), (f"{pre}-repro-fin", G[-1])):
         (r / dd).mkdir()
@@ -91,9 +95,9 @@ def fabriquer(racine, sources, essai=False, traj_donnees=(1, 2, 3), pas=None):
     return r
 
 
-def K(sources, cle, n=A21.N):
+def K(sources, cle, n=A21.N, graines=G):
     d, v = sources[cle]
-    return sum(np.load(RES / d / f"{v}_s{g}.npz")["success"][:n].astype(np.int64) for g in G)
+    return sum(np.load(RES / d / f"{v}_s{g}.npz")["success"][:n].astype(np.int64) for g in graines)
 
 
 def p_boot_t(y, b=10_000, graine=4):
@@ -107,13 +111,13 @@ def p_boot_t(y, b=10_000, graine=4):
 
 def recompter(sources):
     """p de chaque test et Holm, recomptés sans le code de l'analyse."""
-    Kf = sum(np.load(RES / "exp005" / f"fp32_s{g}.npz")["success"].astype(np.int64) for g in G)
+    Kf = sum(np.load(RES / "exp005" / f"fp32_s{g}.npz")["success"][:A21.N].astype(np.int64) for g in G)
     Kx = {c: K(sources, c) for c in A21.BRAS}
     Kx["fp32"] = Kf
     ps = []
     for t, b, ref, s in A21.TESTS:
         x = (Kx[b] - Kx[ref]).astype(np.float64)
-        y = 100 * x + (4 if s == "non_inferiorite" else -4)
+        y = 100 * x + (8 if s == "non_inferiorite" else -8)
         with np.errstate(all="ignore"):                  # faux avertissements de matmul (Accelerate), voir analyse_exp003
             p_s = (1 + int((SIGNES @ y >= y.sum()).sum())) / 10_001
         ps.append(max(p_s, p_boot_t(y)))
@@ -133,9 +137,12 @@ def verifier_scenario(r, sources, attendus):
         assert abs(res["tests"][t]["p_holm"] - q) < 1e-12, (t, res["tests"][t]["p_holm"], q)
         assert res["tests"][t]["verdict_ecrit"] == attendus[t], (t, res["tests"][t]["verdict_ecrit"], attendus[t])
     for c in A21.BRAS:
-        assert abs(res["descriptifs"]["reussite"][c] - Kx[c].mean() / 2) < 1e-12
+        assert abs(res["descriptifs"]["reussite"][c] - Kx[c].mean() / 4) < 1e-12
     e = res["descriptifs"]["ecarts"]["A - B"]["moyenne"]
-    assert abs(e - 100 * (Kx["A"] - Kx["B"]).mean() / 2) < 1e-9
+    assert abs(e - 100 * (Kx["A"] - Kx["B"]).mean() / 4) < 1e-9
+    for t, b, ref, _ in A21.TESTS:
+        attendu = [100 * (K(sources, b, graines=(g,)) - K(sources, ref, graines=(g,))).mean() for g in G]
+        assert np.allclose(list(res["tests"][t]["ecart_par_reglage_points"].values()), attendu), t
     return res, ps
 
 
@@ -167,8 +174,13 @@ def main():
                                     {"H1": "non soutenue", "H2": "soutenue", "H3": "non soutenue"})
         assert 0.01 < ps[2] < 0.9, ps                      # H3 : p intermédiaire, sensible à la marge
         assert "non établie" in res["lecture"]["H3"] and "non établi" in res["lecture"]["H1"]
-        assert res["tests"]["H3"]["borne_points"] < -2 < res["tests"]["H3"]["ecart_points"]["moyenne"] + 2
+        assert res["tests"]["H3"]["borne_points"] < -2 < res["tests"]["H3"]["ecart_points_descriptif"]["moyenne"]
         print(f"ok scénario B : H2 seule soutenue, p {', '.join(f'{p:.4f}' for p in ps)} (H3 intermédiaire), lecture")
+    with tempfile.TemporaryDirectory() as t:
+        res, ps = verifier_scenario(fabriquer(t, SCENARIO_C), SCENARIO_C, {"H1": "soutenue", "H2": "soutenue", "H3": "soutenue"})
+        assert "que le réglage a dégradé" in res["lecture"]["H3"], res["lecture"]["H3"]
+        assert "chacun des 4 réglages" in res["lecture"]["H1"]
+        print("ok scénario C : B réglé dégradé signalé dans la lecture de H3")
     with tempfile.TemporaryDirectory() as t:
         res = A21.analyser(fabriquer(t, SCENARIO_A, essai=True), essai=True, verifier=False)
         assert res["controles"]["episodes"] == A21.N_ESSAI
@@ -184,16 +196,21 @@ def main():
         ("réglage chargé alors", lambda r: modifier_npz(sp(r) / A21.nom(A21.BRAS["C"][0], 52), affinage_sha256=np.str_("0" * 64))),
         ("protocole différent", lambda r: (sp(r) / "meta.json").write_text(json.dumps(
             {"protocole": dict(json.loads((sp(r) / "meta.json").read_text())["protocole"], chunk=25)}))),
-        ("diffère", lambda r: modifier_npz(r / "exp021-repro-fin" / "fp32_s53.npz",
-                                           success=~np.load(r / "exp021-repro-fin" / "fp32_s53.npz")["success"])),
+        ("diffère", lambda r: modifier_npz(r / "exp021-repro-fin" / "fp32_s55.npz",
+                                           success=~np.load(r / "exp021-repro-fin" / "fp32_s55.npz")["success"])),
         ("couches quantifiées", lambda r: modifier_npz(sp(r) / A21.nom(A21.BRAS["D"][0], 52), n_couches=np.int64(29))),
+        ("poids et", lambda r: modifier_npz(sp(r) / A21.nom(A21.BRAS["B0"][0], 54), n_poids_quantifies=np.int64(10))),
+        ("premiers", lambda r: (sp(r) / "meta.json").write_text(json.dumps(
+            {"protocole": dict(json.loads((sp(r) / "meta.json").read_text())["protocole"], premiers=2000)}))),
     ]
     for motif, f in cas:
         refus(SCENARIO_A, motif, f)
     ev = int(np.load(RES / "exp005" / "fp32_s52.npz")["episodes_idx"][7])
-    refus(SCENARIO_A, "trajectoires communes", lambda r: None, traj_donnees=(1, ev))
+    refus(SCENARIO_A, "trajectoires communes", lambda r: None, traj_donnees=tuple(range(-31, 0)) + (ev,))
     refus(SCENARIO_A, "réglage 4000 pas", lambda r: None, pas=4000)
-    print(f"ok refus : {len(cas) + 2} fichiers non conformes refusés, chacun avec son motif")
+    refus(SCENARIO_A, "lignes par appel", lambda r: None, par_appel=4)
+    refus(SCENARIO_A, "pas de baisse", lambda r: None, apres=7e-3)
+    print(f"ok refus : {len(cas) + 4} fichiers non conformes refusés, chacun avec son motif")
     print("tous les tests passent")
 
 

@@ -1,6 +1,7 @@
-"""Analyse pré-enregistrée d'EXP-021 (PREREG-EXP021.md) : prédicteur ternaire avec 1 % de poids gardés et réglage fin
-(A), contre le 3 bits réglé (B), le même sans réglage (C), sans poids gardés (D), et le ternaire à 3,1 % gardés réglé
-(E, même mémoire que B), sur les 2 000 épisodes d'EXP-005 (graines 52 et 53). Tests H1 à H3 (Holm sur 3) ; descriptifs.
+"""Analyse pré-enregistrée d'EXP-021 (PREREG-EXP021.md, amendement 1) : prédicteur ternaire avec 1 % de poids gardés et
+réglage fin (A), contre le 3 bits réglé (B), le 3 bits non réglé (B0, contrôle de la barre), A sans réglage (C), sans
+poids gardés (D), et le ternaire à 3,1 % gardés réglé (E, mémoire voisine de B), sur les 1 000 premières positions des
+épisodes d'EXP-005 (graines 52 à 55, un réglage par graine). Tests H1 à H3 (Holm sur 3) ; descriptifs.
 
 Usage :
     python analyse_exp021.py --racine ../resultats --sortie ../resultats/analyse-exp021
@@ -17,24 +18,27 @@ import numpy as np
 import analyse_exp003 as A
 from analyse_exp012 import borne_bootstrap_t, p_bootstrap_t
 
-GRAINES = (52, 53)
+GRAINES = (52, 53, 54, 55)
 S = len(GRAINES)
-N, N_ESSAI = 2000, 50
+N, N_ESSAI, N_REF = 1000, 50, 2000
 K_REPRO, K_REPRO_ESSAI = 100, 50
 MARGE = 2
 REF = "exp005"
 PAS, PAS_ESSAI, LOT, LR = 5000, 50, 256, 1e-3
-N_POIDS, LIGNES = 10_764_288, 39_936                   # prédicteur de LeWM : 30 couches
+N_POIDS, LIGNES = 10_764_288, 39_936                   # couches linéaires du prédicteur de LeWM : 30 couches
+# données de réglage : 32 épisodes de calibration, CEM graine 0, 8 lignes par appel (lignes par longueur d'historique, pilote)
+DONNEES = {"episodes": 32, "graine": 0, "par_appel": 8, "tache": "pusht", "lignes": {1: 8640, 2: 8640, 3: 25920}}
 COUCHES = 30
 # clé : (version, poids gardés attendus)
 BRAS = {"A": ("predictor:2:clip:gptq:k1:obs:aff", 107_640),
         "B": ("predictor:3:clip:gptq:aff", 0),
+        "B0": ("predictor:3:clip:gptq", 0),
         "C": ("predictor:2:clip:gptq:k1:obs", 107_640),
         "D": ("predictor:2:clip:gptq:aff", 0),
         "E": ("predictor:2:clip:gptq:k3.1:obs:aff", 333_702)}
 TESTS = (("H1", "A", "C", "superiorite"), ("H2", "A", "D", "superiorite"), ("H3", "A", "B", "non_inferiorite"))
-DESCRIPTIFS = (("A", "fp32"), ("B", "fp32"), ("C", "fp32"), ("D", "fp32"), ("E", "fp32"), ("A", "B"), ("A", "C"),
-               ("A", "D"), ("E", "B"), ("E", "A"))
+DESCRIPTIFS = (("A", "fp32"), ("B", "fp32"), ("B0", "fp32"), ("C", "fp32"), ("D", "fp32"), ("E", "fp32"), ("A", "B"),
+               ("A", "C"), ("A", "D"), ("B0", "B"), ("E", "B"), ("E", "A"))
 CLES_LIBRES = {"gptq_calib", "affinage_dossier", "premiers"}   # seules clés du protocole qui diffèrent d'EXP-005
 FICHIERS_CALCUL = ("metriques.py", "quant.py", "gptq.py", "garder.py", "run_grid.py", "affinage.py")
 FICHIERS_ANALYSE = ("analyse_exp021.py", "analyse_exp012.py", "analyse_exp009.py", "analyse_exp006.py", "analyse_exp003.py",
@@ -44,8 +48,11 @@ ICI = Path(__file__).resolve().parent
 
 
 def bits(spec, gardes):
+    """Bits par poids des couches linéaires du prédicteur (biais en float32, normes et plongements exclus, identiques
+    dans tous les bras) : entiers sur 2 ou 3 bits, une échelle float16 par ligne ; avec poids gardés, 16 bits de valeur
+    et 16 bits d'indice de colonne par poids gardé, plus un compte de 16 bits par ligne (format par lignes)."""
     b = 3 if spec.startswith("predictor:3") else 2
-    return b + (16 * LIGNES + 32 * gardes) / N_POIDS
+    return b + (16 * LIGNES + (32 * gardes + 16 * LIGNES if gardes else 0)) / N_POIDS
 
 
 def base(spec):
@@ -119,7 +126,7 @@ def charger(racine, essai=False, verifier=True):
     dossier, collecte = r / f"{pre}-pusht", r / f"{pre}-collecte"
     refs = {g: dict(np.load(r / REF / f"fp32_s{g}.npz")) for g in GRAINES}
     for g, x in refs.items():
-        A.exiger(len(x["success"]) == N, f"{REF} graine {g} : {len(x['success'])} épisodes au lieu de {N}")
+        A.exiger(len(x["success"]) == N_REF, f"{REF} graine {g} : {len(x['success'])} épisodes au lieu de {N_REF}")
     proto_ref = json.loads((r / REF / "meta.json").read_text())["protocole"]
     calib10 = json.loads((r / "exp010" / "meta.json").read_text())["protocole"]["gptq_calib"]
 
@@ -129,20 +136,27 @@ def charger(racine, essai=False, verifier=True):
              f"{dossier.name} : protocole différent de {REF}")
     A.exiger(p.get("gptq_calib") == calib10, f"{dossier.name} : calibration GPTQ {p.get('gptq_calib')}")
     A.exiger(p.get("affinage_dossier") == collecte.name, f"{dossier.name} : dossier de réglage {p.get('affinage_dossier')}")
-    A.exiger(p.get("premiers") == (n if essai else None), f"{dossier.name} : premiers {p.get('premiers')}")
+    A.exiger(p.get("premiers") == n, f"{dossier.name} : premiers {p.get('premiers')} au lieu de {n}")
 
     f_donnees = collecte / "affinage-donnees.pt"
     A.exiger(f_donnees.exists(), f"{collecte.name}/affinage-donnees.pt manquant")
     donnees = torch.load(f_donnees, map_location="cpu")
     sha_donnees = sha256(f_donnees)
+    A.exiger((len(donnees["episodes_idx"]), int(donnees["graine"]), int(donnees["par_appel"]), donnees["tache"])
+             == (DONNEES["episodes"], DONNEES["graine"], DONNEES["par_appel"], DONNEES["tache"]),
+             f"données de réglage : {len(donnees['episodes_idx'])} épisodes, graine {donnees['graine']}, "
+             f"{donnees['par_appel']} lignes par appel, tâche {donnees['tache']}")
+    lignes = {int(T): int(v.shape[0]) for T, v in donnees["X"].items()}
+    A.exiger(lignes == DONNEES["lignes"] and all(int(donnees["C"][T].shape[0]) == lignes[int(T)] for T in donnees["C"]),
+             f"données de réglage : lignes {lignes} au lieu de {DONNEES['lignes']}")
     eval_traj = set(int(e) for e in refs[GRAINES[0]]["episodes_idx"][:n])
     commun = eval_traj & set(int(e) for e in donnees["episodes_idx"])
     A.exiger(not commun, f"données de réglage : {len(commun)} trajectoires communes avec l'évaluation")
 
-    K = {"fp32": sum(refs[g]["success"][:n].astype(np.int64) for g in GRAINES)}
+    Kg = {"fp32": {g: refs[g]["success"][:n].astype(np.int64) for g in GRAINES}}
     shas, reglages = {str(donnees["git"])}, {}
     for cle, (spec, gardes) in BRAS.items():
-        Ks = 0
+        Kg[cle] = {}
         for g in GRAINES:
             f = dossier / nom(spec, g)
             A.exiger(f.exists(), f"{dossier.name}/{f.name} manquant")
@@ -152,6 +166,8 @@ def charger(racine, essai=False, verifier=True):
             A.exiger(not bool(x["git_sale"]), f"{ici} : arbre git modifié")
             A.exiger(int(x["n_couches"]) == COUCHES, f"{ici} : {int(x['n_couches'])} couches quantifiées au lieu de {COUCHES}")
             A.exiger(int(x["n_gardes"]) == gardes, f"{ici} : {int(x['n_gardes'])} poids gardés au lieu de {gardes}")
+            A.exiger((int(x["n_poids_quantifies"]), int(x["n_lignes_quantifiees"])) == (N_POIDS, LIGNES),
+                     f"{ici} : {int(x['n_poids_quantifies'])} poids et {int(x['n_lignes_quantifiees'])} lignes quantifiés")
             A.exiger(len(x["success"]) == n, f"{ici} : {len(x['success'])} épisodes au lieu de {n}")
             for c in ("episodes_idx", "start_steps", "init_state", "goal_state"):
                 A.exiger(np.array_equal(x[c], refs[g][c][:n]), f"{ici} : {c} différent de la référence")
@@ -165,12 +181,13 @@ def charger(racine, essai=False, verifier=True):
                 A.exiger(R["donnees_sha256"] == sha_donnees, f"{f_aff.name} : données de réglage différentes")
                 A.exiger((int(R["pas"]), int(R["lot"]), float(R["lr"])) == (pas_attendu, LOT, LR),
                          f"{f_aff.name} : réglage {R['pas']} pas, lots de {R['lot']}, taux {R['lr']}")
-                reglages[f"{cle}_g{g}"] = {"controle_avant": float(R["controle_avant"]), "controle_apres": float(R["controle_apres"])}
+                av, ap = float(R["controle_avant"]), float(R["controle_apres"])
+                A.exiger(np.isfinite([av, ap]).all() and 0 <= ap < av, f"{f_aff.name} : perte de contrôle {av} -> {ap}, pas de baisse")
+                reglages[f"{cle}_g{g}"] = {"controle_avant": av, "controle_apres": ap}
             else:
                 A.exiger(str(x["affinage_sha256"]) == "", f"{ici} : réglage chargé alors que la version n'est pas réglée")
             shas.add(str(x["git"]))
-            Ks = Ks + x["success"].astype(np.int64)
-        K[cle] = Ks
+            Kg[cle][g] = x["success"].astype(np.int64)
     A.exiger(len(shas) == 1, f"EXP-021 : fichiers de plusieurs commits {sorted(shas)}")
     sha = shas.pop()
     for d, g in ((f"{pre}-repro-debut", GRAINES[0]), (f"{pre}-repro-fin", GRAINES[-1])):
@@ -181,7 +198,7 @@ def charger(racine, essai=False, verifier=True):
         A.exiger(str(x["git"]) == sha and not bool(x["git_sale"]), f"{d} : autre commit ou arbre modifié")
     if verifier:
         verifier_code(sha)
-    return K, {"commit": sha, "n": n, "donnees_sha256": sha_donnees, "reglages": reglages,
+    return Kg, {"commit": sha, "n": n, "donnees_sha256": sha_donnees, "reglages": reglages,
                "lignes_donnees": {int(t): int(v.shape[0]) for t, v in donnees["X"].items()}}
 
 
@@ -190,38 +207,51 @@ def sensibilite(y, p0, niveau):
     return {"p": ps, "part_qui_change": float(np.mean([(p <= niveau) != (p0 <= niveau) for p in ps]))}
 
 
-def lecture(v, ecarts):
+def lecture(v, ecarts, par_graine, b0_moins_b):
+    """Lecture écrite d'avance (PREREG-EXP021.md, amendement 1). Les verdicts portent sur ces quatre réglages (un par
+    graine) ; la phrase dit si l'écart estimé passe le seuil dans chacun des quatre réglages (descriptif)."""
     f = lambda e: f"{e['moyenne']:+.1f} [{e['bas']:+.1f} ; {e['haut']:+.1f}]"
     ind = "indéterminé (borne et verdict discordants)"
+    ens = lambda t, seuil: " ; " + (f"l'écart estimé dépasse {seuil:+d} points dans chacun des 4 réglages"
+                                    if min(par_graine[t]) > seuil else
+                                    f"l'écart estimé varie selon le réglage ({min(par_graine[t]):+.1f} à {max(par_graine[t]):+.1f} points)")
     L = {}
     L["H1"] = ind if v["H1"] is None else (
-        "régler les échelles, les valeurs gardées et les biais sur des entrées enregistrées en planification améliore le "
-        "prédicteur ternaire avec 1 % gardé de plus de 2 points" if v["H1"] else
-        f"gain de plus de 2 points du réglage non établi (écart {f(ecarts['A - C'])} points)")
+        "pour ces quatre réglages, régler les échelles, les valeurs gardées et les biais sur des entrées enregistrées en "
+        "planification améliore le prédicteur ternaire avec 1 % gardé de plus de 2 points" + ens("H1", MARGE) if v["H1"] else
+        f"gain de plus de 2 points du réglage non établi (écart {f(ecarts['A - C'])} points, descriptif)")
     L["H2"] = ind if v["H2"] is None else (
-        "après réglage, garder 1 % des poids en 16 bits apporte plus de 2 points au prédicteur ternaire" if v["H2"] else
-        f"apport de plus de 2 points des poids gardés non établi (écart {f(ecarts['A - D'])} points)")
+        "pour ces quatre réglages, garder 1 % des poids en 16 bits apporte plus de 2 points au prédicteur ternaire réglé"
+        + ens("H2", MARGE) if v["H2"] else
+        f"apport de plus de 2 points des poids gardés non établi (écart {f(ecarts['A - D'])} points, descriptif)")
     L["H3"] = ind if v["H3"] is None else (
-        "à 2,38 bits par poids, le prédicteur ternaire avec 1 % gardé et réglé ne perd pas plus de 2 points face au 3 bits "
-        "réglé de la même façon (3,06 bits), sur des épisodes neufs" if v["H3"] else
-        f"non-infériorité face au 3 bits réglé non établie (écart {f(ecarts['A - B'])} points)")
+        "pour ces quatre réglages, à 2,44 bits par poids des couches linéaires du prédicteur, la version ternaire avec "
+        "1 % gardé et réglée ne perd pas plus de 2 points face au 3 bits réglé de la même façon (3,06 bits), sur des "
+        "épisodes neufs" + ens("H3", -MARGE) if v["H3"] else
+        f"non-infériorité face au 3 bits réglé non établie (écart {f(ecarts['A - B'])} points, descriptif)")
+    if b0_moins_b > MARGE:
+        L["H3"] += " ; la barre est B réglé, que le réglage a dégradé (B0 non réglé dépasse B de plus de 2 points)"
     L["pleine_precision"] = f"écart de A à la pleine précision {f(ecarts['A - fp32'])} points (descriptif, aucun test)"
-    L["meme_memoire"] = f"E contre B, même mémoire : {f(ecarts['E - B'])} points (descriptif, aucun test)"
+    L["memoire_voisine"] = f"E moins B, mémoire voisine (3,11 contre 3,06 bits) : {f(ecarts['E - B'])} points, non testé"
     return L
 
 
 def analyser(racine, essai=False, verifier=True):
-    K, info = charger(racine, essai, verifier)
+    Kg, info = charger(racine, essai, verifier)
     n = info["n"]
+    K = {c: sum(Kg[c][g] for g in GRAINES) for c in Kg}
     inv, boot = A.Inversion(n=n), A.Bootstrap(n=n)
     ecart = lambda a, b: K[a] - K[b]
     y_de = {"non_inferiorite": lambda x: 100 * x + MARGE * S, "superiorite": lambda x: 100 * x - MARGE * S}
-    tests = {}
+    tests, par_graine = {}, {}
     for t, b, ref, s in TESTS:
         x = ecart(b, ref)
         y = y_de[s](x)
         ps, pb = inv.p(y, "plus"), p_bootstrap_t(y)
-        tests[t] = {"bras": b, "reference": ref, "sorte": s, "ecart_points": {c: 100 * v for c, v in boot.ic(x / S).items()},
+        par_graine[t] = [100 * float((Kg[b][g] - Kg[ref][g]).mean()) for g in GRAINES]
+        tests[t] = {"bras": b, "reference": ref, "sorte": s,
+                    "ecart_points_descriptif": {c: 100 * v for c, v in boot.ic(x / S).items()},
+                    "ecart_par_reglage_points": dict(zip(map(str, GRAINES), par_graine[t])),
                     "p_signe": ps, "p_bootstrap_t": pb, "erreur_mc_p_signe": float(np.sqrt(ps * (1 - ps) / A.B)),
                     "erreur_mc_p_bootstrap_t": float(np.sqrt(pb * (1 - pb) / 10_000)), "p": max(ps, pb)}
     ps = [tests[t]["p"] for t, *_ in TESTS]
@@ -239,21 +269,25 @@ def analyser(racine, essai=False, verifier=True):
     ecarts = {f"{a} - {b}": {c: 100 * v for c, v in boot.ic(ecart(a, b) / S).items()} for a, b in DESCRIPTIFS}
     v = {t: (tests[t]["verdict"] == "soutenue") if tests[t]["borne_et_verdict_concordent"] else None for t, *_ in TESTS}
     desc = {"ecarts": ecarts, "reussite": {c: float(K[c].mean() / S) for c in K},
+            "reussite_par_graine": {c: {str(g): float(Kg[c][g].mean()) for g in GRAINES} for c in Kg},
             "bits_par_poids": {c: bits(spec, g) for c, (spec, g) in BRAS.items()}, "reglages": info["reglages"],
             "lignes_donnees": info["lignes_donnees"]}
-    return {"controles": {"commit": info["commit"], "episodes": n, "donnees_sha256": info["donnees_sha256"]},
-            "tests": tests, "lecture": lecture(v, ecarts), "descriptifs": desc}
+    return {"controles": {"commit": info["commit"], "episodes": n, "graines": list(GRAINES),
+                          "donnees_sha256": info["donnees_sha256"]},
+            "tests": tests, "lecture": lecture(v, ecarts, par_graine, ecarts["B0 - B"]["moyenne"]), "descriptifs": desc}
 
 
 def rapport(r):
     f = lambda e: f"{e['moyenne']:+.1f} [{e['bas']:+.1f} ; {e['haut']:+.1f}]"
     d = r["descriptifs"]
-    L = [f"# EXP-021 : rapport de l'analyse pré-enregistrée ({r['controles']['episodes']} épisodes d'EXP-005, PushT)", "",
-         f"Commit des runs : `{r['controles']['commit'][:7]}`.", "",
-         "| Test | Bras contre référence | Écart (points) [IC 95 %] | Borne inférieure au niveau de Holm | p Holm | Verdict |",
-         "| --- | --- | --- | --- | --- | --- |"]
+    L = [f"# EXP-021 : rapport de l'analyse pré-enregistrée ({r['controles']['episodes']} positions d'EXP-005, PushT, "
+         f"graines {', '.join(map(str, r['controles']['graines']))})", "",
+         f"Commit des runs : `{r['controles']['commit'][:7]}`. Verdicts conditionnels aux quatre réglages (un par graine).", "",
+         "| Test | Bras contre référence | Écart moyen (points) | Borne inférieure du test (niveau de Holm) | Écart par réglage | p Holm | Verdict |",
+         "| --- | --- | --- | --- | --- | --- | --- |"]
     for t, x in r["tests"].items():
-        L.append(f"| {t} ({x['sorte']}) | {x['bras']} contre {x['reference']} | {f(x['ecart_points'])} | {x['borne_points']:+.2f} | "
+        L.append(f"| {t} ({x['sorte']}) | {x['bras']} contre {x['reference']} | {x['ecart_points_descriptif']['moyenne']:+.1f} | "
+                 f"{x['borne_points']:+.2f} | {', '.join(f'{v:+.1f}' for v in x['ecart_par_reglage_points'].values())} | "
                  f"{x['p_holm']:.4f} | {x['verdict_ecrit']} |")
     sens = [(t, x["sensibilite_tirages"]) for t, x in r["tests"].items() if "sensibilite_tirages" in x]
     if sens:
@@ -261,10 +295,11 @@ def rapport(r):
         L += [f"- {t}, sensibilité aux tirages : p {', '.join(f'{p:.4f}' for p in s['p'])} ; part qui change de côté "
               f"{s['part_qui_change']:.1f}" for t, s in sens]
     L += ["", "Lecture :", ""] + [f"- {c} : {v}" for c, v in r["lecture"].items()]
-    L += ["", "| Bras | Bits par poids du prédicteur | Réussite |", "| --- | --- | --- |",
+    L += ["", "| Bras | Bits par poids des couches linéaires du prédicteur | Réussite |", "| --- | --- | --- |",
           f"| pleine précision | 32 | {100 * d['reussite']['fp32']:.1f} % |"]
     L += [f"| {c} | {d['bits_par_poids'][c]:.2f} | {100 * d['reussite'][c]:.1f} % |" for c in BRAS]
-    L += ["", "Écarts descriptifs (points, IC 95 %) :", ""] + [f"- {c} : {f(e)}" for c, e in d["ecarts"].items()]
+    L += ["", "Écarts descriptifs (points, intervalle percentile à 95 %, non utilisé par les tests) :", ""]
+    L += [f"- {c} : {f(e)}" for c, e in d["ecarts"].items()]
     L += ["", "Pertes de contrôle du réglage (avant, après) : "
           + " ; ".join(f"{c} {v['controle_avant']:.2e} -> {v['controle_apres']:.2e}" for c, v in d["reglages"].items())]
     return "\n".join(L) + "\n"

@@ -431,6 +431,8 @@ def main():
             model, touches = quantifier(model, "" if base == "fp32" else base)
             sha_aff = ""
             n_gardes = sum(int(d["G"].sum()) for d in quant.DETAILS.values() if d["G"] is not None)
+            n_poids_q = sum(d["k"].numel() for d in quant.DETAILS.values())        # EXP-021 : mémoire annoncée
+            n_lignes_q = sum(d["k"].shape[0] for d in quant.DETAILS.values())
             if base != spec:                                  # EXP-019 : poids réglés par affinage.py
                 import affinage
                 f_aff = (Path(args.affinage_dossier) / f"{base.replace(':', '-')}_g{seed}.pt" if args.affinage_dossier
@@ -464,7 +466,8 @@ def main():
             tmp = f.with_suffix(".tmp.npz")
             np.savez_compressed(tmp, spec=spec, seed=seed, n_couches=len(touches), git=sha, git_sale=sale,
                                 positions=np.arange(K), episodes_idx=np.array(ep_all[:K]), start_steps=np.array(st_all[:K]),
-                                chunk=args.chunk, affinage_sha256=sha_aff, n_gardes=n_gardes, **data)
+                                chunk=args.chunk, affinage_sha256=sha_aff, n_gardes=n_gardes,
+                                n_poids_quantifies=n_poids_q, n_lignes_quantifiees=n_lignes_q, **data)
             os.replace(tmp, f)
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "
                   f"({time.time() - t0:.0f} s)", flush=True)

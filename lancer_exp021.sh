@@ -1,9 +1,10 @@
 #!/bin/zsh
-# EXP-021 (PREREG-EXP021.md) : prédicteur ternaire avec 1 % gardé et réglage fin, contre le 3 bits réglé, sur les 2 000
-# épisodes d'EXP-005 (graines 52 et 53). 0. code figé ; 1. reproduction bloquante de la pleine précision d'EXP-005 (100
-# premières positions, graine 52) ; 2. collecte des entrées du prédicteur sur 32 épisodes de calibration ; 3. 8 réglages
-# (4 versions x 2 graines) ; 4. grille, graine par graine, bras A à E ; 5. reproduction bloquante finale (graine 53) ;
-# 6. analyse. Garde de batterie (pause à 15 %, reprise à 60 %) et sentinelle ; caffeinate empêche la veille.
+# EXP-021 (PREREG-EXP021.md, amendement 1) : prédicteur ternaire avec 1 % gardé et réglage fin, contre le 3 bits réglé,
+# sur les 1 000 premières positions des épisodes d'EXP-005 (graines 52 à 55). 0. code figé ; 1. reproduction bloquante de
+# la pleine précision d'EXP-005 (100 premières positions, graine 52) ; 2. collecte des entrées du prédicteur sur 32
+# épisodes de calibration ; 3. 16 réglages (4 versions x 4 graines) ; 4. grille, graine par graine, bras A, B, B0, C, D,
+# E ; 5. reproduction bloquante finale (graine 55) ; 6. analyse. Une garde de batterie par étape de run_grid (pause à
+# 15 %, reprise à 60 %) et sentinelle ; caffeinate empêche la veille.
 # ESSAI=1 : essai court de bout en bout sur la vraie machine (50 épisodes, 50 pas de réglage, dossiers essai-exp021-*,
 # tests unitaires d'abord), pour exercer tous les contrôles bloquants avant le vrai lancement.
 # Lancer détaché (outils/CALCULS-DE-NUIT.md) :
@@ -18,13 +19,13 @@ main() {
   local PY=/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python
   local R=../resultats
   local CALIB=$R/exp009-calib-pusht/calib.pt
-  local PRE=exp021 PAS=5000 KREPRO=100
-  local PREM=()
+  local PRE=exp021 PAS=5000 KREPRO=100 NPOS=1000
   if [ -n "$ESSAI" ]; then
-    PRE=essai-exp021 PAS=50 KREPRO=50 PREM=(--premiers 50)
+    PRE=essai-exp021 PAS=50 KREPRO=50 NPOS=50
   fi
+  local GRAINES=(52 53 54 55)
   local TIRAGE=(--n 2000 --chunk 50 --graine-episodes 2026 --exclure $R/exp003/meta.json $R/sanite-n50/meta.json)
-  local VERSIONS=(predictor:2:clip:gptq:k1:obs:aff predictor:3:clip:gptq:aff predictor:2:clip:gptq:k1:obs
+  local VERSIONS=(predictor:2:clip:gptq:k1:obs:aff predictor:3:clip:gptq:aff predictor:3:clip:gptq predictor:2:clip:gptq:k1:obs
                   predictor:2:clip:gptq:aff predictor:2:clip:gptq:k3.1:obs:aff)
   local REGLER=(predictor:2:clip:gptq:k1:obs predictor:3:clip:gptq predictor:2:clip:gptq predictor:2:clip:gptq:k3.1:obs)
   local GARDE=/Users/thomasblanc/Documents/PRO/these-ia-thomas/outils/garde_batterie.sh
@@ -45,10 +46,10 @@ main() {
     $PY -B test_analyse_exp021.py | tail -1
   fi
 
-  # le GPU est partagé : attendre 3 contrôles vides de suite ; puis garde de batterie et sentinelle
+  # le GPU est partagé : attendre 3 contrôles vides de suite ; puis sentinelle. La garde de batterie ne suit que les
+  # run_grid de son dossier et sort quand il est complet : une garde par étape (relecture du 4 novembre, P0).
   local debut=$(date +%s)
   attendre_gpu
-  garde $PRE-repro-fin 1
   if ! pgrep -f "[s]entinelle\.py --boucle" > /dev/null; then
     (cd ../../outils && nohup /usr/bin/python3 -c 'import os; os.setsid(); os.execvp("/Users/thomasblanc/Documents/PRO/world-models-demos/le-wm/.venv/bin/python", ["python", "sentinelle.py", "--boucle"])' \
       >> ../papier-corl-2026/resultats/sentinelle-boucle.log 2>&1 < /dev/null &)
@@ -57,19 +58,20 @@ main() {
 
   # 1. reproduction de la pleine précision d'EXP-005 (bloquante)
   verifier
+  garde $PRE-repro-debut 1
   [ -f $R/$PRE-repro-debut/fp32_s52.npz ] || \
     caffeinate -i $PY run_grid.py --out $R/$PRE-repro-debut $TIRAGE --premiers $KREPRO --specs fp32 --seeds 52
   comparer $R/$PRE-repro-debut/fp32_s52.npz $R/exp005/fp32_s52.npz $KREPRO
 
   # 2. collecte des entrées du prédicteur (épisodes de calibration d'EXP-009, trajectoires d'EXP-005 exclues)
   verifier
-  [ -f $R/$PRE-collecte/affinage-donnees.pt ] || caffeinate -i $PY run_grid.py --collecter-affinage \
-    --out $R/$PRE-collecte --n 256 --chunk 32 --premiers 32 --specs fp32 --seeds 0 --graine-episodes 9009 \
+  [ -f $R/$PRE-collecte/affinage-donnees.pt ] || caffeinate -i $PY run_grid.py --out $R/$PRE-collecte \
+    --collecter-affinage --n 256 --chunk 32 --premiers 32 --specs fp32 --seeds 0 --graine-episodes 9009 \
     --exclure $R/exp003/meta.json $R/sanite-n50/meta.json $R/exp005/meta.json
 
   # 3. réglages : un par version et par graine
   local g v f
-  for g in 52 53; do
+  for g in $GRAINES; do
     for v in $REGLER; do
       f=$R/$PRE-collecte/${v//:/-}_g$g.pt
       [ -f $f ] && continue
@@ -79,18 +81,20 @@ main() {
     done
   done
 
-  # 4. grille : graine par graine, bras A à E
-  for g in 52 53; do
+  # 4. grille : graine par graine, bras A, B, B0, C, D, E
+  garde $PRE-pusht $(( ${#VERSIONS} * ${#GRAINES} ))
+  for g in $GRAINES; do
     verifier
-    caffeinate -i $PY run_grid.py --out $R/$PRE-pusht $TIRAGE $PREM --specs $VERSIONS --seeds $g \
+    caffeinate -i $PY run_grid.py --out $R/$PRE-pusht $TIRAGE --premiers $NPOS --specs $VERSIONS --seeds $g \
       --gptq-calib $CALIB --affinage-dossier $R/$PRE-collecte
   done
 
   # 5. reproduction finale (bloquante)
   verifier
-  [ -f $R/$PRE-repro-fin/fp32_s53.npz ] || \
-    caffeinate -i $PY run_grid.py --out $R/$PRE-repro-fin $TIRAGE --premiers $KREPRO --specs fp32 --seeds 53
-  comparer $R/$PRE-repro-fin/fp32_s53.npz $R/exp005/fp32_s53.npz $KREPRO
+  garde $PRE-repro-fin 1
+  [ -f $R/$PRE-repro-fin/fp32_s55.npz ] || \
+    caffeinate -i $PY run_grid.py --out $R/$PRE-repro-fin $TIRAGE --premiers $KREPRO --specs fp32 --seeds 55
+  comparer $R/$PRE-repro-fin/fp32_s55.npz $R/exp005/fp32_s55.npz $KREPRO
 
   # 6. analyse pré-enregistrée
   $PY -B analyse_exp021.py --racine $R --sortie $R/$PRE-analyse ${ESSAI:+--essai}
