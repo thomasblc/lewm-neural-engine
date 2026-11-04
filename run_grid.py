@@ -351,6 +351,8 @@ def main():
     ap.add_argument("--gptq-calib", default=None, help="EXP-009 : statistiques de calibration pour les versions :gptq")
     ap.add_argument("--collecter-affinage", action="store_true", help="EXP-019 : enregistre les entrées du prédicteur")
     ap.add_argument("--affinage", default=None, help="EXP-019 : poids réglés (affinage.py) pour les versions :aff")
+    ap.add_argument("--affinage-dossier", default=None,
+                    help="EXP-021 : dossier des poids réglés, un fichier par version et par graine (<version>_g<graine>.pt)")
     ap.add_argument("--premiers", type=int, default=None,
                     help="EXP-019 : n'évalue que les K premières positions du tirage de --n épisodes (même hasard par épisode)")
     args = ap.parse_args()
@@ -387,6 +389,9 @@ def main():
     if args.affinage:                                         # absent des protocoles précédents
         protocole["affinage"] = {"fichier": Path(args.affinage).name,
                                  "sha256": hashlib.sha256(Path(args.affinage).read_bytes()).hexdigest()}
+    if args.affinage_dossier:                                 # absent des protocoles précédents
+        assert not args.affinage, "--affinage ou --affinage-dossier, pas les deux"
+        protocole["affinage_dossier"] = Path(args.affinage_dossier).name
     if args.premiers is not None:                             # absent des protocoles précédents
         assert 0 < args.premiers <= args.n and args.premiers % args.chunk == 0, "--premiers : multiple de --chunk, au plus --n"
         protocole["premiers"] = args.premiers
@@ -424,9 +429,15 @@ def main():
             model = swm.wm.utils.load_pretrained(cfg.policy)
             base = spec[:-len(":aff")] if spec.endswith(":aff") else spec
             model, touches = quantifier(model, "" if base == "fp32" else base)
+            sha_aff = ""
+            n_gardes = sum(int(d["G"].sum()) for d in quant.DETAILS.values() if d["G"] is not None)
             if base != spec:                                  # EXP-019 : poids réglés par affinage.py
                 import affinage
-                A = torch.load(args.affinage, map_location="cpu")
+                f_aff = (Path(args.affinage_dossier) / f"{base.replace(':', '-')}_g{seed}.pt" if args.affinage_dossier
+                         else Path(args.affinage))
+                A = torch.load(f_aff, map_location="cpu")
+                assert not args.affinage_dossier or A["graine"] == seed, f"{f_aff} : graine de réglage {A['graine']}"
+                sha_aff = hashlib.sha256(f_aff.read_bytes()).hexdigest()
                 assert A["spec"] == base, f"{args.affinage} règle {A['spec']}, pas {base}"
                 affinage.verifier_format(A["etat"], quant.DETAILS)
                 with torch.no_grad():
@@ -453,7 +464,7 @@ def main():
             tmp = f.with_suffix(".tmp.npz")
             np.savez_compressed(tmp, spec=spec, seed=seed, n_couches=len(touches), git=sha, git_sale=sale,
                                 positions=np.arange(K), episodes_idx=np.array(ep_all[:K]), start_steps=np.array(st_all[:K]),
-                                chunk=args.chunk, **data)
+                                chunk=args.chunk, affinage_sha256=sha_aff, n_gardes=n_gardes, **data)
             os.replace(tmp, f)
             print(f"[fait] {spec} graine {seed} : réussite {100 * data['success'].mean():.1f} % "
                   f"({time.time() - t0:.0f} s)", flush=True)
