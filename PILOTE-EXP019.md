@@ -56,3 +56,32 @@ Décision de Thomas : lancer EXP-019 sans être gourmand en taille. macOS 27.2 a
 - Lecture : prometteur si la version réglée perd au plus 7,6 points contre la pleine précision (critère d'origine) et
   fait mieux que le 1 % gardé sans réglage. 100 épisodes : un écart de moins de 10 points n'est pas établi.
 - Lanceur : `lancer_pilote_exp019.sh` ; analyse : `analyse_pilote_exp019.py`.
+
+## Résultats du pilote en petit format (4 novembre 2026, 10 h 24 à 10 h 40)
+
+Commit f085a1b ; journal `resultats/exp019-pilote.log` ; analyse `resultats/exp019-pilote/analyse.json`. PushT, 100
+premières positions, graine 42. Sentinelle : contrôles de course passés sur les 5 fichiers.
+
+| Version | Bits par poids du prédicteur | Réussite | Contre la pleine précision (épisodes réussis par l'un seul) |
+| --- | --- | --- | --- |
+| pleine précision | 32 | 82 % | |
+| 3 bits (RTN) | 3,06 | 82 % | 7 contre 7 |
+| ternaire GPTQ (EXP-011) | 2,06 | 52 % | 3 contre 33 (p = 2e-7) |
+| ternaire GPTQ, 1 % gardé (SpQR) | 2,38 | 70 % | 5 contre 17 (p = 0,017) |
+| la même, réglée | 2,38 | 79 % | 6 contre 9 (p = 0,61) |
+
+- Pas de dérive après macOS 27 : pleine précision, 3 bits et ternaire GPTQ identiques épisode par épisode aux
+  fichiers d'avant (EXP-003, EXP-011).
+- Poids gardés : +18 points sur le ternaire (20 contre 2, p = 0,0001). Sur LeWM, ils aident nettement, alors que sur le
+  banc jouet d'EXP-020 ils n'aidaient presque pas.
+- Réglage fin : +9 points de plus (15 contre 6, p = 0,078, non établi sur 100 épisodes) ; perte de contrôle divisée
+  par 31 (6,05e-3 à 1,96e-4) ; 209 s de réglage, 41 040 lignes d'entrée enregistrées sur 32 épisodes.
+- Critère du pilote rempli : la version réglée perd 3 points (au plus 7,6 demandés) et fait mieux que la version sans
+  réglage. Avec 22 % de mémoire en moins sur le prédicteur que le 3 bits, elle reste à 3 points de lui (non établi).
+
+Limites : 100 épisodes et une graine (un écart de moins de 10 points n'est pas établi) ; la barre à 3 bits n'est pas
+réglée, alors que la version ternaire l'est (leçon d'EXP-020 : régler les références aussi) ; réglage fixé sans essai.
+
+Suite proposée (expérience pré-enregistrée) : 500 épisodes et 3 graines ; les références réglées de la même façon
+(3 bits, ternaire sans poids gardés) ; une référence à mémoire égale (GPTQ à 2 bits et quatre niveaux, ou 3,1 % gardés) ;
+puis TwoRoom.
