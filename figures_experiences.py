@@ -3,16 +3,18 @@ aucun chiffre recopié à la main. Une fonction par expérience ; la page se rec
 outils/construire_experiences.py. Mise en forme reprise de code-exp018/figures_experiences.py.
 
 Usage (depuis code-exp021-dev) :
-    python3 figures_experiences.py exp021
+    python3 figures_experiences.py exp018 exp019 exp020 exp021
 """
 import json
 import sys
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 R = Path(__file__).resolve().parent.parent / "resultats"
 F = Path(__file__).resolve().parent.parent / "figures"
 G, B, V_, N = "#7f8c8d", "#3c6ec8", "#2e9e6b", "#c0392b"
-fr = lambda v, n=1: f"{v:.{n}f}".replace(".", ",")
+# arrondi à la moitié loin de zéro après avoir effacé le bruit du flottant (-7,25 donne -7,3, comme outils/chiffres_papier.py)
+fr = lambda v, n=1: str(Decimal(repr(round(v, 9))).quantize(Decimal(1).scaleb(-n), ROUND_HALF_UP)).replace(".", ",")
 
 
 def figure(titre, legende, svg, h):
@@ -64,6 +66,98 @@ def nuage(titre, legende, points, xmin, xmax, xticks, ymin, ymax, yticks, x0=90,
     g.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{H - 4}" text-anchor="middle" fill="#555" font-size="11">bits par poids des couches linéaires du prédicteur</text>'
              f'<text x="14" y="{(y0 + y1) / 2:.0f}" text-anchor="middle" fill="#555" font-size="11" transform="rotate(-90 14 {(y0 + y1) / 2:.0f})">écart à la pleine précision (points)</text>')
     return figure(titre, legende, "".join(g), H)
+
+
+def barres(titre, legende, lignes, ref=None, x0=330, x1=640, h=26):
+    """Réussites en % ; trait fin entre le plus bas et le plus haut si donnés ; ligne verticale à la référence.
+    Une seule couleur (gris pour la référence) : la longueur de la barre porte le message, pas une couleur choisie à la main."""
+    X = lambda v: x0 + v * (x1 - x0) / 100
+    bas = 40 + h * len(lignes)
+    g = []
+    for v in range(0, 101, 20):
+        g.append(f'<line x1="{X(v):.1f}" y1="30" x2="{X(v):.1f}" y2="{bas}" stroke="#e3e3e3"/>'
+                 f'<text x="{X(v):.1f}" y="{bas + 18}" text-anchor="middle" fill="#555" font-size="11">{v}</text>')
+    if ref is not None:
+        g.append(f'<line x1="{X(ref[1]):.1f}" y1="30" x2="{X(ref[1]):.1f}" y2="{bas}" stroke="{N}" stroke-dasharray="4 3"/>'
+                 f'<text x="{X(ref[1]) - 4:.1f}" y="26" text-anchor="end" fill="{N}" font-size="11">{ref[0]}</text>')
+    y = 40
+    for lab, v, mini, maxi, col in lignes:
+        g.append(f'<text x="10" y="{y + 13}">{lab}</text>'
+                 f'<rect x="{x0}" y="{y + 3}" width="{X(v) - x0:.1f}" height="{h - 10}" fill="{col if col == G else B}" opacity="0.85"/>'
+                 f'<text x="{x1 + 10}" y="{y + 13}" font-size="11" fill="#333">{fr(v)} %'
+                 + (f' ({fr(mini)} à {fr(maxi)})' if mini is not None else '') + '</text>')
+        if mini is not None:
+            g.append(f'<line x1="{X(mini):.1f}" y1="{y + 11}" x2="{X(maxi):.1f}" y2="{y + 11}" stroke="#222" stroke-width="1.5"/>')
+        y += h
+    H = bas + 40
+    g.append(f'<text x="{(x0 + x1) / 2:.0f}" y="{H - 4}" text-anchor="middle" fill="#555" font-size="11">réussite (%)</text>')
+    return figure(titre, legende, "".join(g), H)
+
+
+def exp018():
+    r = json.loads((R / "analyse-exp018" / "resultats.json").read_text())
+    T, reu = r["tests"], r["descriptifs"]["reussite"]
+    lab = {"T1": "T1 : int4c contre float32", "T2": "T2 : tout sauf pred_proj contre float32",
+           "T3": "T3 : codes de GPTQ contre float32", "T4": "T4 : codes de GPTQ contre int4c"}
+    lignes = [(lab[t], T[t]["ecart_points"], V_ if T[t]["verdict_ecrit"] == "soutenue" else B) for t in ("T1", "T2", "T3", "T4")]
+    v = [l[1][k] for l in lignes for k in ("bas", "haut")]
+    xmin, xmax = min(-4, 2 * (min(v) // 2)), max(4, 2 * (max(v) // 2 + 1))
+    f1 = foret("Int4 sur le Neural Engine et ses deux réparations, sur 2 000 épisodes neufs (PushT, 5 graines)",
+               "Vert : soutenue ; bleu : non soutenue (Holm sur 4). T1 demande une perte de plus de 2 points, T2 et T3 une perte de "
+               "moins de 2 points, T4 un gain de plus de 2 points. Réussite : float32 " + fr(100 * reu["fp32"]) + " %, int4c "
+               + fr(100 * reu["int4c"]) + " %, tout sauf pred_proj " + fr(100 * reu["sp"]) + " %, codes de GPTQ " + fr(100 * reu["g"])
+               + " %. Trait : intervalle à 95 %.", lignes, xmin, xmax, list(range(int(xmin), int(xmax) + 1, 2)), marges=(-2, 2))
+    (F / "exp018.html").write_text(f1)
+    return [(l[0], fr(l[1]["moyenne"])) for l in lignes]
+
+
+def exp019():
+    r = json.loads((R / "exp019-pilote" / "analyse.json").read_text())
+    reu, comp = r["reussite"], r["comparaisons"]
+    noms = [("fp32", "pleine précision", G), ("predictor:3", "3 bits (RTN)", B), ("predictor:2:clip:gptq", "ternaire GPTQ", N),
+            ("predictor:2:clip:gptq:k1:obs", "ternaire GPTQ, 1 % gardé", B), ("predictor:2:clip:gptq:k1:obs:aff", "la même, réglée", V_)]
+    lignes = [(lab, 100 * reu[k], None, None, col) for k, lab, col in noms]
+    c = lambda k: comp[f"{k} contre fp32"]
+    detail = " ; ".join(f"{lab} {c(k)['seul_reussi']} contre {c(k)['ref_seule']}" for k, lab, _ in noms[1:])
+    f1 = barres(f"Pilote : prédicteur ternaire avec 1 % de poids gardés, puis réglé (PushT, {r['positions']} épisodes, graine {r['graine']})",
+                "Exploratoire, non pré-enregistré : un écart de moins de 10 points n'est pas établi sur 100 épisodes. Épisodes réussis "
+                f"par la version seule contre par la pleine précision seule : {detail}.", lignes,
+                ref=("pleine précision", 100 * reu["fp32"]))
+    (F / "exp019.html").write_text(f1)
+    return [(l[0], fr(l[1])) for l in lignes]
+
+
+def exp020():
+    c96 = R / "exp020-banc" / "c96"
+    t = [json.loads((c96 / f"test-final-plan{p}.json").read_text())["resultats"] for p in (11, 12)]
+    noms = [("fp32.pt", "float32", G), ("rtn2.pt", "ternaire RTN", N), ("gptq2.pt", "ternaire GPTQ", N),
+            ("gptq2_k1.pt", "ternaire GPTQ, 1 % gardé", N), ("gptq3.pt", "GPTQ 3 bits", B),
+            ("gptq2_k1_affine.pt", "1 % gardé, affiné par gradient", B), ("essai-opus-1/final.pt", "1 % gardé, méthode d'Opus", V_)]
+    cle = lambda f: f"../resultats/exp020-banc/c96/{f}"
+    l1 = []
+    for f, lab, col in noms:
+        v = [100 * x[cle(f)]["reussite"] for x in t]
+        l1.append((f"{lab}, {fr(t[0][cle(f)]['bits_par_poids'], 2)} bits", sum(v) / 2, min(v), max(v), col))
+    f1 = barres("Banc jouet, premier test : un LLM (Opus 5.5) répare le ternaire (300 épisodes neufs, 2 graines de planification)",
+                "Barre : moyenne des deux graines de planification ; trait et parenthèses : plus bas et plus haut. Ici l'affinage par gradient était nourri de transitions tirées au hasard.", l1,
+                ref=("float32", l1[0][1]))
+    lignes = [json.loads(x) for x in (c96 / "references-2" / "resultats.jsonl").read_text().splitlines() if x.strip()]
+    lignes += [json.loads(x) for x in (c96 / "references-2" / "affinage_regle.jsonl").read_text().splitlines() if x.strip()]
+    m2 = [("gptq_k1", "GPTQ ternaire, 1 % gardé", N), ("dfq", "DFQ puis GPTQ", N), ("adaquant", "AdaQuant", N),
+          ("qat", "QAT, réseau entier", B), ("affine", "affinage, 6 000 pas", B),
+          ("affine_p20k_lr1e-03_h8", "le même, perte sur 8 pas", N),
+          ("affine_p20k_lr1e-03_h0", "affinage réglé (20 000 pas, 1e-3)", V_), ("opus", "recette d'Opus, sans LLM", V_)]
+    l2 = []
+    for m, lab, col in m2:
+        v = [100 * d[f"test_plan{p}"]["reussite"] for d in lignes if d["methode"] == m for p in (11, 12) if f"test_plan{p}" in d]
+        assert len(v) == 6, (m, len(v))
+        l2.append((lab, sum(v) / len(v), min(v), max(v), col))
+    f2 = barres("Banc jouet, amendements 1 et 2 : les mêmes données pour toutes les méthodes (2,8 bits par poids)",
+                "Barre : moyenne sur 3 graines de données et 2 graines de planification (300 épisodes neufs chacune) ; trait et "
+                "parenthèses : plus bas et plus haut des 6. Bien réglé et nourri des mêmes données, l'affinage par gradient égale la "
+                "recette d'Opus ; une perte sur 8 pas fait s'effondrer la planification.", l2, ref=("float32", l1[0][1]))
+    (F / "exp020.html").write_text(f1 + f2)
+    return [(l[0], fr(l[1])) for l in l1 + l2]
 
 
 def exp021():
