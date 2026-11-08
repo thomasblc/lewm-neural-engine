@@ -1,0 +1,191 @@
+{
+ "controles": {
+  "commit": "eddfdb5684f05810f5b88e4067782dea5e5b8429"
+ },
+ "tests": {
+  "G1": {
+   "tache": "pusht",
+   "comparaison": "gptq_rtn",
+   "somme": 314,
+   "ecart_points": {
+    "moyenne": 0.1256,
+    "bas": 0.08680000000000002,
+    "haut": 0.1656
+   },
+   "p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue",
+   "niveau_holm": 0.0125,
+   "borne_inferieure_points": 8.080000000000002
+  },
+  "G2": {
+   "tache": "tworoom",
+   "comparaison": "gptq_rtn",
+   "somme": -79,
+   "ecart_points": {
+    "moyenne": -0.031599999999999996,
+    "bas": -0.048400000000000006,
+    "haut": -0.0152
+   },
+   "p_signe": 1.0,
+   "erreur_mc_p_signe": 0.0,
+   "p": 1.0,
+   "p_holm": 1.0,
+   "verdict": "non soutenue",
+   "niveau_holm": 0.025,
+   "borne_inferieure_points": -4.840000000000001
+  },
+  "N1": {
+   "tache": "pusht",
+   "comparaison": "gptq_fp32",
+   "somme": -763.0,
+   "ecart_points": {
+    "moyenne": -0.3052,
+    "bas": -0.34279999999999994,
+    "haut": -0.2676
+   },
+   "p_signe": 1.0,
+   "p_bootstrap_t": 1.0,
+   "erreur_mc_p_signe": 0.0,
+   "p": 1.0,
+   "p_holm": 1.0,
+   "verdict": "non soutenue",
+   "niveau_holm": 0.05,
+   "borne_inferieure_points": -33.64
+  },
+  "N2": {
+   "tache": "tworoom",
+   "comparaison": "gptq_fp32",
+   "somme": -86.0,
+   "ecart_points": {
+    "moyenne": -0.03440000000000001,
+    "bas": -0.0504,
+    "haut": -0.019200000000000002
+   },
+   "p_signe": 0.9667033296670333,
+   "p_bootstrap_t": 0.9749025097490251,
+   "erreur_mc_p_signe": 0.0017941015043108463,
+   "p": 0.9749025097490251,
+   "p_holm": 1.0,
+   "verdict": "non soutenue",
+   "niveau_holm": 0.016666666666666666,
+   "borne_inferieure_points": -5.12
+  }
+ },
+ "controle_negatif": {
+  "pusht": {
+   "somme": 4.0,
+   "ecart_points": {
+    "moyenne": 0.0015999999999999996,
+    "bas": -0.011200000000000002,
+    "haut": 0.014399999999999998
+   },
+   "p_signe": 0.0005999400059994001,
+   "p_bootstrap_t": 0.00039996000399960006,
+   "erreur_mc_p_signe": 0.00024486324305387315,
+   "p": 0.0005999400059994001
+  },
+  "tworoom": {
+   "somme": -23.0,
+   "ecart_points": {
+    "moyenne": -0.0092,
+    "bas": -0.02,
+    "haut": 0.0012000000000000001
+   },
+   "p_signe": 0.022797720227977204,
+   "p_bootstrap_t": 0.024897510248975102,
+   "erreur_mc_p_signe": 0.001492581126116235,
+   "p": 0.024897510248975102
+  }
+ },
+ "sensibilite_10_graines": {
+  "N1": {
+   "somme": -765.0,
+   "ecart_points": {
+    "moyenne": -0.306,
+    "bas": -0.34220500000000004,
+    "haut": -0.26920000000000005
+   },
+   "p_signe": 1.0,
+   "p_bootstrap_t": 1.0,
+   "erreur_mc_p_signe": 0.0,
+   "p": 1.0
+  },
+  "N2": {
+   "somme": -74.5,
+   "ecart_points": {
+    "moyenne": -0.0298,
+    "bas": -0.0442,
+    "haut": -0.0158
+   },
+   "p_signe": 0.9166083391660834,
+   "p_bootstrap_t": 0.924007599240076,
+   "erreur_mc_p_signe": 0.002764733110759113,
+   "p": 0.924007599240076
+  }
+ },
+ "descriptifs": {
+  "pusht": {
+   "reussite_fp32": 0.8352,
+   "reussite_replique": 0.8368,
+   "reussite_rtn": 0.4044,
+   "reussite_gptq": 0.53,
+   "reussite_rtn3": 0.8131999999999999,
+   "gptq_moins_fp32": {
+    "moyenne": -0.3052,
+    "bas": -0.34279999999999994,
+    "haut": -0.2676
+   },
+   "rtn_moins_fp32": {
+    "moyenne": -0.43079999999999996,
+    "bas": -0.46879999999999994,
+    "haut": -0.39239999999999997
+   },
+   "gptq_moins_rtn": {
+    "moyenne": 0.1256,
+    "bas": 0.08680000000000002,
+    "haut": 0.1656
+   },
+   "gptq_moins_rtn3": {
+    "moyenne": -0.2832,
+    "bas": -0.3216,
+    "haut": -0.24480000000000002
+   },
+   "part_rattrapee": {
+    "moyenne": 0.2915506035283194,
+    "bas": 0.20915312950134926,
+    "haut": 0.3703712214052287
+   }
+  },
+  "tworoom": {
+   "reussite_fp32": 0.8480000000000001,
+   "reussite_replique": 0.8388,
+   "reussite_rtn": 0.8452,
+   "reussite_gptq": 0.8135999999999999,
+   "reussite_rtn3": 0.8375999999999999,
+   "gptq_moins_fp32": {
+    "moyenne": -0.03440000000000001,
+    "bas": -0.0504,
+    "haut": -0.019200000000000002
+   },
+   "rtn_moins_fp32": {
+    "moyenne": -0.0028000000000000017,
+    "bas": -0.02,
+    "haut": 0.014399999999999998
+   },
+   "gptq_moins_rtn": {
+    "moyenne": -0.031599999999999996,
+    "bas": -0.048400000000000006,
+    "haut": -0.0152
+   },
+   "gptq_moins_rtn3": {
+    "moyenne": -0.024,
+    "bas": -0.04,
+    "haut": -0.008399999999999998
+   },
+   "part_rattrapee": null
+  }
+ }
+}

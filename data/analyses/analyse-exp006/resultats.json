@@ -1,0 +1,191 @@
+{
+ "controles": {
+  "commit": "40676cb073e7e5e5ac60af9e442c69d1a28ec448",
+  "fichiers": 50,
+  "cas_limites_arrondi": 0
+ },
+ "tests": {
+  "R1": {
+   "version": "all:4",
+   "reference": "fp32",
+   "somme": -276,
+   "ecart_points": {
+    "moyenne": -0.11040000000000001,
+    "bas": -0.134,
+    "haut": -0.088
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  },
+  "R2": {
+   "version": "encoder:4",
+   "reference": "predictor:4",
+   "somme": -230,
+   "ecart_points": {
+    "moyenne": -0.092,
+    "bas": -0.116,
+    "haut": -0.0692
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  },
+  "R3": {
+   "version": "autres:4",
+   "reference": "fp32",
+   "somme": -30,
+   "ecart_points": {
+    "moyenne": -0.012,
+    "bas": -0.0232,
+    "haut": -0.0012000000000000001
+   },
+   "p": 0.017698230176982303,
+   "p_holm": 0.017698230176982303,
+   "verdict": "soutenue"
+  },
+  "R4": {
+   "version": "all:4:g64",
+   "reference": "all:4",
+   "somme": 163,
+   "ecart_points": {
+    "moyenne": 0.06520000000000001,
+    "bas": 0.048799999999999996,
+    "haut": 0.0824
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  }
+ },
+ "descriptifs": {
+  "fp32": {
+   "reussite": 0.8480000000000001,
+   "ecart_points": null,
+   "ecart_log_marge": null
+  },
+  "all:8": {
+   "reussite": 0.8484,
+   "ecart_points": {
+    "moyenne": 0.00040000000000000034,
+    "bas": -0.0096,
+    "haut": 0.01
+   },
+   "ecart_log_marge": {
+    "moyenne": -0.00789486463092024,
+    "bas": -0.019025695115772727,
+    "haut": 0.003797642441046425
+   }
+  },
+  "all:6": {
+   "reussite": 0.836,
+   "ecart_points": {
+    "moyenne": -0.012,
+    "bas": -0.0216,
+    "haut": -0.0023999999999999994
+   },
+   "ecart_log_marge": {
+    "moyenne": 0.007593030250925264,
+    "bas": -0.004991419194363269,
+    "haut": 0.019869331432131918
+   }
+  },
+  "all:4": {
+   "reussite": 0.7376,
+   "ecart_points": {
+    "moyenne": -0.11040000000000001,
+    "bas": -0.134,
+    "haut": -0.088
+   },
+   "ecart_log_marge": {
+    "moyenne": 0.11057259214652881,
+    "bas": 0.08184590207913023,
+    "haut": 0.14090117068867297
+   }
+  },
+  "all:3": {
+   "reussite": 0.38639999999999997,
+   "ecart_points": {
+    "moyenne": -0.4616,
+    "bas": -0.502,
+    "haut": -0.4227900000000001
+   },
+   "ecart_log_marge": {
+    "moyenne": 0.43303018844608004,
+    "bas": 0.3846918257664318,
+    "haut": 0.483564796152868
+   }
+  },
+  "encoder:4": {
+   "reussite": 0.7572,
+   "ecart_points": {
+    "moyenne": -0.0908,
+    "bas": -0.11441,
+    "haut": -0.0676
+   },
+   "ecart_log_marge": {
+    "moyenne": 0.08573710099768075,
+    "bas": 0.05630214814787161,
+    "haut": 0.11602237020394036
+   }
+  },
+  "predictor:4": {
+   "reussite": 0.8492000000000001,
+   "ecart_points": {
+    "moyenne": 0.0012000000000000005,
+    "bas": -0.0076,
+    "haut": 0.01
+   },
+   "ecart_log_marge": {
+    "moyenne": -0.008307704790336497,
+    "bas": -0.020271942382827313,
+    "haut": 0.0036360256226495758
+   }
+  },
+  "autres:4": {
+   "reussite": 0.836,
+   "ecart_points": {
+    "moyenne": -0.012,
+    "bas": -0.0232,
+    "haut": -0.0012000000000000001
+   },
+   "ecart_log_marge": {
+    "moyenne": 0.014118116173708782,
+    "bas": -0.00021398025949500739,
+    "haut": 0.028888010789494187
+   }
+  },
+  "all:4:g64": {
+   "reussite": 0.8028000000000001,
+   "ecart_points": {
+    "moyenne": -0.045200000000000004,
+    "bas": -0.06480000000000001,
+    "haut": -0.026
+   },
+   "ecart_log_marge": {
+    "moyenne": 0.0498556638974342,
+    "bas": 0.022536038747820872,
+    "haut": 0.07713586114804057
+   }
+  },
+  "replique_fp32": {
+   "reussite": 0.8388,
+   "ecart_points": {
+    "moyenne": -0.0092,
+    "bas": -0.02,
+    "haut": 0.0012000000000000001
+   }
+  },
+  "episodes_partant_sous_16": 53,
+  "plancher_discordants_par_50": {
+   "moyenne": 4.02,
+   "bas": 3.24,
+   "haut": 4.82
+  }
+ },
+ "additivite_4_bits": {
+  "moyenne": -0.0088,
+  "bas": -0.0304,
+  "haut": 0.012400000000000001
+ }
+}

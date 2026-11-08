@@ -1,0 +1,706 @@
+{
+ "git": "70ecada68947ba944549ef5e2d4304c55cbbb1f6",
+ "torch": "2.14.0",
+ "coremltools": "9.0",
+ "cas": [
+  {
+   "unite": "ne",
+   "codage": "fp16",
+   "placement": {
+    "NeuralEngine": 361
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 655
+    },
+    "ios18.add": {
+     "NeuralEngine": 73
+    },
+    "ios18.silu": {
+     "NeuralEngine": 1
+    },
+    "ios18.conv": {
+     "NeuralEngine": 68
+    },
+    "split": {
+     "NeuralEngine": 12
+    },
+    "ios18.layer_norm": {
+     "NeuralEngine": 25
+    },
+    "ios18.mul": {
+     "NeuralEngine": 60
+    },
+    "ios18.batch_norm": {
+     "NeuralEngine": 13
+    },
+    "ios18.slice_by_index": {
+     "NeuralEngine": 36
+    },
+    "ios18.maximum": {
+     "NeuralEngine": 12
+    },
+    "ios18.sub": {
+     "NeuralEngine": 18
+    },
+    "ios18.exp": {
+     "NeuralEngine": 18
+    },
+    "ios18.real_div": {
+     "NeuralEngine": 18
+    },
+    "ios18.gelu": {
+     "NeuralEngine": 7
+    }
+   },
+   "octets_poids": 23232128,
+   "memoire": {
+    "avant": {
+     "rss_octets": 466501632,
+     "empreinte_octets": 341000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 495370240,
+     "empreinte_octets": 360000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 497532928,
+     "empreinte_octets": 362000000.0
+    },
+    "ms_par_appel": 8.00217500072904
+   }
+  },
+  {
+   "unite": "ne",
+   "codage": "int8",
+   "placement": {
+    "NeuralEngine": 361
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 621
+    },
+    "ios18.add": {
+     "NeuralEngine": 73
+    },
+    "ios18.silu": {
+     "NeuralEngine": 1
+    },
+    "ios18.constexpr_blockwise_shift_scale": {
+     "aucun": 34
+    },
+    "ios18.conv": {
+     "NeuralEngine": 68
+    },
+    "split": {
+     "NeuralEngine": 12
+    },
+    "ios18.layer_norm": {
+     "NeuralEngine": 25
+    },
+    "ios18.mul": {
+     "NeuralEngine": 60
+    },
+    "ios18.batch_norm": {
+     "NeuralEngine": 13
+    },
+    "ios18.slice_by_index": {
+     "NeuralEngine": 36
+    },
+    "ios18.maximum": {
+     "NeuralEngine": 12
+    },
+    "ios18.sub": {
+     "NeuralEngine": 18
+    },
+    "ios18.exp": {
+     "NeuralEngine": 18
+    },
+    "ios18.real_div": {
+     "NeuralEngine": 18
+    },
+    "ios18.gelu": {
+     "NeuralEngine": 7
+    }
+   },
+   "octets_poids": 11737280,
+   "memoire": {
+    "avant": {
+     "rss_octets": 471891968,
+     "empreinte_octets": 343000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 498712576,
+     "empreinte_octets": 360000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 501694464,
+     "empreinte_octets": 360000000.0
+    },
+    "ms_par_appel": 8.175700000720099
+   }
+  },
+  {
+   "unite": "ne",
+   "codage": "int4b32",
+   "placement": {
+    "CPU": 211,
+    "NeuralEngine": 150
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 622
+    },
+    "ios18.add": {
+     "CPU": 43,
+     "NeuralEngine": 30
+    },
+    "ios18.silu": {
+     "CPU": 1
+    },
+    "ios18.constexpr_blockwise_shift_scale": {
+     "aucun": 33
+    },
+    "ios18.conv": {
+     "CPU": 50,
+     "NeuralEngine": 18
+    },
+    "split": {
+     "CPU": 12
+    },
+    "ios18.layer_norm": {
+     "CPU": 25
+    },
+    "ios18.mul": {
+     "CPU": 42,
+     "NeuralEngine": 18
+    },
+    "ios18.batch_norm": {
+     "CPU": 13
+    },
+    "ios18.slice_by_index": {
+     "CPU": 18,
+     "NeuralEngine": 18
+    },
+    "ios18.maximum": {
+     "NeuralEngine": 12
+    },
+    "ios18.sub": {
+     "NeuralEngine": 18
+    },
+    "ios18.exp": {
+     "NeuralEngine": 18
+    },
+    "ios18.real_div": {
+     "NeuralEngine": 18
+    },
+    "ios18.gelu": {
+     "CPU": 7
+    }
+   },
+   "octets_poids": 6606528,
+   "memoire": {
+    "avant": {
+     "rss_octets": 468926464,
+     "empreinte_octets": 341000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 502726656,
+     "empreinte_octets": 357000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 601882624,
+     "empreinte_octets": 370000000.0
+    },
+    "ms_par_appel": 18.836395800462924
+   }
+  },
+  {
+   "unite": "ne",
+   "codage": "pal4",
+   "placement": {
+    "NeuralEngine": 361
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 621
+    },
+    "ios18.add": {
+     "NeuralEngine": 73
+    },
+    "ios18.silu": {
+     "NeuralEngine": 1
+    },
+    "ios18.constexpr_lut_to_dense": {
+     "aucun": 34
+    },
+    "ios18.conv": {
+     "NeuralEngine": 68
+    },
+    "split": {
+     "NeuralEngine": 12
+    },
+    "ios18.layer_norm": {
+     "NeuralEngine": 25
+    },
+    "ios18.mul": {
+     "NeuralEngine": 60
+    },
+    "ios18.batch_norm": {
+     "NeuralEngine": 13
+    },
+    "ios18.slice_by_index": {
+     "NeuralEngine": 36
+    },
+    "ios18.maximum": {
+     "NeuralEngine": 12
+    },
+    "ios18.sub": {
+     "NeuralEngine": 18
+    },
+    "ios18.exp": {
+     "NeuralEngine": 18
+    },
+    "ios18.real_div": {
+     "NeuralEngine": 18
+    },
+    "ios18.gelu": {
+     "NeuralEngine": 7
+    }
+   },
+   "octets_poids": 5861248,
+   "memoire": {
+    "avant": {
+     "rss_octets": 471629824,
+     "empreinte_octets": 347000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 496631808,
+     "empreinte_octets": 362000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 500350976,
+     "empreinte_octets": 365000000.0
+    },
+    "ms_par_appel": 8.211512499838136
+   }
+  },
+  {
+   "unite": "ne",
+   "codage": "int4c",
+   "placement": {
+    "NeuralEngine": 361
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 621
+    },
+    "ios18.add": {
+     "NeuralEngine": 73
+    },
+    "ios18.silu": {
+     "NeuralEngine": 1
+    },
+    "ios18.constexpr_blockwise_shift_scale": {
+     "aucun": 34
+    },
+    "ios18.conv": {
+     "NeuralEngine": 68
+    },
+    "split": {
+     "NeuralEngine": 12
+    },
+    "ios18.layer_norm": {
+     "NeuralEngine": 25
+    },
+    "ios18.mul": {
+     "NeuralEngine": 60
+    },
+    "ios18.batch_norm": {
+     "NeuralEngine": 13
+    },
+    "ios18.slice_by_index": {
+     "NeuralEngine": 36
+    },
+    "ios18.maximum": {
+     "NeuralEngine": 12
+    },
+    "ios18.sub": {
+     "NeuralEngine": 18
+    },
+    "ios18.exp": {
+     "NeuralEngine": 18
+    },
+    "ios18.real_div": {
+     "NeuralEngine": 18
+    },
+    "ios18.gelu": {
+     "NeuralEngine": 7
+    }
+   },
+   "octets_poids": 5945536,
+   "memoire": {
+    "avant": {
+     "rss_octets": 470581248,
+     "empreinte_octets": 342000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 498794496,
+     "empreinte_octets": 359000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 501006336,
+     "empreinte_octets": 361000000.0
+    },
+    "ms_par_appel": 7.97282499843277
+   }
+  },
+  {
+   "unite": "gpu",
+   "codage": "fp16",
+   "placement": {
+    "GPU": 197
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 219
+    },
+    "ios18.add": {
+     "GPU": 37
+    },
+    "ios18.silu": {
+     "GPU": 1
+    },
+    "ios18.linear": {
+     "GPU": 32
+    },
+    "split": {
+     "GPU": 12
+    },
+    "ios18.layer_norm": {
+     "GPU": 25
+    },
+    "ios18.mul": {
+     "GPU": 24
+    },
+    "ios18.reshape": {
+     "GPU": 26
+    },
+    "ios18.transpose": {
+     "GPU": 24
+    },
+    "ios18.scaled_dot_product_attention": {
+     "GPU": 6
+    },
+    "ios18.gelu": {
+     "GPU": 7
+    },
+    "ios18.expand_dims": {
+     "GPU": 1
+    },
+    "ios18.batch_norm": {
+     "GPU": 1
+    },
+    "ios18.squeeze": {
+     "GPU": 1
+    }
+   },
+   "octets_poids": 23188416,
+   "memoire": {
+    "avant": {
+     "rss_octets": 468762624,
+     "empreinte_octets": 343000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 555155456,
+     "empreinte_octets": 372000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 575488000,
+     "empreinte_octets": 501000000.0
+    },
+    "ms_par_appel": 16.03591659804806
+   }
+  },
+  {
+   "unite": "gpu",
+   "codage": "int8",
+   "placement": {
+    "GPU": 197
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 187
+    },
+    "ios18.add": {
+     "GPU": 37
+    },
+    "ios18.silu": {
+     "GPU": 1
+    },
+    "ios18.constexpr_blockwise_shift_scale": {
+     "aucun": 32
+    },
+    "ios18.linear": {
+     "GPU": 32
+    },
+    "split": {
+     "GPU": 12
+    },
+    "ios18.layer_norm": {
+     "GPU": 25
+    },
+    "ios18.mul": {
+     "GPU": 24
+    },
+    "ios18.reshape": {
+     "GPU": 26
+    },
+    "ios18.transpose": {
+     "GPU": 24
+    },
+    "ios18.scaled_dot_product_attention": {
+     "GPU": 6
+    },
+    "ios18.gelu": {
+     "GPU": 7
+    },
+    "ios18.expand_dims": {
+     "GPU": 1
+    },
+    "ios18.batch_norm": {
+     "GPU": 1
+    },
+    "ios18.squeeze": {
+     "GPU": 1
+    }
+   },
+   "octets_poids": 11724096,
+   "memoire": {
+    "avant": {
+     "rss_octets": 467058688,
+     "empreinte_octets": 344000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 518946816,
+     "empreinte_octets": 368000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 535035904,
+     "empreinte_octets": 526000000.0
+    },
+    "ms_par_appel": 53.389962497749366
+   }
+  },
+  {
+   "unite": "gpu",
+   "codage": "int4b32",
+   "placement": {
+    "GPU": 197
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 187
+    },
+    "ios18.add": {
+     "GPU": 37
+    },
+    "ios18.silu": {
+     "GPU": 1
+    },
+    "ios18.constexpr_blockwise_shift_scale": {
+     "aucun": 32
+    },
+    "ios18.linear": {
+     "GPU": 32
+    },
+    "split": {
+     "GPU": 12
+    },
+    "ios18.layer_norm": {
+     "GPU": 25
+    },
+    "ios18.mul": {
+     "GPU": 24
+    },
+    "ios18.reshape": {
+     "GPU": 26
+    },
+    "ios18.transpose": {
+     "GPU": 24
+    },
+    "ios18.scaled_dot_product_attention": {
+     "GPU": 6
+    },
+    "ios18.gelu": {
+     "GPU": 7
+    },
+    "ios18.expand_dims": {
+     "GPU": 1
+    },
+    "ios18.batch_norm": {
+     "GPU": 1
+    },
+    "ios18.squeeze": {
+     "GPU": 1
+    }
+   },
+   "octets_poids": 6586304,
+   "memoire": {
+    "avant": {
+     "rss_octets": 471252992,
+     "empreinte_octets": 342000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 498253824,
+     "empreinte_octets": 353000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 516325376,
+     "empreinte_octets": 518000000.0
+    },
+    "ms_par_appel": 31.670154200401157
+   }
+  },
+  {
+   "unite": "gpu",
+   "codage": "pal4",
+   "placement": {
+    "GPU": 197
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 187
+    },
+    "ios18.add": {
+     "GPU": 37
+    },
+    "ios18.silu": {
+     "GPU": 1
+    },
+    "ios18.constexpr_lut_to_dense": {
+     "aucun": 32
+    },
+    "ios18.linear": {
+     "GPU": 32
+    },
+    "split": {
+     "GPU": 12
+    },
+    "ios18.layer_norm": {
+     "GPU": 25
+    },
+    "ios18.mul": {
+     "GPU": 24
+    },
+    "ios18.reshape": {
+     "GPU": 26
+    },
+    "ios18.transpose": {
+     "GPU": 24
+    },
+    "ios18.scaled_dot_product_attention": {
+     "GPU": 6
+    },
+    "ios18.gelu": {
+     "GPU": 7
+    },
+    "ios18.expand_dims": {
+     "GPU": 1
+    },
+    "ios18.batch_norm": {
+     "GPU": 1
+    },
+    "ios18.squeeze": {
+     "GPU": 1
+    }
+   },
+   "octets_poids": 5866432,
+   "memoire": {
+    "avant": {
+     "rss_octets": 469385216,
+     "empreinte_octets": 335000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 497401856,
+     "empreinte_octets": 350000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 512245760,
+     "empreinte_octets": 470000000.0
+    },
+    "ms_par_appel": 15.808375002234243
+   }
+  },
+  {
+   "unite": "gpu",
+   "codage": "int4c",
+   "placement": {
+    "GPU": 197
+   },
+   "placement_detail": {
+    "const": {
+     "aucun": 187
+    },
+    "ios18.add": {
+     "GPU": 37
+    },
+    "ios18.silu": {
+     "GPU": 1
+    },
+    "ios18.constexpr_blockwise_shift_scale": {
+     "aucun": 32
+    },
+    "ios18.linear": {
+     "GPU": 32
+    },
+    "split": {
+     "GPU": 12
+    },
+    "ios18.layer_norm": {
+     "GPU": 25
+    },
+    "ios18.mul": {
+     "GPU": 24
+    },
+    "ios18.reshape": {
+     "GPU": 26
+    },
+    "ios18.transpose": {
+     "GPU": 24
+    },
+    "ios18.scaled_dot_product_attention": {
+     "GPU": 6
+    },
+    "ios18.gelu": {
+     "GPU": 7
+    },
+    "ios18.expand_dims": {
+     "GPU": 1
+    },
+    "ios18.batch_norm": {
+     "GPU": 1
+    },
+    "ios18.squeeze": {
+     "GPU": 1
+    }
+   },
+   "octets_poids": 5948736,
+   "memoire": {
+    "avant": {
+     "rss_octets": 461733888,
+     "empreinte_octets": 337000000.0
+    },
+    "apres_chargement": {
+     "rss_octets": 495468544,
+     "empreinte_octets": 353000000.0
+    },
+    "apres_10_appels": {
+     "rss_octets": 512573440,
+     "empreinte_octets": 513000000.0
+    },
+    "ms_par_appel": 100.5776958016213
+   }
+  }
+ ]
+}

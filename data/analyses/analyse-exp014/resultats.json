@@ -1,0 +1,2373 @@
+{
+ "controles": {
+  "commit": "cc9cd5d538d178a5e7fc3889b76ed261c1635952"
+ },
+ "tests": {
+  "N1": {
+   "tache": "pusht",
+   "codage": "int8",
+   "somme": 15.0,
+   "ecart_points": {
+    "moyenne": 0.006000000000000001,
+    "bas": -0.0036,
+    "haut": 0.0156
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.0005999400059994001,
+   "verdict": "soutenue",
+   "niveau_holm": 0.008333333333333333,
+   "borne_inferieure_points": -0.5451192439761897,
+   "borne_et_verdict_concordent": true,
+   "perte_etablie": false,
+   "controle_marge_passe_au_niveau": true
+  },
+  "N2": {
+   "tache": "pusht",
+   "codage": "int4c",
+   "somme": -216.0,
+   "ecart_points": {
+    "moyenne": -0.0864,
+    "bas": -0.112,
+    "haut": -0.061599999999999995
+   },
+   "p_signe": 1.0,
+   "p_bootstrap_t": 1.0,
+   "erreur_mc_p_signe": 0.0,
+   "erreur_mc_p_bootstrap_t": 0.0,
+   "p": 1.0,
+   "p_holm": 1.0,
+   "verdict": "non soutenue",
+   "niveau_holm": 0.025,
+   "borne_inferieure_points": -11.234470779001999,
+   "borne_et_verdict_concordent": true,
+   "perte_etablie": true,
+   "controle_marge_passe_au_niveau": true
+  },
+  "N3": {
+   "tache": "pusht",
+   "codage": "pal4",
+   "somme": -59.0,
+   "ecart_points": {
+    "moyenne": -0.023600000000000003,
+    "bas": -0.044,
+    "haut": -0.004
+   },
+   "p_signe": 0.6424357564243576,
+   "p_bootstrap_t": 0.6431356864313569,
+   "erreur_mc_p_signe": 0.004792828552032934,
+   "erreur_mc_p_bootstrap_t": 0.004790742899277984,
+   "p": 0.6431356864313569,
+   "p_holm": 1.0,
+   "verdict": "non soutenue",
+   "niveau_holm": 0.025,
+   "borne_inferieure_points": -4.3127786052526815,
+   "borne_et_verdict_concordent": true,
+   "perte_etablie": true,
+   "controle_marge_passe_au_niveau": true
+  },
+  "N4": {
+   "tache": "tworoom",
+   "codage": "int8",
+   "somme": 7.0,
+   "ecart_points": {
+    "moyenne": 0.0028,
+    "bas": -0.005600000000000001,
+    "haut": 0.011200000000000002
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.0005999400059994001,
+   "verdict": "soutenue",
+   "niveau_holm": 0.01,
+   "borne_inferieure_points": -0.7239900019140612,
+   "borne_et_verdict_concordent": true,
+   "perte_etablie": false,
+   "controle_marge_passe_au_niveau": false
+  },
+  "N5": {
+   "tache": "tworoom",
+   "codage": "int4c",
+   "somme": -14.0,
+   "ecart_points": {
+    "moyenne": -0.0056,
+    "bas": -0.0156,
+    "haut": 0.0044
+   },
+   "p_signe": 0.0023997600239976003,
+   "p_bootstrap_t": 0.0017998200179982,
+   "erreur_mc_p_signe": 0.0004892853130663972,
+   "erreur_mc_p_bootstrap_t": 0.00042386090476723766,
+   "p": 0.0023997600239976003,
+   "p_holm": 0.007199280071992801,
+   "verdict": "soutenue",
+   "niveau_holm": 0.016666666666666666,
+   "borne_inferieure_points": -1.6310038612570885,
+   "borne_et_verdict_concordent": true,
+   "perte_etablie": false,
+   "controle_marge_passe_au_niveau": false
+  },
+  "N6": {
+   "tache": "tworoom",
+   "codage": "pal4",
+   "somme": 10.0,
+   "ecart_points": {
+    "moyenne": 0.004,
+    "bas": -0.0052000000000000015,
+    "haut": 0.0132
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.0005999400059994001,
+   "verdict": "soutenue",
+   "niveau_holm": 0.0125,
+   "borne_inferieure_points": -0.6511082158869116,
+   "borne_et_verdict_concordent": true,
+   "perte_etablie": false,
+   "controle_marge_passe_au_niveau": false
+  }
+ },
+ "controle_negatif": {
+  "pusht": {
+   "somme": 4.0,
+   "ecart_points": {
+    "moyenne": 0.0015999999999999996,
+    "bas": -0.011200000000000002,
+    "haut": 0.014399999999999998
+   },
+   "p_signe": 0.0005999400059994001,
+   "p_bootstrap_t": 0.00039996000399960006,
+   "erreur_mc_p_signe": 0.00024486324305387315,
+   "erreur_mc_p_bootstrap_t": 0.0001999500027493875,
+   "p": 0.0005999400059994001
+  },
+  "tworoom": {
+   "somme": -23.0,
+   "ecart_points": {
+    "moyenne": -0.0092,
+    "bas": -0.02,
+    "haut": 0.0012000000000000001
+   },
+   "p_signe": 0.022797720227977204,
+   "p_bootstrap_t": 0.024897510248975102,
+   "erreur_mc_p_signe": 0.001492581126116235,
+   "erreur_mc_p_bootstrap_t": 0.0015581278584370823,
+   "p": 0.024897510248975102
+  }
+ },
+ "sensibilite_10_graines": {
+  "N1": {
+   "somme": 13.0,
+   "ecart_points": {
+    "moyenne": 0.005199999999999999,
+    "bas": -0.003999999999999999,
+    "haut": 0.0144
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05
+  },
+  "N2": {
+   "somme": -218.0,
+   "ecart_points": {
+    "moyenne": -0.0872,
+    "bas": -0.112205,
+    "haut": -0.0626
+   },
+   "p_signe": 1.0,
+   "p_bootstrap_t": 1.0,
+   "erreur_mc_p_signe": 0.0,
+   "erreur_mc_p_bootstrap_t": 0.0,
+   "p": 1.0
+  },
+  "N3": {
+   "somme": -61.0,
+   "ecart_points": {
+    "moyenne": -0.024399999999999998,
+    "bas": -0.0444,
+    "haut": -0.0052000000000000015
+   },
+   "p_signe": 0.685031496850315,
+   "p_bootstrap_t": 0.6762323767623237,
+   "erreur_mc_p_signe": 0.004645033317139199,
+   "erreur_mc_p_bootstrap_t": 0.004679125445857403,
+   "p": 0.685031496850315
+  },
+  "N4": {
+   "somme": 18.5,
+   "ecart_points": {
+    "moyenne": 0.0074,
+    "bas": 0.00019500000000000322,
+    "haut": 0.0148
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05
+  },
+  "N5": {
+   "somme": -2.5,
+   "ecart_points": {
+    "moyenne": -0.0009999999999999996,
+    "bas": -0.009600000000000001,
+    "haut": 0.007600000000000001
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05
+  },
+  "N6": {
+   "somme": 21.5,
+   "ecart_points": {
+    "moyenne": 0.0086,
+    "bas": 0.0005999999999999996,
+    "haut": 0.0166
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05
+  }
+ },
+ "descriptifs": {
+  "pusht": {
+   "reussite_fp32": 0.8352,
+   "reussite_ne16": 0.8384,
+   "reussite_int8": 0.8412000000000001,
+   "reussite_int4c": 0.7488,
+   "reussite_pal4": 0.8116,
+   "int8_moins_ne16": {
+    "moyenne": 0.0028,
+    "bas": -0.008,
+    "haut": 0.013600000000000001
+   },
+   "int4c_moins_ne16": {
+    "moyenne": -0.08960000000000001,
+    "bas": -0.11480000000000001,
+    "haut": -0.0644
+   },
+   "pal4_moins_ne16": {
+    "moyenne": -0.0268,
+    "bas": -0.0472,
+    "haut": -0.0076
+   },
+   "temps_par_plan_ms": {
+    "int8": 827.7227430997627,
+    "int4c": 822.1660986680629,
+    "pal4": 827.9183758873687
+   },
+   "octets_poids": {
+    "int8": 11737280,
+    "int4c": 5945536,
+    "pal4": 5861248
+   },
+   "octets_poids_fp16": 23232128,
+   "temoin_ne16_identique_exp012": true,
+   "constantes_codees": {
+    "int8": [
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_somme_tetes_to_fp16_quantized",
+      [
+       16,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_etale_tetes_to_fp16_quantized",
+      [
+       1024,
+       16,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "const_7_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "proj_3_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ]
+    ],
+    "int4c": [
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_somme_tetes_to_fp16_quantized",
+      [
+       16,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_etale_tetes_to_fp16_quantized",
+      [
+       1024,
+       16,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "const_7_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "proj_3_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ]
+    ],
+    "pal4": [
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_somme_tetes_to_fp16_palettized",
+      [
+       16,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_etale_tetes_to_fp16_palettized",
+      [
+       1024,
+       16,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "const_7_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "proj_3_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ]
+    ]
+   }
+  },
+  "tworoom": {
+   "reussite_fp32": 0.8480000000000001,
+   "reussite_ne16": 0.8444,
+   "reussite_int8": 0.8507999999999999,
+   "reussite_int4c": 0.8423999999999999,
+   "reussite_pal4": 0.852,
+   "int8_moins_ne16": {
+    "moyenne": 0.0064,
+    "bas": -0.0016,
+    "haut": 0.0148
+   },
+   "int4c_moins_ne16": {
+    "moyenne": -0.0020000000000000005,
+    "bas": -0.012,
+    "haut": 0.008
+   },
+   "pal4_moins_ne16": {
+    "moyenne": 0.007600000000000001,
+    "bas": -0.002,
+    "haut": 0.017200000000000003
+   },
+   "temps_par_plan_ms": {
+    "int8": 829.2704964844537,
+    "int4c": 827.8051282584529,
+    "pal4": 830.640871773917
+   },
+   "octets_poids": {
+    "int8": 11737280,
+    "int4c": 5945536,
+    "pal4": 5861248
+   },
+   "octets_poids_fp16": 23232128,
+   "temoin_ne16_identique_exp012": true,
+   "constantes_codees": {
+    "int8": [
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_somme_tetes_to_fp16_quantized",
+      [
+       16,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_etale_tetes_to_fp16_quantized",
+      [
+       1024,
+       16,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "const_7_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "proj_3_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ]
+    ],
+    "int4c": [
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_somme_tetes_to_fp16_quantized",
+      [
+       16,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_etale_tetes_to_fp16_quantized",
+      [
+       1024,
+       16,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_0_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_1_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_2_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_3_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_4_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_mod_weight_to_fp16_quantized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_qkv_weight_to_fp16_quantized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_sortie_weight_to_fp16_quantized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc1_weight_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "blocs_5_fc2_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "const_7_to_fp16_quantized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_blockwise_shift_scale",
+      "proj_3_weight_to_fp16_quantized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ]
+    ],
+    "pal4": [
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_somme_tetes_to_fp16_palettized",
+      [
+       16,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_etale_tetes_to_fp16_palettized",
+      [
+       1024,
+       16,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_0_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_1_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_2_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_3_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_4_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_mod_weight_to_fp16_palettized",
+      [
+       1152,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_qkv_weight_to_fp16_palettized",
+      [
+       3072,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_sortie_weight_to_fp16_palettized",
+      [
+       192,
+       1024,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_fc1_weight_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "blocs_5_fc2_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "const_7_to_fp16_palettized",
+      [
+       2048,
+       192,
+       1,
+       1
+      ]
+     ],
+     [
+      "constexpr_lut_to_dense",
+      "proj_3_weight_to_fp16_palettized",
+      [
+       192,
+       2048,
+       1,
+       1
+      ]
+     ]
+    ]
+   }
+  }
+ }
+}

@@ -1,0 +1,100 @@
+{
+ "controles": {
+  "commit": "af8e516c0be5b6588aedd08a29b589298dec15f6",
+  "divergences": {
+   "all:4:gptq": 0,
+   "all:3:gptq": 0
+  }
+ },
+ "tests": {
+  "T1": {
+   "version": "all:4:gptq",
+   "marge_points": 2,
+   "p": 0.8975102489751025,
+   "teste": true,
+   "verdict": "non établie"
+  },
+  "T2": {
+   "version": "all:4:gptq",
+   "marge_points": 1,
+   "p": 0.9996000399960004,
+   "teste": false,
+   "verdict": "non testée (séquence arrêtée)"
+  },
+  "T3": {
+   "version": "all:3:gptq",
+   "marge_points": 2,
+   "p": 1.0,
+   "teste": false,
+   "verdict": "non testée (séquence arrêtée)"
+  },
+  "T4": {
+   "version": "all:3:gptq",
+   "marge_points": 1,
+   "p": 1.0,
+   "teste": false,
+   "verdict": "non testée (séquence arrêtée)"
+  }
+ },
+ "descriptifs": {
+  "reussite_fp32": 0.8706,
+  "all:4:gptq": {
+   "reussite": 0.8448,
+   "ecart_reussite": {
+    "moyenne": -0.0258,
+    "bas": -0.0348,
+    "haut": -0.0171
+   },
+   "ecart_log_M3_bouge": {
+    "moyenne": 0.03537080887325526,
+    "bas": 0.01701682997753209,
+    "haut": 0.053943919100030324
+   },
+   "dT_min_px": {
+    "moyenne": 0.4791184530613273,
+    "bas": 0.2280506593137991,
+    "haut": 0.7471122892767502
+   },
+   "dth_min_deg": {
+    "moyenne": 0.4121846366449589,
+    "bas": 0.16815745041676705,
+    "haut": 0.6689660817672188
+   }
+  },
+  "all:3:gptq": {
+   "reussite": 0.7629,
+   "ecart_reussite": {
+    "moyenne": -0.1077,
+    "bas": -0.12040000000000001,
+    "haut": -0.0948
+   },
+   "ecart_log_M3_bouge": {
+    "moyenne": 0.15266447453021514,
+    "bas": 0.12454835785658638,
+    "haut": 0.18018398756224113
+   },
+   "dT_min_px": {
+    "moyenne": 1.5700731732933155,
+    "bas": 1.127053516141955,
+    "haut": 2.0339633745144994
+   },
+   "dth_min_deg": {
+    "moyenne": 0.9271562315993035,
+    "bas": 0.5049990619240793,
+    "haut": 1.3421779348089615
+   }
+  }
+ },
+ "comparaison_exp005": {
+  "all:6": {
+   "moyenne": -0.012600000000000002,
+   "bas": -0.0192,
+   "haut": -0.0060999999999999995
+  },
+  "all:8": {
+   "moyenne": -0.0035999999999999995,
+   "bas": -0.0085,
+   "haut": 0.0012000000000000001
+  }
+ }
+}

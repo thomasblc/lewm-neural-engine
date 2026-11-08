@@ -1,0 +1,185 @@
+{
+ "protocole": {
+  "n": 50,
+  "chunk": 50,
+  "episodes_idx": [
+   1235,
+   1316,
+   1639,
+   1694,
+   1761,
+   1820,
+   2635,
+   3184,
+   3517,
+   3838,
+   4299,
+   5123,
+   6651,
+   6983,
+   7572,
+   8235,
+   8313,
+   8373,
+   8408,
+   8486,
+   8488,
+   9591,
+   9864,
+   10117,
+   10378,
+   10489,
+   11775,
+   12047,
+   12221,
+   12591,
+   12961,
+   13029,
+   13303,
+   13586,
+   14033,
+   14108,
+   14327,
+   14432,
+   14474,
+   14526,
+   15277,
+   15435,
+   15701,
+   16015,
+   16019,
+   16399,
+   16532,
+   17264,
+   17939,
+   18054
+  ],
+  "start_steps": [
+   36,
+   129,
+   40,
+   59,
+   19,
+   13,
+   114,
+   115,
+   2,
+   133,
+   20,
+   126,
+   49,
+   65,
+   116,
+   10,
+   130,
+   101,
+   89,
+   37,
+   20,
+   26,
+   50,
+   135,
+   28,
+   33,
+   25,
+   95,
+   46,
+   155,
+   25,
+   32,
+   72,
+   35,
+   87,
+   35,
+   27,
+   47,
+   98,
+   126,
+   42,
+   19,
+   33,
+   137,
+   72,
+   75,
+   35,
+   9,
+   40,
+   21
+  ],
+  "episode_seed": 42,
+  "device": "mps",
+  "hasard": "par episode (amendement 1)",
+  "config": {
+   "cache_dir": null,
+   "solver": {
+    "_target_": "stable_worldmodel.solver.CEMSolver",
+    "model": "???",
+    "batch_size": 1,
+    "num_samples": 300,
+    "var_scale": 1.0,
+    "n_steps": 30,
+    "topk": 30,
+    "device": "mps",
+    "seed": "${seed}"
+   },
+   "world": {
+    "env_name": "swm/PushT-v1",
+    "num_envs": "${eval.num_eval}",
+    "max_episode_steps": 100
+   },
+   "dataset": {
+    "stats": "${eval.dataset_name}",
+    "keys_to_cache": [
+     "action",
+     "proprio",
+     "state"
+    ]
+   },
+   "seed": 42,
+   "policy": "pusht/lewm",
+   "plan_config": {
+    "horizon": 5,
+    "receding_horizon": 5,
+    "action_block": 5
+   },
+   "eval": {
+    "num_eval": 50,
+    "goal_offset_steps": 25,
+    "eval_budget": 50,
+    "img_size": 224,
+    "dataset_name": "pusht_expert_train",
+    "callables": [
+     {
+      "method": "_set_state",
+      "args": {
+       "state": {
+        "value": "state"
+       }
+      }
+     },
+     {
+      "method": "_set_goal_state",
+      "args": {
+       "goal_state": {
+        "value": "goal_state"
+       }
+      }
+     }
+    ]
+   },
+   "output": {
+    "filename": "pusht_results.txt"
+   }
+  },
+  "moteur": {
+   "nom": "coreml-gpu",
+   "coremltools": "9.0",
+   "macos": "26.6.2",
+   "precision": "float16",
+   "codage": "int4c"
+  }
+ },
+ "git": "0339bf15a5c36e45bca8b2c4f4a9cf096f2353fa",
+ "git_sale": false,
+ "torch": "2.14.0"
+}

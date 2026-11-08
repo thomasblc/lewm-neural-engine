@@ -1,0 +1,1047 @@
+{
+ "lignes": [
+  {
+   "groupe": "Contrôle",
+   "libelle": "Pleine précision contre elle-même (graines 47 à 51 contre 42 à 46)",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 83.68,
+     "reference": 83.52000000000001,
+     "ecart": 0.16,
+     "bas": -1.12,
+     "haut": 1.44,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/fp32",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 83.88,
+     "reference": 84.8,
+     "ecart": -0.92,
+     "bas": -2.0,
+     "haut": 0.11999999999999997,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/fp32",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 8 bits",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 83.8,
+     "reference": 83.52000000000001,
+     "ecart": 0.28000000000000014,
+     "bas": -0.8,
+     "haut": 1.36,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/all-8",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.83999999999999,
+     "reference": 84.8,
+     "ecart": 0.040000000000000056,
+     "bas": -0.96,
+     "haut": 1.0,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/all-8",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 6 bits",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 83.2,
+     "reference": 83.52000000000001,
+     "ecart": -0.32,
+     "bas": -1.56,
+     "haut": 0.92,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/all-6",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 83.6,
+     "reference": 84.8,
+     "ecart": -1.2,
+     "bas": -2.16,
+     "haut": -0.2399999999999999,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/all-6",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 5 bits",
+   "experiences": "EXP-003, 008",
+   "cases": {
+    "pusht": {
+     "reussite": 80.52,
+     "reference": 83.52000000000001,
+     "ecart": -3.0,
+     "bas": -4.84,
+     "haut": -1.16,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/all-5",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 83.52000000000001,
+     "reference": 84.8,
+     "ecart": -1.28,
+     "bas": -2.8,
+     "haut": 0.16000000000000003,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp008/all-5",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 4 bits",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 69.39999999999999,
+     "reference": 83.52000000000001,
+     "ecart": -14.12,
+     "bas": -17.16,
+     "haut": -11.16,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/all-4",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 73.76,
+     "reference": 84.8,
+     "ecart": -11.04,
+     "bas": -13.4,
+     "haut": -8.8,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/all-4",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 3 bits",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 35.720000000000006,
+     "reference": 83.52000000000001,
+     "ecart": -47.8,
+     "bas": -51.48,
+     "haut": -44.12,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/all-3",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 38.63999999999999,
+     "reference": 84.8,
+     "ecart": -46.16,
+     "bas": -50.2,
+     "haut": -42.27900000000002,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/all-3",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Encodeur seul, 4 bits",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 78.88,
+     "reference": 83.52000000000001,
+     "ecart": -4.64,
+     "bas": -6.76,
+     "haut": -2.6,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/encoder-4",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 75.72000000000001,
+     "reference": 84.8,
+     "ecart": -9.08,
+     "bas": -11.440999999999999,
+     "haut": -6.76,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/encoder-4",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Encodeur seul, 3 bits",
+   "experiences": "EXP-003, 008",
+   "cases": {
+    "pusht": {
+     "reussite": 53.72,
+     "reference": 83.52000000000001,
+     "ecart": -29.8,
+     "bas": -33.4,
+     "haut": -26.28,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/encoder-3",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 46.96,
+     "reference": 84.8,
+     "ecart": -37.84,
+     "bas": -41.84,
+     "haut": -34.08,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp008/encoder-3",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Prédicteur seul, 4 bits",
+   "experiences": "EXP-003, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 84.16,
+     "reference": 83.52000000000001,
+     "ecart": 0.6400000000000001,
+     "bas": -0.6799999999999998,
+     "haut": 1.92,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/predictor-4",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.92,
+     "reference": 84.8,
+     "ecart": 0.12000000000000005,
+     "bas": -0.76,
+     "haut": 1.0,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/predictor-4",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Prédicteur seul, 3 bits",
+   "experiences": "EXP-003, 008",
+   "cases": {
+    "pusht": {
+     "reussite": 81.32000000000001,
+     "reference": 83.52000000000001,
+     "ecart": -2.2,
+     "bas": -4.28,
+     "haut": -0.2,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp003/predictor-3",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 83.75999999999999,
+     "reference": 84.8,
+     "ecart": -1.04,
+     "bas": -2.28,
+     "haut": 0.15999999999999995,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp008/predictor-3",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Les 6 petites couches seules, 4 bits",
+   "experiences": "EXP-004, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 74.07999999999998,
+     "reference": 83.52000000000001,
+     "ecart": -9.44,
+     "bas": -12.120999999999999,
+     "haut": -6.76,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp004/autres-4",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 83.6,
+     "reference": 84.8,
+     "ecart": -1.2,
+     "bas": -2.32,
+     "haut": -0.12000000000000005,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/autres-4",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Les 6 petites couches seules, 3 bits",
+   "experiences": "EXP-004, 008",
+   "cases": {
+    "pusht": {
+     "reussite": 54.559999999999995,
+     "reference": 83.52000000000001,
+     "ecart": -28.96,
+     "bas": -32.84,
+     "haut": -25.24,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp004/autres-3",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 82.72,
+     "reference": 84.8,
+     "ecart": -2.08,
+     "bas": -3.8,
+     "haut": -0.4399999999999999,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp008/autres-3",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Encodeur et prédicteur, 4 bits (6 couches intactes)",
+   "experiences": "EXP-004, 008",
+   "cases": {
+    "pusht": {
+     "reussite": 79.47999999999999,
+     "reference": 83.52000000000001,
+     "ecart": -4.04,
+     "bas": -6.32,
+     "haut": -1.8,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp004/encpred-4",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 75.55999999999999,
+     "reference": 84.8,
+     "ecart": -9.24,
+     "bas": -11.56,
+     "haut": -6.96,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp008/encpred-4",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 4 bits, groupes de 64",
+   "experiences": "EXP-004, 006",
+   "cases": {
+    "pusht": {
+     "reussite": 75.6,
+     "reference": 83.52000000000001,
+     "ecart": -7.92,
+     "bas": -10.52,
+     "haut": -5.36,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp004/all-4-g64",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 80.28,
+     "reference": 84.8,
+     "ecart": -4.52,
+     "bas": -6.48,
+     "haut": -2.6,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp006/all-4-g64",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Tout à 3 bits, groupes de 64",
+   "experiences": "EXP-004, 008",
+   "cases": {
+    "pusht": {
+     "reussite": 45.720000000000006,
+     "reference": 83.52000000000001,
+     "ecart": -37.8,
+     "bas": -41.56,
+     "haut": -34.04,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp004/all-3-g64",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 37.88000000000001,
+     "reference": 84.8,
+     "ecart": -46.92,
+     "bas": -51.041,
+     "haut": -42.88,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp008/all-3-g64",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "GPTQ, tout à 4 bits (même mémoire que RTN)",
+   "experiences": "EXP-009",
+   "cases": {
+    "pusht": {
+     "reussite": 82.04,
+     "reference": 83.52000000000001,
+     "ecart": -1.48,
+     "bas": -3.32,
+     "haut": 0.36000000000000004,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-pusht/all-4-gptq",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.56,
+     "reference": 84.8,
+     "ecart": -0.23999999999999996,
+     "bas": -1.24,
+     "haut": 0.76,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-tworoom/all-4-gptq",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "GPTQ, tout à 3 bits",
+   "experiences": "EXP-009",
+   "cases": {
+    "pusht": {
+     "reussite": 75.2,
+     "reference": 83.52000000000001,
+     "ecart": -8.32,
+     "bas": -11.001,
+     "haut": -5.68,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-pusht/all-3-gptq",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 83.88,
+     "reference": 84.8,
+     "ecart": -0.9199999999999999,
+     "bas": -2.08,
+     "haut": 0.2,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-tworoom/all-3-gptq",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "GPTQ, encodeur seul, 4 bits",
+   "experiences": "EXP-009",
+   "cases": {
+    "pusht": {
+     "reussite": 83.08000000000001,
+     "reference": 83.52000000000001,
+     "ecart": -0.4399999999999999,
+     "bas": -1.76,
+     "haut": 0.8400000000000001,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-pusht/encoder-4-gptq",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.92,
+     "reference": 84.8,
+     "ecart": 0.12000000000000005,
+     "bas": -0.7599999999999999,
+     "haut": 1.0,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-tworoom/encoder-4-gptq",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "GPTQ, 6 petites couches, 4 bits",
+   "experiences": "EXP-009",
+   "cases": {
+    "pusht": {
+     "reussite": 82.84,
+     "reference": 83.52000000000001,
+     "ecart": -0.68,
+     "bas": -2.4,
+     "haut": 1.0,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-pusht/autres-4-gptq",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.8,
+     "reference": 84.8,
+     "ecart": 8.526512829121202e-17,
+     "bas": -0.84,
+     "haut": 0.84,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp009-tworoom/autres-4-gptq",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Prédicteur ternaire (2 bits, échelle réduite), RTN",
+   "experiences": "EXP-011",
+   "cases": {
+    "pusht": {
+     "reussite": 40.440000000000005,
+     "reference": 83.52000000000001,
+     "ecart": -43.08,
+     "bas": -46.88,
+     "haut": -39.24,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp011-pusht/predictor-2-clip",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.52,
+     "reference": 84.8,
+     "ecart": -0.28,
+     "bas": -2.0,
+     "haut": 1.44,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp011-tworoom/predictor-2-clip",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Prédicteur ternaire, GPTQ",
+   "experiences": "EXP-011",
+   "cases": {
+    "pusht": {
+     "reussite": 53.0,
+     "reference": 83.52000000000001,
+     "ecart": -30.52,
+     "bas": -34.28,
+     "haut": -26.76,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp011-pusht/predictor-2-clip-gptq",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 81.35999999999999,
+     "reference": 84.8,
+     "ecart": -3.44,
+     "bas": -5.04,
+     "haut": -1.92,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp011-tworoom/predictor-2-clip-gptq",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "pred_proj seule, 4 bits",
+   "experiences": "EXP-015",
+   "cases": {
+    "pusht": {
+     "reussite": 74.72000000000001,
+     "reference": 83.52000000000001,
+     "ecart": -8.8,
+     "bas": -11.28,
+     "haut": -6.32,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp015-sim-pusht/predproj-4",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Prédicteur et pred_proj, 4 bits",
+   "experiences": "EXP-015",
+   "cases": {
+    "pusht": {
+     "reussite": 74.24000000000001,
+     "reference": 83.52000000000001,
+     "ecart": -9.28,
+     "bas": -11.881,
+     "haut": -6.68,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp015-sim-pusht/predict-4",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PyTorch, quantification simulée (RTN par canal sauf mention)",
+   "libelle": "Prédicteur et pred_proj, 4 bits, GPTQ",
+   "experiences": "EXP-017",
+   "cases": {
+    "pusht": {
+     "reussite": 82.28000000000002,
+     "reference": 83.52000000000001,
+     "ecart": -1.2399999999999998,
+     "bas": -2.88,
+     "haut": 0.4000000000000001,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp017-sim-pusht/predict-4-gptq",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PushT, 2 000 épisodes neufs (référence : pleine précision d'EXP-005, graines 52 à 56)",
+   "libelle": "Tout à 8 bits",
+   "experiences": "EXP-005",
+   "cases": {
+    "pusht": {
+     "reussite": 86.7,
+     "reference": 87.05999999999999,
+     "ecart": -0.35999999999999993,
+     "bas": -0.85,
+     "haut": 0.12,
+     "episodes": 2000,
+     "graines": 5,
+     "source": "exp005/all-8",
+     "source_reference": "exp005/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PushT, 2 000 épisodes neufs (référence : pleine précision d'EXP-005, graines 52 à 56)",
+   "libelle": "Tout à 6 bits",
+   "experiences": "EXP-005",
+   "cases": {
+    "pusht": {
+     "reussite": 85.8,
+     "reference": 87.05999999999999,
+     "ecart": -1.26,
+     "bas": -1.92,
+     "haut": -0.61,
+     "episodes": 2000,
+     "graines": 5,
+     "source": "exp005/all-6",
+     "source_reference": "exp005/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PushT, 2 000 épisodes neufs (référence : pleine précision d'EXP-005, graines 52 à 56)",
+   "libelle": "GPTQ, tout à 4 bits",
+   "experiences": "EXP-010",
+   "cases": {
+    "pusht": {
+     "reussite": 84.48,
+     "reference": 87.05999999999999,
+     "ecart": -2.58,
+     "bas": -3.48,
+     "haut": -1.71,
+     "episodes": 2000,
+     "graines": 5,
+     "source": "exp010/all-4-gptq",
+     "source_reference": "exp005/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "PushT, 2 000 épisodes neufs (référence : pleine précision d'EXP-005, graines 52 à 56)",
+   "libelle": "GPTQ, tout à 3 bits",
+   "experiences": "EXP-010",
+   "cases": {
+    "pusht": {
+     "reussite": 76.29,
+     "reference": 87.05999999999999,
+     "ecart": -10.77,
+     "bas": -12.04,
+     "haut": -9.48,
+     "episodes": 2000,
+     "graines": 5,
+     "source": "exp010/all-3-gptq",
+     "source_reference": "exp005/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Replanifier tous les 5 pas (PushT, 3 graines ; référence : plan exécuté en entier, EXP-003)",
+   "libelle": "Pleine précision, CEM complète (r5)",
+   "experiences": "EXP-007",
+   "cases": {
+    "pusht": {
+     "reussite": 29.866666666666664,
+     "reference": 83.2,
+     "ecart": -53.333333333333336,
+     "bas": -57.266666666666666,
+     "haut": -49.46666666666666,
+     "episodes": 500,
+     "graines": 3,
+     "source": "exp007-r5/fp32",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Replanifier tous les 5 pas (PushT, 3 graines ; référence : plan exécuté en entier, EXP-003)",
+   "libelle": "Pleine précision, calcul égal (r5c6)",
+   "experiences": "EXP-007",
+   "cases": {
+    "pusht": {
+     "reussite": 25.93333333333333,
+     "reference": 83.2,
+     "ecart": -57.26666666666666,
+     "bas": -61.4,
+     "haut": -53.06666666666667,
+     "episodes": 500,
+     "graines": 3,
+     "source": "exp007-r5c6/fp32",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Replanifier tous les 5 pas (PushT, 3 graines ; référence : plan exécuté en entier, EXP-003)",
+   "libelle": "Tout à 4 bits, CEM complète (r5)",
+   "experiences": "EXP-007",
+   "cases": {
+    "pusht": {
+     "reussite": 26.266666666666666,
+     "reference": 83.2,
+     "ecart": -56.93333333333333,
+     "bas": -60.666666666666664,
+     "haut": -53.13333333333333,
+     "episodes": 500,
+     "graines": 3,
+     "source": "exp007-r5/all-4",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Replanifier tous les 5 pas (PushT, 3 graines ; référence : plan exécuté en entier, EXP-003)",
+   "libelle": "Tout à 4 bits, calcul égal (r5c6)",
+   "experiences": "EXP-007",
+   "cases": {
+    "pusht": {
+     "reussite": 23.666666666666668,
+     "reference": 83.2,
+     "ecart": -59.53333333333333,
+     "bas": -63.666666666666664,
+     "haut": -55.6,
+     "episodes": 500,
+     "graines": 3,
+     "source": "exp007-r5c6/all-4",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Core ML 16 bits (référence : PyTorch float32)",
+   "libelle": "Prédicteur sur le GPU",
+   "experiences": "EXP-012",
+   "cases": {
+    "pusht": {
+     "reussite": 83.04,
+     "reference": 83.52000000000001,
+     "ecart": -0.47999999999999987,
+     "bas": -1.4,
+     "haut": 0.4400000000000001,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp012-gpu-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.72000000000001,
+     "reference": 84.8,
+     "ecart": -0.08000000000000006,
+     "bas": -0.88,
+     "haut": 0.72,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp012-gpu-tworoom/fp32",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Core ML 16 bits (référence : PyTorch float32)",
+   "libelle": "Prédicteur sur le Neural Engine (ne16)",
+   "experiences": "EXP-012",
+   "cases": {
+    "pusht": {
+     "reussite": 83.84000000000002,
+     "reference": 83.52000000000001,
+     "ecart": 0.32,
+     "bas": -0.76,
+     "haut": 1.4,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp012-ne-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.44,
+     "reference": 84.8,
+     "ecart": -0.36000000000000004,
+     "bas": -1.2,
+     "haut": 0.48,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp012-ne-tworoom/fp32",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Core ML 16 bits (référence : PyTorch float32)",
+   "libelle": "Planificateur entier hors du GPU (2 graines, CEM sur le CPU, descriptif)",
+   "experiences": "EXP-013",
+   "cases": {
+    "pusht": {
+     "reussite": 83.7,
+     "reference": 83.52000000000001,
+     "ecart": 0.18,
+     "bas": -1.52,
+     "haut": 1.88,
+     "episodes": 500,
+     "graines": 2,
+     "source": "exp013-ne-complet-reussite/fp32",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "int8 par canal",
+   "experiences": "EXP-014",
+   "cases": {
+    "pusht": {
+     "reussite": 84.12,
+     "reference": 83.52000000000001,
+     "ecart": 0.6,
+     "bas": -0.3599999999999999,
+     "haut": 1.56,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp014-int8-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 85.08000000000001,
+     "reference": 84.8,
+     "ecart": 0.28,
+     "bas": -0.56,
+     "haut": 1.12,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp014-int8-tworoom/fp32",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "int4 par canal (int4c)",
+   "experiences": "EXP-014",
+   "cases": {
+    "pusht": {
+     "reussite": 74.88,
+     "reference": 83.52000000000001,
+     "ecart": -8.64,
+     "bas": -11.2,
+     "haut": -6.16,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp014-int4c-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 84.24,
+     "reference": 84.8,
+     "ecart": -0.56,
+     "bas": -1.56,
+     "haut": 0.44,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp014-int4c-tworoom/fp32",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "Palettes de 16 valeurs (pal4)",
+   "experiences": "EXP-014",
+   "cases": {
+    "pusht": {
+     "reussite": 81.16,
+     "reference": 83.52000000000001,
+     "ecart": -2.36,
+     "bas": -4.4,
+     "haut": -0.4,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp014-pal4-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    },
+    "tworoom": {
+     "reussite": 85.2,
+     "reference": 84.8,
+     "ecart": 0.4,
+     "bas": -0.52,
+     "haut": 1.32,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp014-pal4-tworoom/fp32",
+     "source_reference": "exp006/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "int4c, les 30 poids des blocs seuls",
+   "experiences": "EXP-015",
+   "cases": {
+    "pusht": {
+     "reussite": 84.32000000000001,
+     "reference": 83.52000000000001,
+     "ecart": 0.8,
+     "bas": -0.5599999999999998,
+     "haut": 2.16,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp015-int4c-bl-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "int4c, pred_proj seule",
+   "experiences": "EXP-015",
+   "cases": {
+    "pusht": {
+     "reussite": 75.2,
+     "reference": 83.52000000000001,
+     "ecart": -8.32,
+     "bas": -10.84,
+     "haut": -5.76,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp015-int4c-pp-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "int4c, tout sauf pred_proj (7,1 Mo)",
+   "experiences": "EXP-015",
+   "cases": {
+    "pusht": {
+     "reussite": 84.16,
+     "reference": 83.52000000000001,
+     "ecart": 0.64,
+     "bas": -0.68,
+     "haut": 1.96,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp015-int4c-sp-pusht/fp32",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  },
+  {
+   "groupe": "Codages Core ML du prédicteur sur le Neural Engine (référence : PyTorch float32)",
+   "libelle": "Codes de GPTQ écrits dans Core ML (5,9 Mo)",
+   "experiences": "EXP-017",
+   "cases": {
+    "pusht": {
+     "reussite": 83.16,
+     "reference": 83.52000000000001,
+     "ecart": -0.35999999999999993,
+     "bas": -2.0,
+     "haut": 1.32,
+     "episodes": 500,
+     "graines": 5,
+     "source": "exp017-gptq-pusht/predict-4-gptq",
+     "source_reference": "exp003/fp32"
+    }
+   }
+  }
+ ],
+ "methode": "Pour chaque ligne : réussite de la version et écart à sa référence en points, apparié par épisode (moyenne par épisode\nsur les graines de chaque série, puis moyenne sur les épisodes), intervalle bootstrap percentile à 95 % sur les\népisodes (default_rng(2), 10 000 tirages, comme les analyses). Contrôle que version et référence ont les mêmes\népisodes (episodes_idx, start_steps). Recoupe les moyennes avec les valeurs du registre AFFIRMATIONS.md (au dixième de\npoint) et refuse d'écrire en cas d'écart. Sortie : papier-corl-2026/figures/vue-ensemble.json, lue par\nconstruire_experiences.py."
+}

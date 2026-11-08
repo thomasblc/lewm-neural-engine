@@ -1,0 +1,109 @@
+{
+ "segments": {
+  "repos-1": {
+   "echantillons": 173,
+   "duree_s": 179.96341180801392,
+   "P_b": 14.40016951445089,
+   "P_b_capacite": 14.49050799606669,
+   "P_p": 1.4892845411873041,
+   "P_affichage": 0.31129660988959623,
+   "chargeur_branche": false,
+   "valide": true
+  },
+  "torch": {
+   "echantillons": 176,
+   "duree_s": 180.2563967704773,
+   "P_b": 71.11242117045441,
+   "P_b_capacite": 167.50301676364776,
+   "P_p": 50.10273545766987,
+   "P_affichage": 0.3609469686828674,
+   "chargeur_branche": false,
+   "valide": true
+  },
+  "coreml-gpu": {
+   "echantillons": 175,
+   "duree_s": 179.66048073768616,
+   "P_b": 61.52003146857149,
+   "P_b_capacite": 54.161651202407604,
+   "P_p": 41.214808666805325,
+   "P_affichage": 0.3138085780941238,
+   "chargeur_branche": false,
+   "valide": true
+  },
+  "ne-complet": {
+   "echantillons": 175,
+   "duree_s": 179.43098711967468,
+   "P_b": 30.26864375428574,
+   "P_b_capacite": 27.84221329354408,
+   "P_p": 12.981053201359792,
+   "P_affichage": 0.052906134845418125,
+   "chargeur_branche": false,
+   "valide": true
+  },
+  "ne-complet-vision30": {
+   "echantillons": 175,
+   "duree_s": 180.10424494743347,
+   "P_b": 32.49699605714291,
+   "P_b_capacite": 37.01386761207563,
+   "P_p": 15.509052871359344,
+   "P_affichage": 0.06243051074827104,
+   "chargeur_branche": false,
+   "valide": true
+  },
+  "repos-2": {
+   "echantillons": 172,
+   "duree_s": 179.80220890045166,
+   "P_b": 14.479318023255802,
+   "P_b_capacite": -0.24989808624572393,
+   "P_p": 0.6167718413982254,
+   "P_affichage": 0.04040551027947773,
+   "chargeur_branche": false,
+   "valide": true
+  }
+ },
+ "repos": {
+  "P_b": 14.439743768853347,
+  "P_p": 1.0530281912927648
+ },
+ "derive_repos": {
+  "P_b": 0.07914850880491109,
+  "P_p": -0.8725126997890787
+ },
+ "au_dessus_du_repos": {
+  "torch": {
+   "P_b": 56.672677401601064,
+   "P_p": 49.049707266377105
+  },
+  "coreml-gpu": {
+   "P_b": 47.08028769971814,
+   "P_p": 40.16178047551256
+  },
+  "ne-complet": {
+   "P_b": 15.828899985432393,
+   "P_p": 11.928025010067028
+  },
+  "ne-complet-vision30": {
+   "P_b": 18.05725228828956,
+   "P_p": 14.45602468006658
+  }
+ },
+ "ecarts_positifs": true,
+ "facteur_c": 1.1554131626887283,
+ "V1_ecart_relatif": {
+  "coreml-gpu": 0.014376248199940682,
+  "ne-complet": 0.1293269201147636,
+  "ne-complet-vision30": 0.07501534957596988
+ },
+ "V2_ecart_relatif": {
+  "coreml-gpu / ne-complet": 0.13202506723875596,
+  "torch / ne-complet": 0.1485367161366815,
+  "torch / coreml-gpu": 0.014585939283306981
+ },
+ "segments_valides": true,
+ "seuil": 0.1,
+ "validee": false,
+ "git": "0a625b00fba0c5697218f908b1b05609ee049b3c",
+ "git_sale": false,
+ "essai": false,
+ "segment_s": 180
+}

@@ -1,0 +1,299 @@
+{
+ "controles": {
+  "commit": "747f668a4b3cc75bb1c55bff48ceb2ad4a1f6064",
+  "episodes": 1000,
+  "graines": [
+   52,
+   53,
+   54,
+   55
+  ],
+  "donnees_sha256": "a6a1249646271e53e6ce2f2406bbdfb1cf09343317ed0f3f1882f87c18c88c52"
+ },
+ "tests": {
+  "H1": {
+   "bras": "A",
+   "reference": "C",
+   "sorte": "superiorite",
+   "ecart_points_descriptif": {
+    "moyenne": 16.75,
+    "bas": 14.549999999999999,
+    "haut": 18.95
+   },
+   "ecart_par_reglage_points": {
+    "52": 17.0,
+    "53": 16.3,
+    "54": 17.299999999999997,
+    "55": 16.400000000000002
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00029997000299970003,
+   "niveau_holm": 0.016666666666666666,
+   "verdict": "soutenue",
+   "borne_points": 14.417992320955983,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "soutenue"
+  },
+  "H2": {
+   "bras": "A",
+   "reference": "D",
+   "sorte": "superiorite",
+   "ecart_points_descriptif": {
+    "moyenne": 2.4,
+    "bas": 0.9249999999999999,
+    "haut": 3.925
+   },
+   "ecart_par_reglage_points": {
+    "52": 1.6,
+    "53": 1.2,
+    "54": 4.3999999999999995,
+    "55": 2.4
+   },
+   "p_signe": 0.3013698630136986,
+   "p_bootstrap_t": 0.29987001299870014,
+   "erreur_mc_p_signe": 0.0045885299245052675,
+   "erreur_mc_p_bootstrap_t": 0.004582008165672117,
+   "p": 0.3013698630136986,
+   "p_holm": 0.6027397260273972,
+   "niveau_holm": 0.025,
+   "verdict": "non soutenue",
+   "borne_points": 0.9030723389269496,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "non soutenue"
+  },
+  "H3": {
+   "bras": "A",
+   "reference": "B",
+   "sorte": "non_inferiorite",
+   "ecart_points_descriptif": {
+    "moyenne": -2.5,
+    "bas": -3.9,
+    "haut": -1.0999999999999999
+   },
+   "ecart_par_reglage_points": {
+    "52": -3.8,
+    "53": -2.4,
+    "54": -0.3,
+    "55": -3.5000000000000004
+   },
+   "p_signe": 0.7545245475452454,
+   "p_bootstrap_t": 0.7585241475852414,
+   "erreur_mc_p_signe": 0.004303687427043094,
+   "erreur_mc_p_bootstrap_t": 0.004279781128928491,
+   "p": 0.7585241475852414,
+   "p_holm": 0.7585241475852414,
+   "niveau_holm": 0.025,
+   "verdict": "non soutenue",
+   "borne_points": -3.9408243918524253,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "non soutenue"
+  }
+ },
+ "lecture": {
+  "H1": "pour ces quatre réglages, régler les échelles, les valeurs gardées et les biais sur des entrées enregistrées en planification améliore le prédicteur ternaire avec 1 % gardé de plus de 2 points ; l'écart estimé dépasse +2 points dans chacun des 4 réglages",
+  "H2": "apport de plus de 2 points des poids gardés non établi (écart +2.4 [+0.9 ; +3.9] points, descriptif)",
+  "H3": "non-infériorité face au 3 bits réglé non établie (écart -2.5 [-3.9 ; -1.1] points, descriptif)",
+  "pleine_precision": "écart de A à la pleine précision -3.4 [-4.8 ; -1.9] points (descriptif, aucun test)",
+  "memoire_voisine": "E moins B, mémoire voisine (3,11 contre 3,06 bits) : -2.8 [-4.2 ; -1.3] points, non testé"
+ },
+ "descriptifs": {
+  "ecarts": {
+   "A - fp32": {
+    "moyenne": -3.35,
+    "bas": -4.825,
+    "haut": -1.925
+   },
+   "B - fp32": {
+    "moyenne": -0.8500000000000001,
+    "bas": -1.775,
+    "haut": 0.075
+   },
+   "B0 - fp32": {
+    "moyenne": -1.075,
+    "bas": -2.1,
+    "haut": -0.05
+   },
+   "C - fp32": {
+    "moyenne": -20.1,
+    "bas": -22.35,
+    "haut": -17.825
+   },
+   "D - fp32": {
+    "moyenne": -5.75,
+    "bas": -7.3999999999999995,
+    "haut": -4.175
+   },
+   "E - fp32": {
+    "moyenne": -3.5999999999999996,
+    "bas": -4.9750000000000005,
+    "haut": -2.25
+   },
+   "A - B": {
+    "moyenne": -2.5,
+    "bas": -3.9,
+    "haut": -1.0999999999999999
+   },
+   "A - C": {
+    "moyenne": 16.75,
+    "bas": 14.549999999999999,
+    "haut": 18.95
+   },
+   "A - D": {
+    "moyenne": 2.4,
+    "bas": 0.9249999999999999,
+    "haut": 3.925
+   },
+   "B0 - B": {
+    "moyenne": -0.22499999999999998,
+    "bas": -1.175,
+    "haut": 0.7000000000000001
+   },
+   "E - B": {
+    "moyenne": -2.75,
+    "bas": -4.2,
+    "haut": -1.325
+   },
+   "E - A": {
+    "moyenne": -0.25,
+    "bas": -1.6500000000000001,
+    "haut": 1.2
+   }
+  },
+  "reussite": {
+   "fp32": 0.86925,
+   "A": 0.83575,
+   "B": 0.86075,
+   "B0": 0.8585,
+   "C": 0.66825,
+   "D": 0.81175,
+   "E": 0.83325
+  },
+  "reussite_par_graine": {
+   "fp32": {
+    "52": 0.877,
+    "53": 0.865,
+    "54": 0.87,
+    "55": 0.865
+   },
+   "A": {
+    "52": 0.827,
+    "53": 0.833,
+    "54": 0.854,
+    "55": 0.829
+   },
+   "B": {
+    "52": 0.865,
+    "53": 0.857,
+    "54": 0.857,
+    "55": 0.864
+   },
+   "B0": {
+    "52": 0.864,
+    "53": 0.854,
+    "54": 0.856,
+    "55": 0.86
+   },
+   "C": {
+    "52": 0.657,
+    "53": 0.67,
+    "54": 0.681,
+    "55": 0.665
+   },
+   "D": {
+    "52": 0.811,
+    "53": 0.821,
+    "54": 0.81,
+    "55": 0.805
+   },
+   "E": {
+    "52": 0.825,
+    "53": 0.828,
+    "54": 0.831,
+    "55": 0.849
+   }
+  },
+  "bits_par_poids": {
+   "A": 2.438712899543379,
+   "B": 3.0593607305936072,
+   "B0": 3.0593607305936072,
+   "C": 2.438712899543379,
+   "D": 2.0593607305936072,
+   "E": 3.110748430365297
+  },
+  "reglages": {
+   "A_g52": {
+    "controle_avant": 0.006195831629965041,
+    "controle_apres": 0.00020283434402059626
+   },
+   "A_g53": {
+    "controle_avant": 0.006109815394436871,
+    "controle_apres": 0.00019266590889957215
+   },
+   "A_g54": {
+    "controle_avant": 0.006204666473247387,
+    "controle_apres": 0.0001856016995454276
+   },
+   "A_g55": {
+    "controle_avant": 0.006050383823889273,
+    "controle_apres": 0.00017984097961474348
+   },
+   "B_g52": {
+    "controle_avant": 0.0005915920629545494,
+    "controle_apres": 6.20378664246312e-05
+   },
+   "B_g53": {
+    "controle_avant": 0.0005682966016508915,
+    "controle_apres": 6.105109393872596e-05
+   },
+   "B_g54": {
+    "controle_avant": 0.0005738547761683111,
+    "controle_apres": 6.0664066458465874e-05
+   },
+   "B_g55": {
+    "controle_avant": 0.0005616251655198909,
+    "controle_apres": 6.021092068059025e-05
+   },
+   "D_g52": {
+    "controle_avant": 0.009576196582229048,
+    "controle_apres": 0.00045352569194855513
+   },
+   "D_g53": {
+    "controle_avant": 0.009219077891773647,
+    "controle_apres": 0.0004395424836763629
+   },
+   "D_g54": {
+    "controle_avant": 0.009706738701573125,
+    "controle_apres": 0.0004240993341362035
+   },
+   "D_g55": {
+    "controle_avant": 0.00930644913955971,
+    "controle_apres": 0.0004314017378621631
+   },
+   "E_g52": {
+    "controle_avant": 0.004291543419714328,
+    "controle_apres": 0.0001187142200285086
+   },
+   "E_g53": {
+    "controle_avant": 0.004117354695443754,
+    "controle_apres": 0.0001104106781659303
+   },
+   "E_g54": {
+    "controle_avant": 0.004276955845179381,
+    "controle_apres": 0.00010969929690300314
+   },
+   "E_g55": {
+    "controle_avant": 0.004161942170725928,
+    "controle_apres": 0.00010870226003505565
+   }
+  },
+  "lignes_donnees": {
+   "1": 8640,
+   "2": 8640,
+   "3": 25920
+  }
+ }
+}

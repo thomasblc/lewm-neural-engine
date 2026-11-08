@@ -1,0 +1,184 @@
+{
+ "controles": {
+  "commit": "8635a129a47560f220dde833563c3178ba97a159",
+  "macos": [
+   "26.6.2"
+  ],
+  "sha_int4c": "f2dead581afc53fcd81ce7c116a882a2810680c530aa92fb38d5a988e7c8ae1f",
+  "programme_int4c": "a41e59e28e72ca6690828b2ba11024fab9fb7ef876af09eb0bb2d387d4b99b7b",
+  "sha_sp": "317a5692ad0ff1f413359e4e0e62d0528df65ab9331e321dfb71683f04bb6ced",
+  "programme_sp": "d9db46f2f44ab218231eeaa73e2bb4ba7d974fdd8df10342d86ec12c47b61b40",
+  "sha_g": "64156facc79a9a2361cb6d27db7fe91538089e448f408d7ab802290b049b7341",
+  "programme_g": "bcb752dbf5ecb924aa3de5b5fdfd459cc8f46012709cfa65a2e7f59e8f6c8cca"
+ },
+ "tests": {
+  "T1": {
+   "bras": "int4c",
+   "reference": "fp32",
+   "sorte": "perte",
+   "ecart_points": {
+    "moyenne": -7.249999999999999,
+    "bas": -8.42,
+    "haut": -6.08
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "niveau_holm": 0.0125,
+   "verdict": "soutenue",
+   "borne_points": -5.967498808022236,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "soutenue"
+  },
+  "T2": {
+   "bras": "sp",
+   "reference": "fp32",
+   "sorte": "non_inferiorite",
+   "ecart_points": {
+    "moyenne": -0.30999999999999994,
+    "bas": -0.91,
+    "haut": 0.27999999999999997
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "niveau_holm": 0.016666666666666666,
+   "verdict": "soutenue",
+   "borne_points": -0.9484282791429446,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "soutenue"
+  },
+  "T3": {
+   "bras": "g",
+   "reference": "fp32",
+   "sorte": "non_inferiorite",
+   "ecart_points": {
+    "moyenne": -1.4000000000000001,
+    "bas": -2.19,
+    "haut": -0.6300000000000001
+   },
+   "p_signe": 0.06769323067693231,
+   "p_bootstrap_t": 0.06879312068793121,
+   "erreur_mc_p_signe": 0.0025121874372238217,
+   "erreur_mc_p_bootstrap_t": 0.0025310200954150276,
+   "p": 0.06879312068793121,
+   "p_holm": 0.06879312068793121,
+   "niveau_holm": 0.05,
+   "verdict": "non soutenue",
+   "borne_points": -2.069159061794269,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "non soutenue"
+  },
+  "T4": {
+   "bras": "g",
+   "reference": "int4c",
+   "sorte": "superiorite",
+   "ecart_points": {
+    "moyenne": 5.8500000000000005,
+    "bas": 4.64,
+    "haut": 7.080000000000002
+   },
+   "p_signe": 9.999000099990002e-05,
+   "p_bootstrap_t": 9.999000099990002e-05,
+   "erreur_mc_p_signe": 9.999000099990002e-05,
+   "erreur_mc_p_bootstrap_t": 9.999000099990002e-05,
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "niveau_holm": 0.025,
+   "verdict": "soutenue",
+   "borne_points": 4.63817498810987,
+   "borne_et_verdict_concordent": true,
+   "verdict_ecrit": "soutenue"
+  }
+ },
+ "lecture": {
+  "localisation": "la perte d'int4 et sa réparation par pred_proj en 16 bits se retrouvent sur des épisodes neufs",
+  "gptq": "fait mieux que l'arrondi simple de plus de 2 points ; non-infériorité face à PyTorch float32 non établie"
+ },
+ "descriptifs": {
+  "ecarts": {
+   "int4c - fp32": {
+    "moyenne": -7.249999999999999,
+    "bas": -8.42,
+    "haut": -6.08
+   },
+   "sp - fp32": {
+    "moyenne": -0.30999999999999994,
+    "bas": -0.91,
+    "haut": 0.27999999999999997
+   },
+   "g - fp32": {
+    "moyenne": -1.4000000000000001,
+    "bas": -2.19,
+    "haut": -0.6300000000000001
+   },
+   "g - int4c": {
+    "moyenne": 5.8500000000000005,
+    "bas": 4.64,
+    "haut": 7.080000000000002
+   },
+   "g - sp": {
+    "moyenne": -1.09,
+    "bas": -1.8499999999999999,
+    "haut": -0.33999999999999997
+   }
+  },
+  "parts_rattrapees": {
+   "rapportee": true,
+   "g": {
+    "part": 0.8068965517241379,
+    "bas": 0.6991400434270916,
+    "haut": 0.9106881900871147
+   },
+   "sp": {
+    "part": 0.9572413793103448,
+    "bas": 0.8795013435531474,
+    "haut": 1.0400027662517286
+   }
+  },
+  "reussite": {
+   "fp32": 0.8705999999999999,
+   "int4c": 0.7981,
+   "sp": 0.8675,
+   "g": 0.8566
+  },
+  "temps_par_plan_ms": {
+   "int4c": 823.556736962587,
+   "sp": 820.8086474570362,
+   "g": 824.5598443224349
+  },
+  "ecarts_500_episodes": {
+   "int4c - fp32": {
+    "moyenne": -8.64,
+    "bas": -11.200000000000001,
+    "haut": -6.159999999999999
+   },
+   "sp - fp32": {
+    "moyenne": 0.64,
+    "bas": -0.68,
+    "haut": 1.9600000000000002
+   },
+   "g - fp32": {
+    "moyenne": -0.3599999999999999,
+    "bas": -2.0,
+    "haut": 1.3199999999999998
+   },
+   "g - int4c": {
+    "moyenne": 8.280000000000001,
+    "bas": 5.6000000000000005,
+    "haut": 10.96
+   },
+   "g - sp": {
+    "moyenne": -1.0,
+    "bas": -2.6409999999999996,
+    "haut": 0.6400000000000002
+   }
+  }
+ }
+}

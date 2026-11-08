@@ -1,0 +1,58 @@
+{
+ "controles": {
+  "commit": "ab7b48f360985e2582db82510965c89df397a20b",
+  "fichiers": 35,
+  "cas_limites_arrondi": 0
+ },
+ "reussite_fp32": 0.8480000000000001,
+ "descriptifs": {
+  "all:5": {
+   "reussite": 0.8352,
+   "ecart_points": {
+    "moyenne": -0.012799999999999999,
+    "bas": -0.028,
+    "haut": 0.0016000000000000005
+   }
+  },
+  "encoder:3": {
+   "reussite": 0.46959999999999996,
+   "ecart_points": {
+    "moyenne": -0.3784,
+    "bas": -0.4184,
+    "haut": -0.3408
+   }
+  },
+  "predictor:3": {
+   "reussite": 0.8375999999999999,
+   "ecart_points": {
+    "moyenne": -0.0104,
+    "bas": -0.0228,
+    "haut": 0.0015999999999999988
+   }
+  },
+  "autres:3": {
+   "reussite": 0.8272,
+   "ecart_points": {
+    "moyenne": -0.0208,
+    "bas": -0.038,
+    "haut": -0.0044
+   }
+  },
+  "encpred:4": {
+   "reussite": 0.7556,
+   "ecart_points": {
+    "moyenne": -0.09240000000000001,
+    "bas": -0.11560000000000001,
+    "haut": -0.06960000000000001
+   }
+  },
+  "all:3:g64": {
+   "reussite": 0.37879999999999997,
+   "ecart_points": {
+    "moyenne": -0.46920000000000006,
+    "bas": -0.51041,
+    "haut": -0.4288
+   }
+  }
+ }
+}

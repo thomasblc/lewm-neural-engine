@@ -1,0 +1,177 @@
+{
+ "controles": {
+  "commit": "090bdb5bf9c7dc7b7a1fd71cfad13f3cbfefde75"
+ },
+ "tests": {
+  "G1": {
+   "tache": "pusht",
+   "version": "all:4",
+   "somme": 316,
+   "ecart_points": {
+    "moyenne": 0.12639999999999998,
+    "bas": 0.09720000000000001,
+    "haut": 0.15719999999999998
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  },
+  "G2": {
+   "tache": "tworoom",
+   "version": "all:4",
+   "somme": 270,
+   "ecart_points": {
+    "moyenne": 0.108,
+    "bas": 0.086,
+    "haut": 0.13119999999999998
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  },
+  "G3": {
+   "tache": "pusht",
+   "version": "all:3",
+   "somme": 987,
+   "ecart_points": {
+    "moyenne": 0.3948000000000001,
+    "bas": 0.35760000000000003,
+    "haut": 0.4332
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  },
+  "G4": {
+   "tache": "tworoom",
+   "version": "all:3",
+   "somme": 1131,
+   "ecart_points": {
+    "moyenne": 0.45239999999999997,
+    "bas": 0.4136,
+    "haut": 0.4924
+   },
+   "p": 9.999000099990002e-05,
+   "p_holm": 0.00039996000399960006,
+   "verdict": "soutenue"
+  }
+ },
+ "descriptifs": {
+  "pusht all:4": {
+   "reussite_gptq": 0.8204,
+   "reussite_rtn": 0.6940000000000001,
+   "reussite_fp32": 0.8352,
+   "gptq_moins_rtn": {
+    "moyenne": 0.12639999999999998,
+    "bas": 0.09720000000000001,
+    "haut": 0.15719999999999998
+   },
+   "part_rattrapee": {
+    "moyenne": 0.8951841359773371,
+    "bas": 0.7718305132810285,
+    "haut": 1.0271045824094602
+   }
+  },
+  "pusht all:3": {
+   "reussite_gptq": 0.752,
+   "reussite_rtn": 0.3572,
+   "reussite_fp32": 0.8352,
+   "gptq_moins_rtn": {
+    "moyenne": 0.3948000000000001,
+    "bas": 0.35760000000000003,
+    "haut": 0.4332
+   },
+   "part_rattrapee": {
+    "moyenne": 0.8259414225941423,
+    "bas": 0.7725695949318927,
+    "haut": 0.8786325852036575
+   }
+  },
+  "pusht encoder:4": {
+   "reussite_gptq": 0.8308,
+   "reussite_rtn": 0.7888,
+   "reussite_fp32": 0.8352,
+   "gptq_moins_rtn": {
+    "moyenne": 0.042,
+    "bas": 0.022,
+    "haut": 0.062
+   },
+   "part_rattrapee": {
+    "moyenne": 0.9051724137931034,
+    "bas": 0.6439300180018002,
+    "haut": 1.2389541851032446
+   }
+  },
+  "pusht autres:4": {
+   "reussite_gptq": 0.8284,
+   "reussite_rtn": 0.7408,
+   "reussite_fp32": 0.8352,
+   "gptq_moins_rtn": {
+    "moyenne": 0.0876,
+    "bas": 0.061200000000000004,
+    "haut": 0.1144
+   },
+   "part_rattrapee": {
+    "moyenne": 0.9279661016949152,
+    "bas": 0.7580590915666137,
+    "haut": 1.1182817643186305
+   }
+  },
+  "tworoom all:4": {
+   "reussite_gptq": 0.8455999999999999,
+   "reussite_rtn": 0.7376,
+   "reussite_fp32": 0.8480000000000001,
+   "gptq_moins_rtn": {
+    "moyenne": 0.108,
+    "bas": 0.086,
+    "haut": 0.13119999999999998
+   },
+   "part_rattrapee": {
+    "moyenne": 0.9782608695652174,
+    "bas": 0.890282131661442,
+    "haut": 1.0753138075313808
+   }
+  },
+  "tworoom all:3": {
+   "reussite_gptq": 0.8388,
+   "reussite_rtn": 0.38639999999999997,
+   "reussite_fp32": 0.8480000000000001,
+   "gptq_moins_rtn": {
+    "moyenne": 0.45239999999999997,
+    "bas": 0.4136,
+    "haut": 0.4924
+   },
+   "part_rattrapee": {
+    "moyenne": 0.9800693240901213,
+    "bas": 0.955171920242169,
+    "haut": 1.0044686759879298
+   }
+  },
+  "tworoom encoder:4": {
+   "reussite_gptq": 0.8492000000000001,
+   "reussite_rtn": 0.7572,
+   "reussite_fp32": 0.8480000000000001,
+   "gptq_moins_rtn": {
+    "moyenne": 0.092,
+    "bas": 0.0684,
+    "haut": 0.116
+   },
+   "part_rattrapee": {
+    "moyenne": 1.013215859030837,
+    "bas": 0.9180271726925668,
+    "haut": 1.1181434599156117
+   }
+  },
+  "tworoom autres:4": {
+   "reussite_gptq": 0.8480000000000001,
+   "reussite_rtn": 0.836,
+   "reussite_fp32": 0.8480000000000001,
+   "gptq_moins_rtn": {
+    "moyenne": 0.012,
+    "bas": 0.0008000000000000003,
+    "haut": 0.023200000000000002
+   },
+   "part_rattrapee": null
+  }
+ }
+}

@@ -1,0 +1,241 @@
+{
+ "controles": {
+  "commits": [
+   "4c53c4e465a3009c0ddb74e467781afb2a8c4c3e"
+  ],
+  "commit_analyse": "4c53c4e465a3009c0ddb74e467781afb2a8c4c3e",
+  "analyse_modifiee": false,
+  "episodes_bouge": 1333,
+  "episodes_T_au_but": 233,
+  "divergences": {
+   "fp32": 0,
+   "all:6": 0,
+   "all:8": 0
+  },
+  "cas_limites_arrondi": {
+   "fp32": 0,
+   "all:6": 0,
+   "all:8": 0
+  }
+ },
+ "H6": {
+  "delta_reussite": -0.0126,
+  "delta_log_M3_bouge": 0.02036340590695125,
+  "episodes_bouge": 1333,
+  "p_bas": 0.012098790120987902,
+  "p_haut": 9.999000099990002e-05,
+  "p_b": 0.0013998600139986002,
+  "p": 0.012098790120987902,
+  "ecarts": {
+   "reussite": {
+    "moyenne": -0.012600000000000002,
+    "bas": -0.0192,
+    "haut": -0.0060999999999999995
+   },
+   "reussite_bouge": {
+    "moyenne": -0.0145536384096024,
+    "bas": -0.022805701425356338,
+    "haut": -0.0064516129032258064
+   },
+   "log_M3": {
+    "moyenne": 0.013509318277222924,
+    "bas": 0.003335210283302459,
+    "haut": 0.023504359451646622
+   },
+   "log_M3_bouge": {
+    "moyenne": 0.02036340590695125,
+    "bas": 0.006811930614352316,
+    "haut": 0.033826735972706634
+   },
+   "log_M2": {
+    "moyenne": 0.008157565590020944,
+    "bas": 1.02286961264569e-05,
+    "haut": 0.01617918200806937
+   }
+  },
+  "sens_reussite": [
+   -1,
+   -1
+  ],
+  "physique_strate": {
+   "dT_min_px": {
+    "moyenne": 0.19803511477164568,
+    "bas": 0.016228914407452246,
+    "haut": 0.3884882925164587
+   },
+   "dth_min_deg": {
+    "moyenne": 0.20721747282152386,
+    "bas": 0.014896782613266664,
+    "haut": 0.404985422781038
+   }
+  },
+  "controle_tost_t": {
+   "p_bas": 0.01393362332442681,
+   "p_haut": 4.719163523280164e-22,
+   "p": 0.01393362332442681,
+   "ic90": [
+    -0.018133352061403894,
+    -0.0070666479385961085
+   ]
+  },
+  "verdict": "établie",
+  "formulation": "à 6 bits, la pose du T et la réussite se dégradent toutes deux, la réussite restant à ± 2 points sur l'ensemble des épisodes ; la dégradation est plus faible à 8 bits (progression selon les bits)"
+ },
+ "controle_8_bits": {
+  "delta_reussite": -0.0036,
+  "delta_log_M3_bouge": 0.0021217923994252034,
+  "episodes_bouge": 1333,
+  "p_bas": 9.999000099990002e-05,
+  "p_haut": 9.999000099990002e-05,
+  "p_b": 0.3428657134286571,
+  "p": 0.3428657134286571,
+  "ecarts": {
+   "reussite": {
+    "moyenne": -0.0035999999999999995,
+    "bas": -0.0085,
+    "haut": 0.0012000000000000001
+   },
+   "reussite_bouge": {
+    "moyenne": -0.0045011252813203315,
+    "bas": -0.010802700675168794,
+    "haut": 0.0016504126031507882
+   },
+   "log_M3": {
+    "moyenne": 0.0017288445815163537,
+    "bas": -0.005896067885688571,
+    "haut": 0.009242362624662586
+   },
+   "log_M3_bouge": {
+    "moyenne": 0.0021217923994252034,
+    "bas": -0.007802667766214188,
+    "haut": 0.012285928718628967
+   },
+   "log_M2": {
+    "moyenne": 0.0010371856947831608,
+    "bas": -0.005351004660175143,
+    "haut": 0.00761560451217614
+   }
+  },
+  "sens_reussite": [
+   0,
+   0
+  ],
+  "physique_strate": {
+   "dT_min_px": {
+    "moyenne": 0.04406031730533597,
+    "bas": -0.09063502443456962,
+    "haut": 0.18178576985106334
+   },
+   "dth_min_deg": {
+    "moyenne": 0.01606036784712277,
+    "bas": -0.09321829432786378,
+    "haut": 0.12486809101219538
+   }
+  },
+  "controle_tost_t": {
+   "p_bas": 3.495377306017945e-11,
+   "p_haut": 5.231896111693006e-21,
+   "p": 3.495377306017945e-11,
+   "ic90": [
+    -0.007716228156937581,
+    0.0005162281569375819
+   ]
+  }
+ },
+ "progression_8_vers_6": {
+  "ecart_6_moins_8": {
+   "moyenne": 0.01824161350752605,
+   "bas": 0.004497407849239778,
+   "haut": 0.03184555267440507
+  },
+  "p_unilaterale": 0.0036996300369963003,
+  "sens": 1,
+  "etablie": true
+ },
+ "descriptifs": {
+  "fp32": {
+   "reussite": 0.8706,
+   "classes": {
+    "reussite": 0.8706,
+    "T place sans reussite": 0.0754,
+    "T jamais place": 0.054
+   },
+   "classes_bouge": {
+    "reussite": 0.8615153788447112,
+    "T place sans reussite": 0.057914478619654916,
+    "T jamais place": 0.08057014253563391
+   }
+  },
+  "all:6": {
+   "reussite": 0.858,
+   "classes": {
+    "reussite": 0.858,
+    "T place sans reussite": 0.0834,
+    "T jamais place": 0.0586
+   },
+   "classes_bouge": {
+    "reussite": 0.8469617404351087,
+    "T place sans reussite": 0.06541635408852213,
+    "T jamais place": 0.0876219054763691
+   }
+  },
+  "all:8": {
+   "reussite": 0.867,
+   "classes": {
+    "reussite": 0.867,
+    "T place sans reussite": 0.0784,
+    "T jamais place": 0.0546
+   },
+   "classes_bouge": {
+    "reussite": 0.8570142535633909,
+    "T place sans reussite": 0.06166541635408852,
+    "T jamais place": 0.08132033008252063
+   }
+  },
+  "plancher_discordants_par_50": {
+   "moyenne": 4.745,
+   "bas": 4.315,
+   "haut": 5.175
+  }
+ },
+ "comparaison_exp003": {
+  "all:6": {
+   "reussite": {
+    "moyenne": -0.0032,
+    "bas": -0.0156,
+    "haut": 0.009200000000000002
+   },
+   "bouge": {
+    "delta_reussite": {
+     "moyenne": 0.0018292682926829272,
+     "bas": -0.012804878048780489,
+     "haut": 0.016463414634146342
+    },
+    "delta_log_M3": {
+     "moyenne": 0.030460411588962247,
+     "bas": 0.0031084610940252818,
+     "haut": 0.05890802685357987
+    }
+   }
+  },
+  "all:8": {
+   "reussite": {
+    "moyenne": 0.0028,
+    "bas": -0.008,
+    "haut": 0.013600000000000001
+   },
+   "bouge": {
+    "delta_reussite": {
+     "moyenne": 0.00548780487804878,
+     "bas": -0.007926829268292683,
+     "haut": 0.01951219512195122
+    },
+    "delta_log_M3": {
+     "moyenne": 0.0047475133614569434,
+     "bas": -0.01617845992878161,
+     "haut": 0.026434707736291717
+    }
+   }
+  }
+ }
+}
